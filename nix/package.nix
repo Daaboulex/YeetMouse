@@ -1,6 +1,5 @@
 {
   lib,
-  writeShellScript,
   makeDesktopItem,
   pkgs,
   kernel,
@@ -58,6 +57,8 @@ kernel.stdenv.mkDerivation rec {
       install -Dm755 $sourceRoot/gui/YeetMouseGui $out/bin/yeetmouse
       wrapProgram $out/bin/yeetmouse \
         --prefix PATH : ${lib.makeBinPath PATH}
+      install -Dm644 $sourceRoot/media/yeetmouse.png \
+        $out/share/icons/hicolor/256x256/apps/yeetmouse.png
     '';
 
   buildFlags = [ "modules" ];
@@ -67,19 +68,8 @@ kernel.stdenv.mkDerivation rec {
   desktopItems = [
     (makeDesktopItem {
       name = pname;
-      exec =
-        let
-          xhost = "${pkgs.xorg.xhost}/bin/xhost";
-        in
-        writeShellScript "yeetmouse.sh" /* bash */ ''
-          if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-            ${xhost} +SI:localuser:root
-            pkexec env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "${pname}"
-            ${xhost} -SI:localuser:root
-          else
-            pkexec env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" "${pname}"
-          fi
-        '';
+      exec = pname;
+      icon = pname;
       type = "Application";
       desktopName = "Yeetmouse GUI";
       comment = "Yeetmouse Configuration Tool";
