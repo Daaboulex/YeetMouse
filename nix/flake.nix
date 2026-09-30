@@ -12,7 +12,7 @@
       shortRev = if (self ? shortRev) then self.shortRev else self.dirtyRev;
       packageInputs = pkgs: {
         inherit shortRev;
-        inherit (pkgs.linuxPackages) kernel kernelModuleMakeFlags;
+        inherit (pkgs.linuxPackages) kernel;
       };
       eachSystem = lib.genAttrs [
         "aarch64-linux"
