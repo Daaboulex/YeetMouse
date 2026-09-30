@@ -50,10 +50,19 @@ which you can use to activate `yeetmouse`'s device driver, udev rules, and execu
 Then, rebuild and switch into your new system (using `nixos-rebuild`). After a reboot, the
 `yeetmouse` driver should be loaded for your connected mouse with the parameters you specified.
 
+The GUI runs without root. The module's parameters belong to the `yeetmouse` group, so add
+your user to that group and log in again for the membership to apply:
+
+```nix
+{
+  users.users.<name>.extraGroups = [ "yeetmouse" ];
+}
+```
+
 After restarting your system, to verify that the driver works start up the yeetmouse GUI:
 
 ```sh
-sudo -E yeetmouse
+yeetmouse
 ```
 
 ## Manual Overlay Installation

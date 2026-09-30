@@ -604,9 +604,11 @@ in
   config = mkIf cfg.enable {
     boot.extraModulePackages = [ yeetmouse ];
     environment.systemPackages = [ yeetmouse ];
+    users.groups.yeetmouse = { };
     services.udev = {
       extraRules =
         let
+          chgrp = "${pkgs.coreutils}/bin/chgrp";
           echo = "${pkgs.coreutils}/bin/echo";
           yeetmouseConfig =
             let
@@ -627,6 +629,7 @@ in
             '';
         in
         ''
+          SUBSYSTEM=="module", KERNEL=="yeetmouse", ACTION=="add", RUN+="${chgrp} -R yeetmouse ${parameterBasePath}"
           SUBSYSTEMS=="usb|input|hid", ATTRS{bInterfaceClass}=="03", ATTRS{bInterfaceSubClass}=="01", ATTRS{bInterfaceProtocol}=="02", ATTRS{bInterfaceNumber}=="00", RUN+="${yeetmouseConfig}/bin/yeetmouseConfig"
         '';
     };
