@@ -352,3 +352,28 @@ Acceleration mode following a custom curve. The curve is specified using individ
 ```
 
 See [RawAccel: Lookup Table](https://github.com/RawAccelOfficial/rawaccel/blob/5b39bb6/doc/Guide.md#look-up-table)
+
+### Per-device Profiles
+
+A profile is a configuration file in `yeetmousectl`'s format (`yeetmousectl save <file>` writes one
+from the live parameters) applied whenever a given USB mouse connects. Each entry names the mouse by
+its USB ids, four lowercase hex digits as `lsusb` prints them, and the module renders one udev rule
+per entry that runs `yeetmousectl apply <file>` on the input device's add event, after the global
+settings above.
+
+```nix
+{
+  hardware.yeetmouse = {
+    enable = true;
+    profiles = [
+      {
+        vendorId = "046d";
+        productId = "c08d";
+        file = ./g502.conf;
+      }
+    ];
+  };
+}
+```
+
+Selecting a profile from the GUI is out of scope; the GUI edits the live parameters only.

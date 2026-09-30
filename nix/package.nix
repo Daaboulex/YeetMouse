@@ -44,6 +44,7 @@ kernel.stdenv.mkDerivation rec {
   LD_LIBRARY_PATH = "/run/opengl-driver/lib:${lib.makeLibraryPath buildInputs}";
 
   postBuild = ''
+    make "-j$NIX_BUILD_CORES" -C $sourceRoot/tools/yeetmousectl "CXX=$CXX"
     make "-j$NIX_BUILD_CORES" -C $sourceRoot/gui "M=$sourceRoot/gui" \
       "LIBS=-lglfw -lGL" \
       "CXXFLAGS=-Wno-sign-compare -Wno-unused-function -Wno-return-type -isystem $sourceRoot/gui/External"
@@ -54,6 +55,7 @@ kernel.stdenv.mkDerivation rec {
       PATH = [ pkgs.zenity ];
     in
     /* sh */ ''
+      install -Dm755 $sourceRoot/tools/yeetmousectl/yeetmousectl $out/bin/yeetmousectl
       install -Dm755 $sourceRoot/gui/YeetMouseGui $out/bin/yeetmouse
       wrapProgram $out/bin/yeetmouse \
         --prefix PATH : ${lib.makeBinPath PATH}

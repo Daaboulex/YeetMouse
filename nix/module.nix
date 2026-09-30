@@ -599,6 +599,29 @@ in
         ++ (optionals (params ? jump) params.jump)
         ++ (optionals (params ? lut) params.lut);
     };
+
+    profiles = mkOption {
+      type = types.listOf (
+        types.submodule {
+          options = {
+            vendorId = mkOption {
+              type = types.strMatching "[0-9a-f]{4}";
+              description = "USB vendor id of the mouse, four lowercase hex digits as udev's ATTRS{idVendor} reports it";
+            };
+            productId = mkOption {
+              type = types.strMatching "[0-9a-f]{4}";
+              description = "USB product id of the mouse, four lowercase hex digits as udev's ATTRS{idProduct} reports it";
+            };
+            file = mkOption {
+              type = types.path;
+              description = "Configuration file in yeetmousectl's format, applied with yeetmousectl apply when the mouse connects";
+            };
+          };
+        }
+      );
+      default = [ ];
+      description = "Per-device configurations applied by udev when a matching USB mouse connects, after the global settings";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -627,11 +650,15 @@ in
               ${concatMapStrings (s: (paramToString s) + "\n") params}
               ${echo} "1" > /sys/module/yeetmouse/parameters/update
             '';
+          profileRule = profile: ''
+            ACTION=="add", SUBSYSTEM=="input", ENV{ID_INPUT_MOUSE}=="1", SUBSYSTEMS=="usb", ATTRS{idVendor}=="${profile.vendorId}", ATTRS{idProduct}=="${profile.productId}", RUN+="${yeetmouse}/bin/yeetmousectl apply ${profile.file}"
+          '';
         in
         ''
           SUBSYSTEM=="module", KERNEL=="yeetmouse", ACTION=="add", RUN+="${chgrp} -R yeetmouse ${parameterBasePath}"
           SUBSYSTEMS=="usb|input|hid", ATTRS{bInterfaceClass}=="03", ATTRS{bInterfaceSubClass}=="01", ATTRS{bInterfaceProtocol}=="02", ATTRS{bInterfaceNumber}=="00", RUN+="${yeetmouseConfig}/bin/yeetmouseConfig"
-        '';
+        ''
+        + concatMapStrings profileRule cfg.profiles;
     };
   };
 }
