@@ -471,7 +471,10 @@ let
       };
   };
 
-  yeetmouse = config.boot.kernelPackages.callPackage ./package.nix { inherit shortRev; };
+  yeetmouse = pkgs.callPackage ./package.nix {
+    inherit (config.boot.kernelPackages) kernel;
+    inherit shortRev;
+  };
 in
 {
   options.hardware.yeetmouse = {
