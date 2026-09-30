@@ -56,12 +56,12 @@ bool SetParameterTy(const std::string &param_name, Ty value) {
         using namespace std;
         ofstream file(YEETMOUSE_PARAMS_DIR + param_name);
 
-        if (file.bad())
+        if (!file.is_open() || file.fail())
             return false;
 
         file << value;
         file.close();
-        return true;
+        return !file.fail();
     } catch (std::exception &ex) {
         fprintf(stderr, "Error when saving parameter %s (%s)\n", param_name.c_str(), ex.what());
         return false;

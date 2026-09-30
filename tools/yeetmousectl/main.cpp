@@ -26,7 +26,11 @@ static int ApplyConfig(const std::string &file) {
 
     Parameters params = *parsed;
 
-    params.SaveAll();
+    if (!params.SaveAll()) {
+        std::cerr << "Failed to write the driver parameters under " << YEETMOUSE_PARAMS_DIR
+                  << ": is the module loaded, and are you root or in the yeetmouse group?" << std::endl;
+        return 1;
+    }
 
     std::cout << "Configuration applied." << std::endl;
 
