@@ -367,9 +367,9 @@ FP_LONG accel_power(const struct accel_curve *c, FP_LONG speed) {
         if (c->use_smoothing) {
             if (speed < c->k.cap_x) {
                 if (c->k.power_constant == 0)
-                    speed = FP64_PowFast(FP64_Mul(speed, c->acceleration), c->exponent);
+                    speed = FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent);
                 else
-                    speed = FP64_Add(FP64_PowFast(FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
+                    speed = FP64_Add(FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
             } else {
                 if (c->k.cap_x == FP64_FromInt(0)) {
                     speed = c->k.cap_y;
@@ -379,9 +379,9 @@ FP_LONG accel_power(const struct accel_curve *c, FP_LONG speed) {
             }
         } else {
             if (c->k.power_constant == 0)
-                speed = FP64_PowFast(FP64_Mul(speed, c->acceleration), c->exponent);
+                speed = FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent);
             else
-                speed = FP64_Add(FP64_PowFast(FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
+                speed = FP64_Add(FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
         }
     }
     return speed;

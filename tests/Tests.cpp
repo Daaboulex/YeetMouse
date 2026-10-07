@@ -1246,7 +1246,7 @@ bool Tests::TestRawAccelParity() {
     auto close = [](FP_LONG actual, double expected) {
         double value = FP64_ToFloat(actual);
         double scale = std::max(std::fabs(expected), 1e-6);
-        return std::fabs(value - expected) / scale < 1e-4;
+        return std::fabs(value - expected) / scale < 1e-6;
     };
 
     auto vectors_match = [&](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device) {
@@ -1290,7 +1290,7 @@ bool Tests::TestRawAccelParity() {
                 int out_x = 0, out_y = 0;
                 TestManager::Step(dx, dy, ms, out_x, out_y);
                 if (synchronised) {
-                    auto near_integer = [](double value) { return std::fabs(value - std::round(value)) < 1e-3; };
+                    auto near_integer = [](double value) { return std::fabs(value - std::round(value)) < 1e-5; };
                     good &= out_x == expected.countsX || near_integer(expected.x + carry_x);
                     good &= out_y == expected.countsY || near_integer(expected.y + carry_y);
                 } else {
