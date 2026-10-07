@@ -1,7 +1,7 @@
 #include "RawAccelOracle.h"
 
+#include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <stdexcept>
 
 #define _copysign std::copysign
@@ -30,7 +30,7 @@ namespace {
         if (in.data.size() > rawaccel::LUT_RAW_DATA_CAPACITY)
             throw std::invalid_argument("lookup table larger than Raw Accel holds");
         out.length = static_cast<int>(in.data.size());
-        std::memcpy(out.data, in.data.data(), in.data.size() * sizeof(float));
+        std::copy(in.data.begin(), in.data.end(), out.data);
         return out;
     }
 }
