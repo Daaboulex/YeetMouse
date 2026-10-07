@@ -467,7 +467,7 @@ static inline FP_LONG FP64_DivPrecise(FP_LONG arg_a, FP_LONG arg_b) {
 #ifdef FP64_DIV128_NATIVE
     if (FP64_DivOverflows(arg_a, arg_b))
         return ((arg_a ^ arg_b) < 0) ? MinValue : MaxValue;
-    return Div128_64(arg_a >> FP64_Shift, arg_a << FP64_Shift, arg_b);
+    return Div128_64(arg_a >> FP64_Shift, (FP_LONG) ((FP_ULONG) arg_a << FP64_Shift), arg_b);
 #else
     return FP64_DivPreciseSoft(arg_a, arg_b);
 #endif
