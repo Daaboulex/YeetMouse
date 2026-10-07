@@ -27,6 +27,11 @@ int main() {
         bad_sum++;
     }
 
+    if (!Tests::TestRawAccelParity()) {
+        fprintf(stderr, "Test failed for Raw Accel parity\n");
+        bad_sum++;
+    }
+
     if (bad_sum == 0) {
         printf(GREEN"All tests passed!\n\n" RESET);
     } else {

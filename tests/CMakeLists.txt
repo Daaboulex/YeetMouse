@@ -51,11 +51,17 @@ endif()
 add_executable(YeetMouseTests main.cpp
         TestManager.cpp
         Tests.cpp
+        RawAccelOracle.cpp
         ../gui/FunctionHelper.cpp
         ../gui/RawAccel.cpp
         ../driver/accel_modes.c)
 
 target_compile_definitions(YeetMouseTests PRIVATE TEST_ENV FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
+target_compile_options(YeetMouseTests PRIVATE -fwrapv -funsigned-char)
+
+set_source_files_properties(RawAccelOracle.cpp PROPERTIES
+        COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:GNU>:-fpermissive>")
 
 target_include_directories(YeetMouseTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/..

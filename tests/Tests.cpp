@@ -11,6 +11,7 @@
 
 #include "config.h"
 #include "TestManager.h"
+#include "RawAccelOracle.h"
 #include "gui/FunctionHelper.h"
 #include "gui/RawAccel.h"
 
@@ -1164,6 +1165,56 @@ bool Tests::TestRawAccelSettings() {
                                              "\"Polling rate Hz (keep at 0 for automatic adjustment)\": 1000.5")));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel settings\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
+bool Tests::TestRawAccelParity() {
+    TestSupervisor supervisor{"Raw Accel Parity"};
+
+    try {
+        supervisor.NextTest();
+
+        std::ifstream file(FIXTURES_DIR "/rawaccel/power-velocity-output-cap.json");
+        RawAccel::Settings settings = RawAccel::Read(file);
+        const RawAccel::Profile &profile = settings.profiles.at(0);
+        const RawAccel::DeviceConfig &device = settings.devices.at(0).config;
+
+        TestManager::SetAccelMode(AccelMode_Power);
+        TestManager::SetPreScale(static_cast<float>(800.0 / device.dpi));
+        TestManager::SetAcceleration(static_cast<float>(profile.x.scale * 1000.0 / 800.0));
+        TestManager::SetExponent(static_cast<float>(profile.x.exponentPower));
+        TestManager::SetMidpoint(0.f);
+        TestManager::SetUseSmoothing(false);
+        TestManager::SetSensitivity(static_cast<float>(profile.outputDpi / 800.0));
+        TestManager::SetSensitivityY(1.f);
+        TestManager::SetOutCap(static_cast<float>(profile.x.cap.y * profile.outputDpi / 800.0));
+        TestManager::SetInCap(0.f);
+        TestManager::SetOffset(0.f);
+        TestManager::SetRotationAngle(0.f);
+        TestManager::SetAngleSnap_Angle(0.f);
+        TestManager::SetAngleSnap_Threshold(0.f);
+        TestManager::UpdateModesConstants();
+
+        RawAccelOracle oracle(profile, device);
+        for (int dx = -300; dx <= 300; dx += 3) {
+            for (int dy = -300; dy <= 300; dy += 7) {
+                if (dx == 0 && dy == 0)
+                    continue;
+                RawAccelOracle::Output expected = oracle.Packet(dx, dy, 1.0);
+                FP_LONG x = FP64_FromInt(dx);
+                FP_LONG y = FP64_FromInt(dy);
+                accel_packet(&x, &y, FP64_1);
+                if (dx != 0)
+                    supervisor.Validate(IsCloseEnoughRelative(x, static_cast<float>(expected.x), 1e-4f));
+                if (dy != 0)
+                    supervisor.Validate(IsCloseEnoughRelative(y, static_cast<float>(expected.y), 1e-4f));
+            }
+        }
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
         supervisor.result = false;
     }
 
