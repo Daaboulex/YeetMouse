@@ -560,7 +560,7 @@ FP_LONG accel_natural(FP_LONG speed) {
 FP_LONG accel_lut(FP_LONG speed) {
     // Assumes the size and values are valid. Please don't change LUT parameters by hand.
 
-    if(speed < g_LutData_x[0]) // Check if the speed is below the first given point
+    if(speed <= g_LutData_x[0]) // Check if the speed is below the first given point
         speed = g_LutData_y[0];
     else {
         int l = 0, r = g_LutSize - 1, best_point = r, iter = 0; // We REALLY don't want an infinity loop in kernel
