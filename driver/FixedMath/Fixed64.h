@@ -70,7 +70,7 @@ static const FP_LONG IntegerMask = ~FractionMask;
 
 // Constants
 static const FP_LONG Zero = 0ll;
-static const FP_LONG Neg1 = -1ll << FP64_Shift;
+static const FP_LONG Neg1 = -(1ll << FP64_Shift);
 static const FP_LONG One = 1ll << FP64_Shift;
 static const FP_LONG Two = 2ll << FP64_Shift;
 static const FP_LONG Three = 3ll << FP64_Shift;
