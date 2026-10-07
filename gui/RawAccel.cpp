@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include "DriverHelper.h"
+#include "FunctionHelper.h"
 
 namespace RawAccel {
     namespace {
@@ -374,9 +375,9 @@ namespace RawAccel {
                 }
             }
 
-            if (offset > 0 && offset / (scale * SpeedScale * n) > 100)
-                throw Refused("this power output offset, which YeetMouse's power validation (offset over "
-                              "acceleration times exponent above 100) refuses");
+            if (!PowerConstantsFit(out))
+                throw Refused("a power output offset or gain cap whose constants leave YeetMouse's fixed-point "
+                              "range");
         }
     }
 

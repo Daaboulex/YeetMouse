@@ -5,6 +5,60 @@
 #define EXP_ARG_THRESHOLD 16ll
 #define FUNC_EVAL_START_VAL 0.01f
 
+namespace {
+    constexpr double DriverValueLimit = 1073741824.0;
+
+    bool Fits(double value) {
+        return std::fabs(value) < DriverValueLimit;
+    }
+
+    bool PowFits(double x, double exponent, double &out) {
+        out = 0;
+        if (x <= 0)
+            return true;
+        double log2Power = exponent * std::log2(x);
+        out = std::exp2(log2Power);
+        return Fits(log2Power) && log2Power < 30;
+    }
+
+    bool LevelXFits(double level, double accel, double exponent, double &x) {
+        double base = level / (exponent + 1);
+        double power = 0;
+        if (!Fits(1 / exponent) || !Fits(base) || !PowFits(base, 1 / exponent, power))
+            return false;
+        x = power / accel;
+        return Fits(x);
+    }
+}
+
+bool PowerConstantsFit(const Parameters &params) {
+    double accel = params.accel, exponent = params.exponent, midpoint = params.midpoint, cap = params.motivity;
+    double offsetX = 0, powerConstant = 0, capX = 0, curve = 0;
+
+    if (!std::isfinite(accel) || !std::isfinite(exponent) || !std::isfinite(midpoint) || !std::isfinite(cap) ||
+        !Fits(exponent + 1))
+        return false;
+
+    if (midpoint != 0) {
+        if (!LevelXFits(midpoint, accel, exponent, offsetX) || !Fits(midpoint * exponent) ||
+            !Fits(offsetX * midpoint * exponent))
+            return false;
+        powerConstant = offsetX * midpoint * exponent / (exponent + 1);
+        if (!Fits(powerConstant))
+            return false;
+    }
+
+    if (!params.useSmoothing)
+        return true;
+
+    if (cap > 0 && !LevelXFits(cap, accel, exponent, capX))
+        return false;
+    if (!Fits(accel * capX) || !PowFits(accel * capX, exponent, curve) || !Fits(curve * capX) ||
+        !Fits(curve * capX + powerConstant) || !Fits(capX * cap))
+        return false;
+    return Fits(curve * capX + powerConstant - capX * cap);
+}
+
 CachedFunction::CachedFunction(float xStride, Parameters *params)
         : x_stride(xStride), params(params) { }
 
@@ -485,7 +539,7 @@ bool CachedFunction::ValidateSettings() {
     }
 
     if (params->accelMode == AccelMode_Power) {
-        if (std::pow(params->midpoint / (params->exponent + 1), 1 / params->exponent) / params->accel > 1e8) {
+        if (!PowerConstantsFit(*params)) {
             isValid = false;
         }
 

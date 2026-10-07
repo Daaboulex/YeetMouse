@@ -446,6 +446,11 @@ static inline bool FP64_DivOverflows(FP_LONG arg_a, FP_LONG arg_b) {
     unsigned __int128 limit = ((unsigned __int128) 1 << 63) + (((arg_a ^ arg_b) < 0) ? 1 : 0);
     return ((unsigned __int128) abs_a << FP64_Shift) >= limit * abs_b;
 }
+
+static inline bool FP64_MulOverflows(FP_LONG a, FP_LONG b) {
+    __int128 product = ((__int128) a * b) >> FP64_Shift;
+    return product > LLONG_MAX || product < LLONG_MIN;
+}
 #endif
 
 /// <summary>
@@ -1029,6 +1034,19 @@ static inline FP_LONG FP64_Pow(FP_LONG x, FP_LONG exponent) {
 
     return FP64_Exp(FP64_Mul(exponent, FP64_Log(x)));
 }
+
+#ifdef __SIZEOF_INT128__
+static inline bool FP64_PowOverflows(FP_LONG x, FP_LONG exponent) {
+    FP_LONG log_x, power;
+    if (x <= 0)
+        return false;
+    log_x = FP64_Log(x);
+    if (FP64_MulOverflows(exponent, log_x))
+        return true;
+    power = FP64_Mul(exponent, log_x);
+    return FP64_MulOverflows(power, RCP_LN2) || FP64_Mul(power, RCP_LN2) >= 31 * One;
+}
+#endif
 
 /// <summary>
 /// Calculates x to the power of the exponent.

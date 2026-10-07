@@ -8,6 +8,69 @@
 
 static void synchronous_build_lut(struct accel_curve *c);
 
+static bool mul_checked(FP_LONG a, FP_LONG b, FP_LONG *out) {
+    if (FP64_MulOverflows(a, b))
+        return false;
+    *out = FP64_Mul(a, b);
+    return true;
+}
+
+static bool div_checked(FP_LONG a, FP_LONG b, FP_LONG *out) {
+    if (FP64_DivOverflows(a, b))
+        return false;
+    *out = FP64_DivPrecise(a, b);
+    return true;
+}
+
+static bool pow_checked(FP_LONG x, FP_LONG exponent, FP_LONG *out) {
+    if (FP64_PowOverflows(x, exponent))
+        return false;
+    *out = FP64_Pow(x, exponent);
+    return true;
+}
+
+static bool power_level_x(const struct accel_curve *c, FP_LONG exponent_plus_one, FP_LONG level, FP_LONG *x) {
+    FP_LONG one_over_exponent, base, power;
+    return div_checked(FP64_1, c->exponent, &one_over_exponent) &&
+           div_checked(level, exponent_plus_one, &base) &&
+           pow_checked(base, one_over_exponent, &power) &&
+           div_checked(power, c->acceleration, x);
+}
+
+static bool power_constants(struct accel_curve *c) {
+    FP_LONG exponent_plus_one, scaled, cap_area;
+    FP_LONG offset_x = 0, power_constant = 0, cap_x = 0, gain_constant = 0;
+
+    if (__builtin_add_overflow(c->exponent, FP64_1, &exponent_plus_one))
+        return false;
+
+    if (c->midpoint != 0 &&
+        !(power_level_x(c, exponent_plus_one, c->midpoint, &offset_x) &&
+          mul_checked(c->midpoint, c->exponent, &scaled) &&
+          mul_checked(offset_x, scaled, &scaled) &&
+          div_checked(scaled, exponent_plus_one, &power_constant)))
+        return false;
+
+    if (c->use_smoothing) {
+        if (c->motivity > 0 && !power_level_x(c, exponent_plus_one, c->motivity, &cap_x))
+            return false;
+        if (!(mul_checked(c->acceleration, cap_x, &scaled) &&
+              pow_checked(scaled, c->exponent, &scaled) &&
+              mul_checked(scaled, cap_x, &scaled) &&
+              !__builtin_add_overflow(scaled, power_constant, &scaled) &&
+              mul_checked(cap_x, c->motivity, &cap_area) &&
+              !__builtin_sub_overflow(scaled, cap_area, &gain_constant)))
+            return false;
+        c->k.cap_x = cap_x;
+        c->k.cap_y = c->motivity;
+        c->k.gain_constant = gain_constant;
+    }
+
+    c->k.offset_x = offset_x;
+    c->k.power_constant = power_constant;
+    return true;
+}
+
 // Recalculate new modes constants
 void update_profile_constants(struct accel_profile *p) {
     struct accel_curve *c = &p->x;
@@ -168,51 +231,10 @@ void update_profile_constants(struct accel_profile *p) {
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
-        else if (FP64_DivPrecise(c->midpoint, FP64_Mul(c->acceleration, c->exponent)) > FP64_100) { // 100 here is completely arbitrary
-            printk("YeetMouse: Error: Invalid parameters for the 'Power' mode.\n");
+        else if (!power_constants(c)) {
+            printk("YeetMouse: Error: Acceleration mode 'Power' is not supported for an output offset or smooth cap whose constants leave the fixed-point range.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
-        }
-        else {
-            // c->k.offset_x = FP64_DivPrecise(FP64_Pow(FP64_DivPrecise(c->midpoint, FP64_Add(c->exponent, FP64_ONE)),
-            //     FP64_DivPrecise(FP64_ONE, c->exponent)), c->acceleration);
-            // c->k.power_constant = FP64_DivPrecise(FP64_Mul(c->k.offset_x, FP64_Mul(c->midpoint, c->exponent)), FP64_Add(c->exponent, FP64_ONE));
-
-            FP_LONG exponent_plus_one = FP64_Add(c->exponent, FP64_1);
-            if (c->midpoint == 0) {
-                c->k.offset_x = 0;
-                c->k.power_constant = 0;
-            } else {
-                FP_LONG one_over_exponent = FP64_DivPrecise(FP64_1, c->exponent);
-                FP_LONG base_value = FP64_DivPrecise(c->midpoint, exponent_plus_one);
-
-                FP_LONG pow_result = FP64_Pow(base_value, one_over_exponent);
-                c->k.offset_x = FP64_DivPrecise(pow_result, c->acceleration);
-
-                FP_LONG intermediate = FP64_Mul(c->k.offset_x, FP64_Mul(c->midpoint, c->exponent));
-                c->k.power_constant = FP64_DivPrecise(intermediate, exponent_plus_one);
-            }
-
-            if (c->use_smoothing) {
-                FP_LONG cap_y = c->motivity;
-                FP_LONG cap_x = FP64_FromInt(0);
-                if (cap_y > FP64_FromInt(0)) {
-                  cap_x = FP64_DivPrecise(
-                      FP64_Pow(
-                          FP64_DivPrecise(cap_y, exponent_plus_one),
-                          FP64_DivPrecise(FP64_1, c->exponent)),
-                                          c->acceleration);
-                }
-                FP_LONG constant = FP64_Mul(c->acceleration, cap_x);
-                constant = FP64_Pow(constant, c->exponent);
-                constant = FP64_Mul(constant, cap_x);
-                constant = FP64_Add(constant, c->k.power_constant);
-                constant = FP64_Sub(constant, FP64_Mul(cap_x, cap_y));
-
-                c->k.cap_x = cap_x;
-                c->k.cap_y = cap_y;
-                c->k.gain_constant = constant;
-            }
         }
     }
 

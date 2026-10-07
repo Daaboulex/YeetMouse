@@ -352,6 +352,74 @@ bool Tests::TestAccelPower(float range_min, float range_max) {
             fprintf(stderr, "Valid constants (should be invalid)\n");
             supervisor.result = false;
         }
+
+        supervisor.NextTest();
+
+        TestManager::SetAccelMode(AccelMode_Power);
+        TestManager::SetAcceleration(1.25f);
+        TestManager::SetExponent(0.15f);
+        TestManager::SetMidpoint(20.0f);
+        TestManager::SetUseSmoothing(false);
+        TestManager::UpdateModesConstants();
+        supervisor.Validate(TestManager::ValidateConstants());
+        supervisor.Validate(TestManager::ValidateFunctionGUI());
+        for (int i = 0; i < BASIC_TEST_STEPS; i++) {
+            float value = range_min + static_cast<float>(i) * (range_max - range_min) / BASIC_TEST_STEPS;
+            auto res = TestManager::AccelPower(value);
+            supervisor.Validate(IsAccelValueGood(res));
+            supervisor.Validate(IsCloseEnoughRelative(res, TestManager::EvalFloatFunc(value)));
+        }
+
+        TestManager::SetExponent(0.05f);
+        TestManager::SetMidpoint(4.0f);
+        TestManager::UpdateModesConstants();
+        supervisor.Validate(!TestManager::ValidateConstants());
+        supervisor.Validate(!TestManager::ValidateFunctionGUI());
+
+        supervisor.NextTest();
+
+        auto near = [](FP_LONG actual, double expected) {
+            return std::fabs(static_cast<double>(actual) / 4294967296.0 - expected) /
+                   std::max(std::fabs(expected), 1e-3) < 1e-4;
+        };
+        int accepted = 0, refused = 0;
+        for (float accel : {0.01f, 0.1f, 1.25f, 10.0f, 1000.0f}) {
+            for (float exponent : {0.001f, 0.01f, 0.05f, 0.15f, 0.5f, 1.0f, 2.0f, 4.0f}) {
+                for (float midpoint : {0.0f, 0.5f, 2.0f, 4.0f, 20.0f, 100.0f, 10000.0f}) {
+                    for (float motivity : {0.0f, 1.0f, 3.0f, 50.0f, 100000.0f}) {
+                        for (bool smoothing : {false, true}) {
+                            if (smoothing && midpoint >= motivity)
+                                continue;
+                            Parameters params;
+                            params.accelMode = AccelMode_Power;
+                            params.accel = accel;
+                            params.exponent = exponent;
+                            params.midpoint = midpoint;
+                            params.motivity = motivity;
+                            params.useSmoothing = smoothing;
+                            if (!PowerConstantsFit(params)) {
+                                refused++;
+                                continue;
+                            }
+                            accepted++;
+                            TestManager::ApplyParameters(params);
+                            const accel_curve &curve = TestManager::GetProfile().x;
+                            double a = accel, e = exponent, m = midpoint, cap = motivity;
+                            double offsetX = m != 0 ? std::pow(m / (e + 1), 1 / e) / a : 0;
+                            double powerConstant = offsetX * m * e / (e + 1);
+                            supervisor.Validate(curve.mode == AccelMode_Power);
+                            supervisor.Validate(near(curve.k.offset_x, offsetX) && near(curve.k.power_constant, powerConstant));
+                            if (smoothing) {
+                                double capX = cap > 0 ? std::pow(cap / (e + 1), 1 / e) / a : 0;
+                                double gain = std::pow(a * capX, e) * capX + powerConstant - capX * cap;
+                                supervisor.Validate(near(curve.k.cap_x, capX) && near(curve.k.gain_constant, gain));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        supervisor.Validate(accepted > 100 && refused > 100);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s, in Power mode\n", ex.what());
         supervisor.result = false;
@@ -1375,6 +1443,19 @@ bool Tests::TestRawAccelParity() {
         disabled.disable = true;
         supervisor.Validate(refused(owner, disabled));
         supervisor.Validate(!refused(owner, device));
+
+        supervisor.NextTest();
+        RawAccel::Profile large_offset = owner;
+        large_offset.x.gain = true;
+        large_offset.x.cap = {0, 0};
+        large_offset.x.exponentPower = 0.15;
+        large_offset.x.scale = 1;
+        large_offset.x.outputOffset = 20;
+        supervisor.Validate(!refused(large_offset, device) && vectors_match(large_offset, device));
+        RawAccel::Profile overflowing_offset = large_offset;
+        overflowing_offset.x.exponentPower = 0.05;
+        overflowing_offset.x.outputOffset = 4;
+        supervisor.Validate(refused(overflowing_offset, device));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
         supervisor.result = false;
