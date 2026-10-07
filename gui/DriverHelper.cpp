@@ -347,7 +347,7 @@ namespace DriverHelper {
             }
         }
 
-        params.useAnisotropy = params.ratioYX != params.sens;
+        params.useAnisotropy = params.ratioYX != 1;
 
         return res;
     }
