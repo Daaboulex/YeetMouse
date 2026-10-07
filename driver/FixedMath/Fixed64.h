@@ -845,7 +845,7 @@ static inline FP_LONG FP64_RcpFastest(FP_LONG x) {
 /// </summary>
 static inline FP_LONG FP64_Exp2(FP_LONG x) {
     // Handle values that would under or overflow.
-    if (x >= 32 * One) return MaxValue;
+    if (x >= 31 * One) return MaxValue;
     if (x <= -32 * One) return 0;
 
     // Compute exp2 for fractional part.
@@ -862,7 +862,7 @@ static inline FP_LONG FP64_Exp2(FP_LONG x) {
 /// </summary>
 static inline FP_LONG FP64_Exp2Fast(FP_LONG x) {
     // Handle values that would under or overflow.
-    if (x >= 32 * One) return MaxValue;
+    if (x >= 31 * One) return MaxValue;
     if (x <= -32 * One) return 0;
 
     // Compute exp2 for fractional part.
@@ -879,7 +879,7 @@ static inline FP_LONG FP64_Exp2Fast(FP_LONG x) {
 /// </summary>
 static inline FP_LONG Exp2Fastest(FP_LONG x) {
     // Handle values that would under or overflow.
-    if (x >= 32 * One) return MaxValue;
+    if (x >= 31 * One) return MaxValue;
     if (x <= -32 * One) return 0;
 
     // Compute exp2 for fractional part.
@@ -893,16 +893,22 @@ static inline FP_LONG Exp2Fastest(FP_LONG x) {
 
 static inline FP_LONG FP64_Exp(FP_LONG x) {
     // e^x == 2^(x / ln(2))
+    if (x >= 22 * One) return MaxValue;
+    if (x <= -23 * One) return 0;
     return FP64_Exp2(FP64_Mul(x, RCP_LN2));
 }
 
 static inline FP_LONG FP64_ExpFast(FP_LONG x) {
     // e^x == 2^(x / ln(2))
+    if (x >= 22 * One) return MaxValue;
+    if (x <= -23 * One) return 0;
     return FP64_Exp2Fast(FP64_Mul(x, RCP_LN2));
 }
 
 static inline FP_LONG FP64_ExpFastest(FP_LONG x) {
     // e^x == 2^(x / ln(2))
+    if (x >= 22 * One) return MaxValue;
+    if (x <= -23 * One) return 0;
     return Exp2Fastest(FP64_Mul(x, RCP_LN2));
 }
 
@@ -1420,8 +1426,9 @@ static inline FP_LONG FP64_AtanFastest(FP_LONG x) {
 
 static inline FP_LONG FP64_Tanh(FP_LONG x) {
     // tanh(x) = 1 - 2 / (1 + exp(2x))
-    FP_LONG two_x = x << 1;
-    // This is safe for big x values because FP64_Exp 'clamps'
+    if (x >= 10 * One) return One;
+    if (x <= -10 * One) return -One;
+    FP_LONG two_x = x * 2;
     FP_LONG denom = FP64_Add(One, FP64_Exp(two_x));
     return FP64_Sub(
         One,

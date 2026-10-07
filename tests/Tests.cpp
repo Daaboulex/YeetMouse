@@ -1083,6 +1083,16 @@ bool Tests::TestFixedPointArithmetic() {
 
             //printf("%f, %f,%f,%f\n", x, FP64_ToFloat(val), std::tanh(x), FP64_ToFloat(val) - std::tanh(x));
         }
+        supervisor.Validate(FP64_Tanh(FP64_FromInt(1 << 30)) == One && FP64_Tanh(-FP64_FromInt(1 << 30)) == -One);
+        supervisor.Validate(FP64_Tanh(FP64_FromDouble(10.8)) == One && FP64_Tanh(FP64_FromDouble(-10.8)) == -One);
+        supervisor.Validate(FP64_Exp2(FP64_FromDouble(31.5)) == MaxValue && FP64_Exp2Fast(FP64_FromDouble(31.5)) == MaxValue &&
+                            Exp2Fastest(FP64_FromDouble(31.5)) == MaxValue);
+        supervisor.Validate(IsCloseEnoughRelative(FP64_Exp2(FP64_FromDouble(30.5)), std::exp2(30.5f), 1e-4f));
+        for (FP_LONG (*exp)(FP_LONG) : {FP64_Exp, FP64_ExpFast, FP64_ExpFastest}) {
+            supervisor.Validate(exp(FP64_FromDouble(21.6)) == MaxValue && exp(FP64_FromInt(2000000000)) == MaxValue);
+            supervisor.Validate(exp(FP64_FromInt(-2000000000)) == 0 && exp(FP64_FromDouble(-30)) == 0);
+            supervisor.Validate(IsCloseEnoughRelative(exp(FP64_FromDouble(21.4)), std::exp(21.4f), 1e-3f));
+        }
 
         supervisor.NextTest();
 
