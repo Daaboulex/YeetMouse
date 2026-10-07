@@ -13,7 +13,7 @@
 
 #define MAX_LUT_ARRAY_SIZE 128  // THIS NEEDS TO BE THE SAME AS IN THE DRIVER CODE
 #define MAX_LUT_BUF_LEN 4096
-#define LUT_EXPORT_PRECISION 5 // Decimal points precision for exporting a LUT
+#define DRIVER_DECIMALS 9
 
 #define DEG2RAD (M_PI / 180.0)
 

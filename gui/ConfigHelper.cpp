@@ -1,5 +1,7 @@
 #include "ConfigHelper.h"
 #include <fstream>
+#include <iomanip>
+#include <limits>
 #include <optional>
 #include <unistd.h>
 
@@ -49,6 +51,7 @@ static char *SaveFile() {
 namespace ConfigHelper {
     std::string ExportPlainText(Parameters params, bool save_to_file) {
         std::stringstream res_ss;
+        res_ss << std::setprecision(std::numeric_limits<float>::max_digits10);
 
         try {
             res_ss << "sens=" << params.sens << std::endl;
@@ -96,6 +99,7 @@ namespace ConfigHelper {
     std::string ExportConfig(Parameters params, bool save_to_file) {
         try {
             std::stringstream res_ss;
+            res_ss << std::setprecision(std::numeric_limits<float>::max_digits10);
 
             res_ss << "#define SENSITIVITY " << params.sens << std::endl;
             res_ss << "#define RATIO_YX " << (params.useAnisotropy ? params.ratioYX : 1) << std::endl;

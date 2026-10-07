@@ -2,6 +2,8 @@
 #include <FixedMath/Fixed64.h>
 #include <fstream>
 #include <filesystem>
+#include <iomanip>
+#include <type_traits>
 #include <iostream>
 #include <cstring>
 #include <sstream>
@@ -59,6 +61,8 @@ bool SetParameterTy(const std::string &param_name, Ty value) {
         if (!file.is_open() || file.fail())
             return false;
 
+        if constexpr (std::is_floating_point_v<Ty>)
+            file << std::fixed << std::setprecision(DRIVER_DECIMALS);
         file << value;
         file.close();
         return !file.fail();
@@ -354,7 +358,7 @@ namespace DriverHelper {
 
     std::string EncodeLutData(double *data_x, double *data_y, size_t size, bool strict_format) {
         std::stringstream res;
-        res << std::setprecision(LUT_EXPORT_PRECISION);
+        res << std::fixed << std::setprecision(DRIVER_DECIMALS);
 
         for (int i = 0; i < size * 2; i++) {
             res << (i % 2 == 0 ? data_x[i / 2] : data_y[i / 2]) << ((strict_format && i % 2 == 0) ? "," : ";");
