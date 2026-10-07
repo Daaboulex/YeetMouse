@@ -658,9 +658,13 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
     *delta_y_out = delta_y;
 }
 
+void accel_report(struct accel_state *s, long long now_ns) {
+    s->last_report_ns = now_ns;
+}
+
 FP_LONG accel_elapsed(struct accel_state *s, long long now_ns) {
     long long elapsed = now_ns - s->last_report_ns;
-    s->last_report_ns = now_ns;
+    accel_report(s, now_ns);
     if (elapsed < 0)
         elapsed = 0;
     if (elapsed > MAX_ELAPSED_NS)

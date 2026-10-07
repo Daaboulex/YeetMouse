@@ -1,7 +1,7 @@
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include "accel.h"
 #include "util.h"
-
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/hid.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -21,6 +21,7 @@
 struct mouse_state {
     int x;
     int y;
+    struct accel_state accel;
 };
 
 #if __cleanup_events
@@ -52,11 +53,13 @@ static void driver_events(struct input_handle *handle, const struct input_value 
                     break;
                 default: break;
             }
-        } else if (v->type == EV_SYN && v->code == SYN_REPORT &&
-                   (state->x != NONE_EVENT_VALUE || state->y != NONE_EVENT_VALUE)) {
-            /* If we find an EV_SYN event, and we've seen x/y values, we store the pointer and apply acceleration next */
-            v_syn = v;
-            break;
+        } else if (v->type == EV_SYN && v->code == SYN_REPORT) {
+            if (state->x != NONE_EVENT_VALUE || state->y != NONE_EVENT_VALUE) {
+                /* If we find an EV_SYN event, and we've seen x/y values, we store the pointer and apply acceleration next */
+                v_syn = v;
+                break;
+            }
+            accel_report(&state->accel, ktime_get());
         }
     }
 
@@ -69,7 +72,7 @@ static void driver_events(struct input_handle *handle, const struct input_value 
     if (x == NONE_EVENT_VALUE && y == NONE_EVENT_VALUE)
         goto unchanged_return;
 
-    error = accelerate(&x, &y);
+    error = accelerate(&state->accel, &x, &y);
     /* Reset state */
     state->x = NONE_EVENT_VALUE;
     state->y = NONE_EVENT_VALUE;

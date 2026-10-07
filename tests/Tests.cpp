@@ -1146,6 +1146,10 @@ bool Tests::TestTimingAndRounding() {
         supervisor.Validate(accel_elapsed(&state, 3005750000ll) == 0);
         supervisor.Validate(accel_elapsed(&state, 3005750000ll + 1000000000000000ll) == FP64_FromInt(1000000000));
         state = {};
+        accel_elapsed(&state, 1000000);
+        accel_report(&state, 7000000);
+        supervisor.Validate(accel_elapsed(&state, 7250000) == FP64_FromDouble(0.25));
+        state = {};
         supervisor.Validate(accel_elapsed(&state, LLONG_MAX) == FP64_FromInt(INT_MAX));
 
         std::mt19937_64 rng(20261008);

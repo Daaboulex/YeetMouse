@@ -121,6 +121,8 @@ FP_LONG accel_curve_eval(const struct accel_curve *c, FP_LONG speed);
 #define NS_PER_MS 1000000ll
 #define MAX_ELAPSED_NS ((long long) INT_MAX * NS_PER_MS)
 
+void accel_report(struct accel_state *s, long long now_ns);
+
 FP_LONG accel_elapsed(struct accel_state *s, long long now_ns);
 
 FP_LONG accel_time(const struct accel_profile *p, FP_LONG ms);

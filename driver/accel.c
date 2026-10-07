@@ -125,8 +125,6 @@ static struct accel_profile g_profile = {
     .truncate_carry = TRUNCATE_CARRY,
 };
 
-static struct accel_state g_state;
-
 static ktime_t g_next_update = 0;
 INLINE void update_params(ktime_t now)
 {
@@ -227,7 +225,7 @@ INLINE void update_params(ktime_t now)
 }
 
 // Acceleration happens here
-int accelerate(int *x, int *y)
+int accelerate(struct accel_state *state, int *x, int *y)
 {
     FP_LONG delta_x, delta_y, ms;
     ktime_t now;
@@ -237,7 +235,7 @@ int accelerate(int *x, int *y)
     delta_y = FP64_FromInt(*y);
 
     now = ktime_get();
-    ms = accel_elapsed(&g_state, now);
+    ms = accel_elapsed(state, now);
 
     g_profile.x.use_smoothing = g_UseSmoothing;
 
@@ -248,7 +246,7 @@ int accelerate(int *x, int *y)
 
     accel_packet(&g_profile, &delta_x, &delta_y, ms);
 
-    accel_round(&g_profile, &g_state, delta_x, delta_y, x, y);
+    accel_round(&g_profile, state, delta_x, delta_y, x, y);
 
     // Used to very roughly estimate the performance, and 0.1% lows
     // ktime_t iter_time = ktime_sub(ktime_get(), now);
