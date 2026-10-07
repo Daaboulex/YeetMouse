@@ -449,7 +449,7 @@ FP_LONG accel_motivity(const struct accel_curve *c, FP_LONG speed) {
 
     // FIXED-POINT:
     FP_LONG exp = FP64_ExpFast(FP64_Sub(c->midpoint, speed));
-    speed = FP64_Add(FP64_1, FP64_DivPrecise(c->k.accel_sub_1, FP64_Add(FP64_1, exp)));
+    speed = FP64_Add(FP64_1, FP64_DivPrecise(c->k.accel_sub_1, FP64_AddSaturating(FP64_1, exp)));
     return speed;
 }
 
@@ -494,7 +494,7 @@ FP_LONG accel_jump(const struct accel_curve *c, FP_LONG speed) {
     }
     else {
         if (c->k.r != 0)
-            speed = FP64_Add(FP64_DivPrecise(c->k.accel_sub_1, FP64_Add(FP64_1, D)), FP64_1);
+            speed = FP64_Add(FP64_DivPrecise(c->k.accel_sub_1, FP64_AddSaturating(FP64_1, D)), FP64_1);
         else if (speed <= c->midpoint)
             speed = FP64_1;
         else

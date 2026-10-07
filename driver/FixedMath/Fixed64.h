@@ -93,7 +93,7 @@ static const FP_INT RCP_HALF_PI = 683565276; // 1.0 / (4.0 * 0.5 * Math.PI);  //
 /// Converts an integer to a fixed-point value.
 /// </summary>
 static inline FP_LONG FP64_FromInt(FP_INT v) {
-    return (FP_LONG) v << FP64_Shift;
+    return (FP_LONG) v * One;
 }
 
 /// <summary>
@@ -229,6 +229,13 @@ static inline FP_INT FP64_Sign(FP_LONG x) {
 /// </summary>
 static inline FP_LONG FP64_Add(FP_LONG a, FP_LONG b) {
     return a + b;
+}
+
+static inline FP_LONG FP64_AddSaturating(FP_LONG a, FP_LONG b) {
+    FP_LONG sum;
+    if (__builtin_add_overflow(a, b, &sum))
+        return a < 0 ? MinValue : MaxValue;
+    return sum;
 }
 
 /// <summary>
@@ -1086,9 +1093,8 @@ static inline FP_INT FP64_UnitSin(FP_INT z) {
     // See: http://www.coranac.com/2009/07/sines/
 
     // Handle quadrants 1 and 2 by mirroring the [1, 3] range to [-1, 1] (by calculating 2 - z).
-    // The if condition uses the fact that for the quadrants of interest are 0b01 and 0b10 (top two bits are different).
-    if ((z ^ (z << 1)) < 0)
-        z = (1 << 31) - z;
+    if (z >= (1 << 30) || z < -(1 << 30))
+        z = (FP_INT) ((z < 0 ? -(1ll << 31) : (1ll << 31)) - z);
 
     // Now z is in range [-1, 1].
     //const FP_INT ONE = (1 << 30);
@@ -1106,9 +1112,8 @@ static inline FP_INT FP64_UnitSinFast(FP_INT z) {
     // See: http://www.coranac.com/2009/07/sines/
 
     // Handle quadrants 1 and 2 by mirroring the [1, 3] range to [-1, 1] (by calculating 2 - z).
-    // The if condition uses the fact that for the quadrants of interest are 0b01 and 0b10 (top two bits are different).
-    if ((z ^ (z << 1)) < 0)
-        z = (1 << 31) - z;
+    if (z >= (1 << 30) || z < -(1 << 30))
+        z = (FP_INT) ((z < 0 ? -(1ll << 31) : (1ll << 31)) - z);
 
     // Now z is in range [-1, 1].
     //const FP_INT ONE = (1 << 30);
@@ -1126,9 +1131,8 @@ static inline FP_INT FP64_UnitSinFastest(FP_INT z) {
     // See: http://www.coranac.com/2009/07/sines/
 
     // Handle quadrants 1 and 2 by mirroring the [1, 3] range to [-1, 1] (by calculating 2 - z).
-    // The if condition uses the fact that for the quadrants of interest are 0b01 and 0b10 (top two bits are different).
-    if ((z ^ (z << 1)) < 0)
-        z = (1 << 31) - z;
+    if (z >= (1 << 30) || z < -(1 << 30))
+        z = (FP_INT) ((z < 0 ? -(1ll << 31) : (1ll << 31)) - z);
 
     // Now z is in range [-1, 1].
     //const FP_INT ONE = (1 << 30);
@@ -1488,7 +1492,7 @@ static inline FP_LONG FP64_Scalbn(FP_LONG x, int n)
                 return MinValue;
             }
         }
-        return (FP_LONG)(x << n);
+        return x * ((FP_LONG) 1 << n);
     } else {
         // n < 0: truncation toward zero
         int r = -n;

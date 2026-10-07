@@ -58,7 +58,7 @@ add_executable(YeetMouseTests main.cpp
 
 target_compile_definitions(YeetMouseTests PRIVATE TEST_ENV FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
-target_compile_options(YeetMouseTests PRIVATE -fwrapv -funsigned-char)
+target_compile_options(YeetMouseTests PRIVATE -funsigned-char)
 
 set_source_files_properties(RawAccelOracle.cpp PROPERTIES
         COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:GNU>:-fpermissive>")

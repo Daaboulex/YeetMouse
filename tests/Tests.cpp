@@ -579,6 +579,20 @@ bool Tests::TestAccelMotivity(float range_min, float range_max) {
             supervisor.Validate(IsAccelValueGood(res));
             supervisor.Validate(IsCloseEnoughRelative(res, TestManager::EvalFloatFunc(value)));
         }
+
+        supervisor.NextTest();
+
+        TestManager::SetAccelMode(AccelMode_Motivity);
+        TestManager::SetAcceleration(4.f);
+        TestManager::SetMidpoint(30.f);
+        TestManager::UpdateModesConstants();
+
+        for (float value : {0.01f, 1.f, 8.f, 25.f, 30.f, 40.f}) {
+            auto res = TestManager::AccelMotivity(value);
+
+            supervisor.Validate(IsAccelValueGood(res));
+            supervisor.Validate(IsCloseEnoughRelative(res, TestManager::EvalFloatFunc(value)));
+        }
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s, in Motivity mode\n", ex.what());
         supervisor.result = false;
@@ -1155,7 +1169,7 @@ bool Tests::TestFixedPointArithmetic() {
                 FP_LONG a = static_cast<FP_LONG>(rng()) >> (rng() % 63);
                 check_division(a, b);
 
-                __int128 boundary = (static_cast<__int128>(INT64_MAX) * (b < 0 ? -b : b)) >> 32;
+                __int128 boundary = (static_cast<__int128>(INT64_MAX) * (b < 0 ? -static_cast<__int128>(b) : b)) >> 32;
                 for (int delta = -2; delta <= 2; delta++) {
                     __int128 near = boundary + delta;
                     if (near <= INT64_MAX && near >= INT64_MIN) {
