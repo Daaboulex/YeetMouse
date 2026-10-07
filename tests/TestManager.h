@@ -3,6 +3,7 @@
 
 #include "shared_definitions.h"
 #include "driver/accel_modes.h"
+#include "gui/DriverHelper.h"
 #include "gui/FunctionHelper.h"
 
 ///
@@ -44,6 +45,12 @@ public:
 
     static accel_curve_constants &GetModesConstants();
     static const accel_profile &GetProfile();
+
+    static void ApplyParameters(const Parameters &params);
+
+    static void Step(int dx, int dy, double measuredMs, int &outX, int &outY);
+
+    static void SetCarry(double x, double y);
     static void UpdateModesConstants();
     static bool ValidateConstants();
     static bool ValidateFunctionGUI();

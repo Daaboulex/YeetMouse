@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+struct Parameters;
+
 namespace RawAccel {
     enum class Mode { Classic, Jump, Natural, Synchronous, Power, Lut, NoAccel };
 
@@ -96,6 +98,11 @@ namespace RawAccel {
     Settings Read(std::istream &json);
 
     std::string Write(const Settings &settings);
+
+    inline constexpr double YeetMouseDpi = 800;
+    inline constexpr double SpeedScale = 1000 / YeetMouseDpi;
+
+    Parameters ToParameters(const Profile &profile, const DeviceConfig &device);
 }
 
 #endif //GUI_RAWACCEL_H

@@ -19,6 +19,8 @@ public:
 
     Output Packet(int dx, int dy, double measuredMs);
 
+    void Carry(double &x, double &y) const;
+
 private:
     struct State;
     std::unique_ptr<State> state;

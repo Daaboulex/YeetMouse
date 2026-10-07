@@ -216,6 +216,50 @@ const accel_profile &TestManager::GetProfile() {
     return profile;
 }
 
+static accel_state state{};
+
+void TestManager::ApplyParameters(const Parameters &params) {
+    profile.pre_scale = FP64_FromFloat(params.preScale);
+    profile.sensitivity = FP64_FromFloat(params.sens);
+    profile.ratio_yx = FP64_FromFloat(params.useAnisotropy ? params.ratioYX : 1);
+    profile.output_cap = FP64_FromFloat(params.outCap);
+    profile.input_cap = FP64_FromFloat(params.inCap);
+    profile.offset = FP64_FromFloat(params.offset);
+    profile.rotation_angle = FP64_FromDouble(params.rotation * DEG2RAD);
+    profile.angle_snap_angle = FP64_FromDouble(params.asAngle * DEG2RAD);
+    profile.angle_snap_threshold = FP64_FromDouble(params.asThreshold * DEG2RAD);
+    profile.min_time = FP64_FromFloat(params.minTime);
+    profile.max_time = FP64_FromFloat(params.maxTime);
+    profile.fixed_time = params.fixedTime;
+    profile.truncate_carry = params.truncateCarry;
+    profile.x.mode = params.accelMode;
+    profile.x.use_smoothing = params.useSmoothing;
+    profile.x.acceleration = FP64_FromFloat(params.accel);
+    profile.x.exponent = FP64_FromFloat(params.exponent);
+    profile.x.midpoint = FP64_FromFloat(params.midpoint);
+    profile.x.motivity = FP64_FromFloat(params.motivity);
+    profile.x.lut_size = params.lutSize;
+    for (int i = 0; i < params.lutSize && i < MAX_LUT_ARRAY_SIZE; i++) {
+        profile.x.lut_x[i] = FP64_FromDouble(params.lutDataX[i]);
+        profile.x.lut_y[i] = FP64_FromDouble(params.lutDataY[i]);
+    }
+    update_profile_constants(&profile);
+    state = {};
+}
+
+void TestManager::SetCarry(double x, double y) {
+    state.carry_x = FP64_FromDouble(x);
+    state.carry_y = FP64_FromDouble(y);
+}
+
+void TestManager::Step(int dx, int dy, double measuredMs, int &outX, int &outY) {
+    FP_LONG ms = accel_time(&profile, FP64_FromDouble(measuredMs));
+    FP_LONG x = FP64_FromInt(dx);
+    FP_LONG y = FP64_FromInt(dy);
+    accel_packet(&profile, &x, &y, ms);
+    accel_round(&profile, &state, x, y, &outX, &outY);
+}
+
 void TestManager::UpdateModesConstants() {
     update_profile_constants(&profile);
     function.PreCacheConstants();

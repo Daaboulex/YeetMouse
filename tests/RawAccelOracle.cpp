@@ -113,3 +113,8 @@ RawAccelOracle::Output RawAccelOracle::Packet(int dx, int dy, double measuredMs)
     }
     return out;
 }
+
+void RawAccelOracle::Carry(double &x, double &y) const {
+    x = state->carryX;
+    y = state->carryY;
+}

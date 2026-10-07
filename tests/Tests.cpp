@@ -1,5 +1,6 @@
 #include "Tests.h"
 
+#include <algorithm>
 #include <array>
 #include <climits>
 #include <cmath>
@@ -1217,45 +1218,138 @@ bool Tests::TestRawAccelSettings() {
 bool Tests::TestRawAccelParity() {
     TestSupervisor supervisor{"Raw Accel Parity"};
 
-    try {
-        supervisor.NextTest();
+    auto close = [](FP_LONG actual, double expected) {
+        double value = FP64_ToFloat(actual);
+        double scale = std::max(std::fabs(expected), 1e-6);
+        return std::fabs(value - expected) / scale < 1e-4;
+    };
 
-        std::ifstream file(FIXTURES_DIR "/rawaccel/power-velocity-output-cap.json");
-        RawAccel::Settings settings = RawAccel::Read(file);
-        const RawAccel::Profile &profile = settings.profiles.at(0);
-        const RawAccel::DeviceConfig &device = settings.devices.at(0).config;
-
-        TestManager::SetAccelMode(AccelMode_Power);
-        TestManager::SetPreScale(static_cast<float>(800.0 / device.dpi));
-        TestManager::SetAcceleration(static_cast<float>(profile.x.scale * 1000.0 / 800.0));
-        TestManager::SetExponent(static_cast<float>(profile.x.exponentPower));
-        TestManager::SetMidpoint(0.f);
-        TestManager::SetUseSmoothing(false);
-        TestManager::SetSensitivity(static_cast<float>(profile.outputDpi / 800.0));
-        TestManager::SetSensitivityY(1.f);
-        TestManager::SetOutCap(static_cast<float>(profile.x.cap.y * profile.outputDpi / 800.0));
-        TestManager::SetInCap(0.f);
-        TestManager::SetOffset(0.f);
-        TestManager::SetRotationAngle(0.f);
-        TestManager::SetAngleSnap_Angle(0.f);
-        TestManager::SetAngleSnap_Threshold(0.f);
-        TestManager::UpdateModesConstants();
-
+    auto vectors_match = [&](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device) {
+        TestManager::ApplyParameters(RawAccel::ToParameters(profile, device));
         RawAccelOracle oracle(profile, device);
-        for (int dx = -300; dx <= 300; dx += 3) {
-            for (int dy = -300; dy <= 300; dy += 7) {
+        bool good = true;
+        for (int dx = -300; dx <= 300; dx += 7) {
+            for (int dy = -300; dy <= 300; dy += 11) {
                 if (dx == 0 && dy == 0)
                     continue;
                 RawAccelOracle::Output expected = oracle.Packet(dx, dy, 1.0);
                 FP_LONG x = FP64_FromInt(dx);
                 FP_LONG y = FP64_FromInt(dy);
                 accel_packet(&TestManager::GetProfile(), &x, &y, FP64_1);
-                if (dx != 0)
-                    supervisor.Validate(IsCloseEnoughRelative(x, static_cast<float>(expected.x), 1e-4f));
-                if (dy != 0)
-                    supervisor.Validate(IsCloseEnoughRelative(y, static_cast<float>(expected.y), 1e-4f));
+                good &= close(x, expected.x) && close(y, expected.y);
             }
         }
+        return good;
+    };
+
+    auto counts_match = [&](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device, unsigned seed) {
+        const double intervals[] = {0.05, 0.3, 0.9, 1.0, 1.4, 2.0, 8.0, 30.0, 150.0};
+        bool good = true;
+
+        for (bool synchronised : {false, true}) {
+            TestManager::ApplyParameters(RawAccel::ToParameters(profile, device));
+            RawAccelOracle oracle(profile, device);
+            std::mt19937 rng(seed);
+            long sum_x = 0, sum_y = 0, raw_x = 0, raw_y = 0;
+            for (int i = 0; i < 20000; i++) {
+                int dx = static_cast<int>(rng() % 161) - 80;
+                int dy = static_cast<int>(rng() % 161) - 80;
+                if (dx == 0 && dy == 0)
+                    continue;
+                double ms = intervals[rng() % (sizeof(intervals) / sizeof(intervals[0]))];
+                double carry_x = 0, carry_y = 0;
+                oracle.Carry(carry_x, carry_y);
+                if (synchronised)
+                    TestManager::SetCarry(carry_x, carry_y);
+                RawAccelOracle::Output expected = oracle.Packet(dx, dy, ms);
+                int out_x = 0, out_y = 0;
+                TestManager::Step(dx, dy, ms, out_x, out_y);
+                if (synchronised) {
+                    auto near_integer = [](double value) { return std::fabs(value - std::round(value)) < 1e-3; };
+                    good &= out_x == expected.countsX || near_integer(expected.x + carry_x);
+                    good &= out_y == expected.countsY || near_integer(expected.y + carry_y);
+                } else {
+                    sum_x += out_x;
+                    sum_y += out_y;
+                    raw_x += expected.countsX;
+                    raw_y += expected.countsY;
+                    good &= std::labs(sum_x - raw_x) <= 1 && std::labs(sum_y - raw_y) <= 1;
+                }
+            }
+        }
+        return good;
+    };
+
+    auto refused = [](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device) {
+        try {
+            RawAccel::ToParameters(profile, device);
+        } catch (const RawAccel::Refused &) {
+            return true;
+        }
+        return false;
+    };
+
+    try {
+        std::ifstream file(FIXTURES_DIR "/rawaccel/power-velocity-output-cap.json");
+        RawAccel::Settings settings = RawAccel::Read(file);
+        const RawAccel::Profile owner = settings.profiles.at(0);
+        const RawAccel::DeviceConfig device = settings.devices.at(0).config;
+
+        supervisor.NextTest();
+        supervisor.Validate(vectors_match(owner, device));
+
+        supervisor.NextTest();
+        RawAccel::DeviceConfig locked = device;
+        locked.pollTimeLock = true;
+        RawAccel::DeviceConfig automatic = device;
+        automatic.pollingRate = 0;
+        RawAccel::DeviceConfig short_max = device;
+        short_max.maximumTime = 30;
+        supervisor.Validate(counts_match(owner, device, 1));
+        supervisor.Validate(counts_match(owner, locked, 2));
+        supervisor.Validate(counts_match(owner, automatic, 3));
+        supervisor.Validate(counts_match(owner, short_max, 4));
+
+        supervisor.NextTest();
+        int converted = 0;
+        for (bool gain : {false, true}) {
+            for (RawAccel::CapMode cap_mode : {RawAccel::CapMode::Output, RawAccel::CapMode::Input, RawAccel::CapMode::InOut}) {
+                for (double offset : {0.0, 0.5}) {
+                    for (double exponent : {0.05, 0.15, 0.4}) {
+                        for (double scale : {0.5, 1.0, 2.0}) {
+                            RawAccel::Profile profile = owner;
+                            profile.x.gain = gain;
+                            profile.x.capMode = cap_mode;
+                            profile.x.outputOffset = offset;
+                            profile.x.exponentPower = exponent;
+                            profile.x.scale = scale;
+                            profile.x.cap = {10, 2};
+                            bool refused_here = refused(profile, device);
+                            if (!refused_here) {
+                                converted++;
+                                supervisor.Validate(vectors_match(profile, device));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        supervisor.Validate(converted > 60);
+
+        supervisor.NextTest();
+        RawAccel::Profile classic = owner;
+        classic.x.mode = RawAccel::Mode::Classic;
+        supervisor.Validate(refused(classic, device));
+        RawAccel::Profile stretched = owner;
+        stretched.domain = {1, 2};
+        supervisor.Validate(refused(stretched, device));
+        RawAccel::Profile anisotropic = owner;
+        anisotropic.ratioYX = 2;
+        supervisor.Validate(refused(anisotropic, device));
+        RawAccel::DeviceConfig disabled = device;
+        disabled.disable = true;
+        supervisor.Validate(refused(owner, disabled));
+        supervisor.Validate(!refused(owner, device));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
         supervisor.result = false;

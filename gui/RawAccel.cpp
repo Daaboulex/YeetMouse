@@ -3,6 +3,8 @@
 #include <cmath>
 #include <nlohmann/json.hpp>
 
+#include "DriverHelper.h"
+
 namespace RawAccel {
     namespace {
         using nlohmann::json;
@@ -300,5 +302,134 @@ namespace RawAccel {
             root["devices"].push_back(out);
         }
         return root.dump(2) + "\n";
+    }
+}
+
+namespace RawAccel {
+    namespace {
+        void Require(bool supported, const std::string &what) {
+            if (!supported)
+                throw Refused(what + " has no exact YeetMouse equivalent yet");
+        }
+
+        double PowerScale(const AccelArgs &args) {
+            double n = args.exponentPower;
+            if (args.capMode != CapMode::InOut)
+                return args.scale;
+            if (args.gain)
+                return std::pow(args.cap.y / (n + 1), 1 / n) / args.cap.x;
+            return std::pow(args.cap.y, 1 / n) / args.cap.x;
+        }
+
+        void MapPower(const AccelArgs &args, const Profile &profile, Parameters &out) {
+            double n = args.exponentPower;
+            if (!(n > 0) || !(args.scale > 0) || args.outputOffset < 0)
+                throw Refused("power needs a positive exponent and scale and a non-negative output offset");
+            if (args.capMode == CapMode::InOut && (!(args.cap.x > 0) || !(args.cap.y > 0)))
+                throw Refused("power with cap mode in_out needs a positive cap point");
+
+            double scale = PowerScale(args);
+            bool legacyInOut = !args.gain && args.capMode == CapMode::InOut;
+            double offset = legacyInOut ? 0 : args.outputOffset;
+            double offsetX = offset > 0 ? std::pow(offset / (n + 1), 1 / n) / scale : 0;
+            double constant = offsetX * offset * n / (n + 1);
+            auto base = [&](double x) {
+                return x <= offsetX ? offset : std::pow(scale * x, n) + constant / x;
+            };
+
+            out.accelMode = AccelMode_Power;
+            out.accel = static_cast<float>(scale * SpeedScale);
+            out.exponent = static_cast<float>(n);
+            out.midpoint = static_cast<float>(offset);
+            out.useSmoothing = false;
+            out.motivity = 0;
+
+            if (args.gain) {
+                double capY = 0;
+                if (args.capMode == CapMode::InOut)
+                    capY = args.cap.y;
+                else if (args.capMode == CapMode::Input && args.cap.x > 0) {
+                    if (args.cap.x <= offsetX)
+                        throw Refused("a power gain cap at or below the output offset point");
+                    capY = (n + 1) * std::pow(args.cap.x * scale, n);
+                } else if (args.capMode == CapMode::Output && args.cap.y > 0)
+                    capY = args.cap.y;
+                if (capY > 0) {
+                    if (offset >= capY)
+                        throw Refused("a power gain cap at or below the output offset");
+                    out.useSmoothing = true;
+                    out.motivity = static_cast<float>(capY);
+                }
+            } else {
+                double cap = 0;
+                if (args.capMode == CapMode::InOut)
+                    cap = args.cap.y;
+                else if (args.capMode == CapMode::Input && args.cap.x > 0)
+                    cap = base(args.cap.x);
+                else if (args.capMode == CapMode::Output && args.cap.y > 0)
+                    cap = args.cap.y;
+                if (cap > 0) {
+                    Require(profile.ratioYX == 1, "a Y/X ratio together with a power velocity cap");
+                    out.outCap = static_cast<float>(cap * profile.outputDpi / YeetMouseDpi);
+                }
+            }
+
+            if (offset > 0 && offset / (scale * SpeedScale * n) > 100)
+                throw Refused("this power output offset, which YeetMouse's power validation (offset over "
+                              "acceleration times exponent above 100) refuses");
+        }
+    }
+
+    Parameters ToParameters(const Profile &profile, const DeviceConfig &device) {
+        Require(!device.disable, "a disabled device");
+        Require(profile.domain.x == 1 && profile.domain.y == 1, "the domain stretch");
+        Require(profile.range.x == 1 && profile.range.y == 1, "the range stretch");
+        Require(profile.speed.whole, "by-component mode");
+        Require(profile.speed.lpNorm == 2, "an lp norm other than 2");
+        Require(profile.speed.inputHalfLife == 0 && profile.speed.scaleHalfLife == 0 &&
+                profile.speed.outputHalfLife == 0, "input, scale or output smoothing");
+        Require(profile.ratioLR == 1 && profile.ratioUD == 1, "the L/R and U/D ratios");
+        Require(profile.snap == 0, "Raw Accel angle snapping");
+        Require(profile.speedMax == 0, "the Raw Accel input speed cap");
+        if (!(profile.outputDpi > 0))
+            throw Refused("an output DPI that is not positive");
+        if (device.dpi < 0 || device.pollingRate < 0 || !(device.maximumTime > 0) || !(device.minimumTime > 0))
+            throw Refused("device timing or DPI out of range");
+
+        Parameters out;
+        double dpi = device.dpi > 0 ? device.dpi : 1000;
+        out.preScale = static_cast<float>(YeetMouseDpi / dpi);
+        out.sens = static_cast<float>(profile.outputDpi / YeetMouseDpi);
+        out.ratioYX = static_cast<float>(profile.ratioYX);
+        out.useAnisotropy = profile.ratioYX != 1;
+        out.outCap = 0;
+        out.inCap = 0;
+        out.offset = 0;
+        out.rotation = static_cast<float>(profile.rotation);
+        out.asAngle = 0;
+        out.asThreshold = 0;
+        out.lutSize = 0;
+
+        if (device.pollingRate > 0) {
+            out.minTime = static_cast<float>(1000.0 / device.pollingRate);
+            out.fixedTime = device.pollTimeLock;
+        } else {
+            out.minTime = static_cast<float>(device.minimumTime);
+            out.fixedTime = false;
+        }
+        out.maxTime = static_cast<float>(device.maximumTime);
+        out.truncateCarry = true;
+
+        switch (profile.x.mode) {
+            case Mode::NoAccel:
+                out.accelMode = AccelMode_Current;
+                break;
+            case Mode::Power:
+                MapPower(profile.x, profile, out);
+                break;
+            default:
+                Require(false, std::string("the ") + ModeNames[static_cast<int>(profile.x.mode)] + " mode");
+        }
+        return out;
     }
 }
