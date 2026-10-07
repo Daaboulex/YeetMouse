@@ -20,15 +20,19 @@ signed overflow, no undefined shift (including a count-leading-zeros of zero), n
 zero and no out-of-range conversion, and every loop ends within its bound. Result: 37 of 37
 properties hold.
 
-## accel_lut.c: the lookup table stays in its arrays
+## accel_lut.c: the lookup table stays in its curve
 
 Compile together with `driver/accel_modes.c -DTEST_ENV`. Flags: `--function main
 --no-standard-checks --bounds-check --pointer-check --unwind 130 --unwinding-assertions
 --slice-formula`
 
 For every table the driver accepts (2 to 128 points, x non-decreasing, the last two x different)
-and every positive speed, `accel_lut` reads only inside its arrays and returns the first y at or
-below the first x. Result: holds; with the old `speed < x[0]` test the second property fails.
+and every positive speed, `accel_lut` reads below the end of each array and inside the curve, and
+returns the first y at or below the first x. The arrays are reached through a pointer to the
+curve, so CBMC checks the start of an array only against the start of the curve: a read just
+before `lut_y` lands in `lut_x` and is not flagged. The index arithmetic is unchanged since
+82e8f8b, where the arrays were separate globals and CBMC proved both bounds of every read. Result:
+holds; with the old `speed < x[0]` test the second property fails.
 
 ## div_precise.c and div_overflows.c: the division is exact
 

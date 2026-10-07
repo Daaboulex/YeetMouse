@@ -1206,7 +1206,7 @@ bool Tests::TestRawAccelParity() {
                 RawAccelOracle::Output expected = oracle.Packet(dx, dy, 1.0);
                 FP_LONG x = FP64_FromInt(dx);
                 FP_LONG y = FP64_FromInt(dy);
-                accel_packet(&x, &y, FP64_1);
+                accel_packet(&TestManager::GetProfile(), &x, &y, FP64_1);
                 if (dx != 0)
                     supervisor.Validate(IsCloseEnoughRelative(x, static_cast<float>(expected.x), 1e-4f));
                 if (dy != 0)

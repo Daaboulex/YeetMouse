@@ -42,7 +42,7 @@ auto res = TestManager::AccelPower(x, accel, exp, mid);
 ```
 This calls the `Power` function with all three parameters (internally it does the same as the first example, which is setting the parameters one by one and at the end calling `UpdateModesConstants()`).
 
-If, on the other hand, You want to test the validation part on the driver's code (`update_constants` function), You can instead of the `for` loop use this:
+If, on the other hand, You want to test the validation part on the driver's code (`update_profile_constants` function), You can instead of the `for` loop use this:
 ```c++
 if (!TestManager::ValidateConstants()) {
     fprintf(stderr, "Invalid constants\n");

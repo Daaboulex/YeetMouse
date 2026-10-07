@@ -42,7 +42,8 @@ public:
     static FP_LONG AccelJump(float x); // Parameter values set manually!
     static FP_LONG AccelLUT(float x); // Parameter values set manually!
 
-    static ModesConstants &GetModesConstants();
+    static accel_curve_constants &GetModesConstants();
+    static const accel_profile &GetProfile();
     static void UpdateModesConstants();
     static bool ValidateConstants();
     static bool ValidateFunctionGUI();

@@ -3,33 +3,33 @@
 #include "shared_definitions.h"
 #include "driver/accel_modes.h"
 
-// "Private" values only visible to the accel_modes
-FP_LONG g_Sensitivity = FP64_1, g_RatioYX = FP64_1, g_OutputCap = 0, g_InputCap = 0, g_Offset = 0, g_PreScale = FP64_1, g_Acceleration = 0, g_Exponent
-                = 0, g_Midpoint = 0, g_Motivity = 0, g_RotationAngle = 0, g_AngleSnap_Angle = 0, g_AngleSnap_Threshold =
-                0, g_LutData_x[256], g_LutData_y[256];
-char g_AccelerationMode = 0, g_UseSmoothing = 0;
-unsigned long g_LutSize = 0;
-ModesConstants modesConst;
+static accel_profile profile = [] {
+    accel_profile initial{};
+    initial.pre_scale = FP64_1;
+    initial.sensitivity = FP64_1;
+    initial.ratio_yx = FP64_1;
+    return initial;
+}();
 static CachedFunction function;
 
 // Ignores speedY (for now?)
 FP_LONG ApplyGlobalPostParameters(FP_LONG speed) {
     FP_LONG speed_Y = FP64_1;
-    if (g_RatioYX == FP64_1) {
-        if(g_Sensitivity != FP64_1)
-            speed = FP64_Mul(speed, g_Sensitivity);
+    if (profile.ratio_yx == FP64_1) {
+        if(profile.sensitivity != FP64_1)
+            speed = FP64_Mul(speed, profile.sensitivity);
 
         // Apply Output Limit
-        if(g_OutputCap > 0)
-            speed = FP64_Min(g_OutputCap, speed);
+        if(profile.output_cap > 0)
+            speed = FP64_Min(profile.output_cap, speed);
     } else {
-        speed = FP64_Mul(speed, g_Sensitivity);
-        speed_Y = FP64_Mul(speed, g_RatioYX);
+        speed = FP64_Mul(speed, profile.sensitivity);
+        speed_Y = FP64_Mul(speed, profile.ratio_yx);
 
         // Apply Output Limit
-        if(g_OutputCap > 0) {
-            speed = FP64_Min(g_OutputCap, speed);
-            speed_Y = FP64_Min(g_OutputCap, speed_Y);
+        if(profile.output_cap > 0) {
+            speed = FP64_Min(profile.output_cap, speed);
+            speed_Y = FP64_Min(profile.output_cap, speed_Y);
         }
     }
 
@@ -37,7 +37,7 @@ FP_LONG ApplyGlobalPostParameters(FP_LONG speed) {
 }
 
 FP_LONG ApplyGlobalPreParameters(FP_LONG speed) {
-    return FP64_Mul(speed, g_PreScale);
+    return FP64_Mul(speed, profile.pre_scale);
 }
 
 // TestManager & TestManager::GetInstance() {
@@ -47,18 +47,18 @@ FP_LONG ApplyGlobalPreParameters(FP_LONG speed) {
 
 void TestManager::Initialize() {
     function.params = new Parameters;
-    function.params->sens = FP64_ToFloat(g_Sensitivity);
-    function.params->ratioYX = FP64_ToFloat(g_RatioYX);
-    function.params->accelMode = static_cast<AccelMode>(g_AccelerationMode);
-    function.params->preScale = FP64_ToFloat(g_PreScale);
-    function.params->accel = FP64_ToFloat(g_Acceleration);
-    function.params->exponent = FP64_ToFloat(g_Exponent);
-    function.params->midpoint = FP64_ToFloat(g_Midpoint);
-    function.params->offset = FP64_ToFloat(g_Offset);
-    function.params->useSmoothing = g_UseSmoothing;
-    function.params->rotation = FP64_ToFloat(g_RotationAngle);
-    function.params->asAngle = FP64_ToFloat(g_AngleSnap_Angle);
-    function.params->asThreshold = FP64_ToFloat(g_AngleSnap_Threshold);
+    function.params->sens = FP64_ToFloat(profile.sensitivity);
+    function.params->ratioYX = FP64_ToFloat(profile.ratio_yx);
+    function.params->accelMode = static_cast<AccelMode>(profile.x.mode);
+    function.params->preScale = FP64_ToFloat(profile.pre_scale);
+    function.params->accel = FP64_ToFloat(profile.x.acceleration);
+    function.params->exponent = FP64_ToFloat(profile.x.exponent);
+    function.params->midpoint = FP64_ToFloat(profile.x.midpoint);
+    function.params->offset = FP64_ToFloat(profile.offset);
+    function.params->useSmoothing = profile.x.use_smoothing;
+    function.params->rotation = FP64_ToFloat(profile.rotation_angle);
+    function.params->asAngle = FP64_ToFloat(profile.angle_snap_angle);
+    function.params->asThreshold = FP64_ToFloat(profile.angle_snap_threshold);
     function.params->inCap = 0;
     function.params->outCap = 0;
     function.PreCacheConstants();
@@ -69,7 +69,7 @@ FP_LONG TestManager::AccelLinear(FP_LONG x, FP_LONG acceleration, FP_LONG midpoi
     SetUseSmoothing(gain);
     SetMidpoint(midpoint);
     UpdateModesConstants();
-    return ApplyGlobalPostParameters(accel_linear(ApplyGlobalPreParameters(x)));
+    return ApplyGlobalPostParameters(accel_linear(&profile.x, ApplyGlobalPreParameters(x)));
 }
 
 FP_LONG TestManager::AccelPower(FP_LONG x, FP_LONG acceleration, FP_LONG exponent, FP_LONG midpoint, FP_LONG motivity,
@@ -80,7 +80,7 @@ FP_LONG TestManager::AccelPower(FP_LONG x, FP_LONG acceleration, FP_LONG exponen
     SetMotivity(motivity);
     SetUseSmoothing(gain);
     UpdateModesConstants();
-    return ApplyGlobalPostParameters(accel_power(ApplyGlobalPreParameters(x)));
+    return ApplyGlobalPostParameters(accel_power(&profile.x, ApplyGlobalPreParameters(x)));
 }
 
 FP_LONG TestManager::AccelClassic(FP_LONG x, FP_LONG acceleration, FP_LONG exponent, FP_LONG midpoint, bool gain) {
@@ -89,7 +89,7 @@ FP_LONG TestManager::AccelClassic(FP_LONG x, FP_LONG acceleration, FP_LONG expon
     SetMidpoint(midpoint);
     SetUseSmoothing(gain);
     UpdateModesConstants();
-    return ApplyGlobalPostParameters(accel_classic(ApplyGlobalPreParameters(x)));
+    return ApplyGlobalPostParameters(accel_classic(&profile.x, ApplyGlobalPreParameters(x)));
 }
 
 FP_LONG TestManager::AccelMotivity(FP_LONG x, FP_LONG acceleration, FP_LONG exponent, FP_LONG midpoint) {
@@ -97,7 +97,7 @@ FP_LONG TestManager::AccelMotivity(FP_LONG x, FP_LONG acceleration, FP_LONG expo
     SetExponent(exponent);
     SetMidpoint(midpoint);
     UpdateModesConstants();
-    return ApplyGlobalPostParameters(accel_motivity(ApplyGlobalPreParameters(x)));
+    return ApplyGlobalPostParameters(accel_motivity(&profile.x, ApplyGlobalPreParameters(x)));
 }
 
 FP_LONG TestManager::AccelSynchronous(FP_LONG x, FP_LONG sync_speed, FP_LONG gamma, FP_LONG smoothness,
@@ -108,7 +108,7 @@ FP_LONG TestManager::AccelSynchronous(FP_LONG x, FP_LONG sync_speed, FP_LONG gam
     SetMotivity(motivity);
     SetUseSmoothing(gain);
     UpdateModesConstants();
-    return ApplyGlobalPostParameters(accel_synchronous(ApplyGlobalPreParameters(x)));
+    return ApplyGlobalPostParameters(accel_synchronous(&profile.x, ApplyGlobalPreParameters(x)));
 }
 
 FP_LONG TestManager::AccelJump(FP_LONG x, FP_LONG acceleration, FP_LONG exponent, FP_LONG midpoint, bool gain) {
@@ -117,7 +117,7 @@ FP_LONG TestManager::AccelJump(FP_LONG x, FP_LONG acceleration, FP_LONG exponent
     SetMidpoint(midpoint);
     SetUseSmoothing(gain);
     UpdateModesConstants();
-    return ApplyGlobalPostParameters(accel_jump(ApplyGlobalPreParameters(x)));
+    return ApplyGlobalPostParameters(accel_jump(&profile.x, ApplyGlobalPreParameters(x)));
 }
 
 FP_LONG TestManager::AccelLUT(FP_LONG x, FP_LONG values_x[], FP_LONG values_y[], unsigned long count) {
@@ -125,11 +125,11 @@ FP_LONG TestManager::AccelLUT(FP_LONG x, FP_LONG values_x[], FP_LONG values_y[],
     SetLutData_x(values_x, count);
     SetLutData_y(values_y, count);
     UpdateModesConstants();
-    return ApplyGlobalPostParameters(accel_lut(ApplyGlobalPreParameters(x)));
+    return ApplyGlobalPostParameters(accel_lut(&profile.x, ApplyGlobalPreParameters(x)));
 }
 
 FP_LONG TestManager::AccelLUT(FP_LONG x) {
-    return ApplyGlobalPostParameters(accel_lut(ApplyGlobalPreParameters(x)));
+    return ApplyGlobalPostParameters(accel_lut(&profile.x, ApplyGlobalPreParameters(x)));
 }
 
 FP_LONG TestManager::AccelLinear(float x, float acceleration, float midpoint, bool gain) {
@@ -181,47 +181,51 @@ FP_LONG TestManager::AccelLUT(float x) {
 }
 
 FP_LONG TestManager::AccelLinear(float x) {
-    return ApplyGlobalPostParameters(accel_linear(ApplyGlobalPreParameters(FP64_FromFloat(x))));
+    return ApplyGlobalPostParameters(accel_linear(&profile.x, ApplyGlobalPreParameters(FP64_FromFloat(x))));
 }
 
 FP_LONG TestManager::AccelPower(float x) {
-    return ApplyGlobalPostParameters(accel_power(ApplyGlobalPreParameters(FP64_FromFloat(x))));
+    return ApplyGlobalPostParameters(accel_power(&profile.x, ApplyGlobalPreParameters(FP64_FromFloat(x))));
 }
 
 FP_LONG TestManager::AccelClassic(float x) {
-    return ApplyGlobalPostParameters(accel_classic(ApplyGlobalPreParameters(FP64_FromFloat(x))));
+    return ApplyGlobalPostParameters(accel_classic(&profile.x, ApplyGlobalPreParameters(FP64_FromFloat(x))));
 }
 
 FP_LONG TestManager::AccelMotivity(float x) {
-    return ApplyGlobalPostParameters(accel_motivity(ApplyGlobalPreParameters(FP64_FromFloat(x))));
+    return ApplyGlobalPostParameters(accel_motivity(&profile.x, ApplyGlobalPreParameters(FP64_FromFloat(x))));
 }
 
 FP_LONG TestManager::AccelSynchronous(float x) {
-    return ApplyGlobalPostParameters(accel_synchronous(ApplyGlobalPreParameters(FP64_FromFloat(x))));
+    return ApplyGlobalPostParameters(accel_synchronous(&profile.x, ApplyGlobalPreParameters(FP64_FromFloat(x))));
 }
 
 FP_LONG TestManager::AccelNatural(float x) {
-    return ApplyGlobalPostParameters(accel_natural(ApplyGlobalPreParameters(FP64_FromFloat(x))));
+    return ApplyGlobalPostParameters(accel_natural(&profile.x, ApplyGlobalPreParameters(FP64_FromFloat(x))));
 }
 
 FP_LONG TestManager::AccelJump(float x) {
-    return ApplyGlobalPostParameters(accel_jump(ApplyGlobalPreParameters(FP64_FromFloat(x))));
+    return ApplyGlobalPostParameters(accel_jump(&profile.x, ApplyGlobalPreParameters(FP64_FromFloat(x))));
 }
 
-ModesConstants &TestManager::GetModesConstants() {
-    return modesConst;
+accel_curve_constants &TestManager::GetModesConstants() {
+    return profile.x.k;
+}
+
+const accel_profile &TestManager::GetProfile() {
+    return profile;
 }
 
 void TestManager::UpdateModesConstants() {
-    update_constants();
+    update_profile_constants(&profile);
     function.PreCacheConstants();
 }
 
 bool TestManager::ValidateConstants() {
-    if (g_AccelerationMode == AccelMode_Current)
+    if (profile.x.mode == AccelMode_Current)
         return false;
 
-    // switch (g_AccelerationMode) {
+    // switch (profile.x.mode) {
     //     case AccelMode_Linear:
     //         break;
     //     case AccelMode_Power:
@@ -244,95 +248,95 @@ bool TestManager::ValidateFunctionGUI() {
 }
 
 void TestManager::SetAccelMode(AccelMode mode) {
-    g_AccelerationMode = mode;
-    function.params->accelMode = static_cast<AccelMode>(g_AccelerationMode);
+    profile.x.mode = mode;
+    function.params->accelMode = static_cast<AccelMode>(profile.x.mode);
 }
 
 void TestManager::SetUseSmoothing(char useSmoothing) {
-    g_UseSmoothing = useSmoothing;
-    function.params->useSmoothing = g_UseSmoothing;
+    profile.x.use_smoothing = useSmoothing;
+    function.params->useSmoothing = profile.x.use_smoothing;
 }
 
 void TestManager::SetAcceleration(FP_LONG acceleration) {
-    g_Acceleration = acceleration;
-    function.params->accel = FP64_ToFloat(g_Acceleration);
+    profile.x.acceleration = acceleration;
+    function.params->accel = FP64_ToFloat(profile.x.acceleration);
 }
 
 void TestManager::SetExponent(FP_LONG exponent) {
-    g_Exponent = exponent;
-    function.params->exponent = FP64_ToFloat(g_Exponent);
+    profile.x.exponent = exponent;
+    function.params->exponent = FP64_ToFloat(profile.x.exponent);
 }
 
 void TestManager::SetMidpoint(FP_LONG midpoint) {
-    g_Midpoint = midpoint;
-    function.params->midpoint = FP64_ToFloat(g_Midpoint);
+    profile.x.midpoint = midpoint;
+    function.params->midpoint = FP64_ToFloat(profile.x.midpoint);
 }
 
 void TestManager::SetMotivity(FP_LONG motivity) {
-    g_Motivity = motivity;
-    function.params->motivity = FP64_ToFloat(g_Motivity);
+    profile.x.motivity = motivity;
+    function.params->motivity = FP64_ToFloat(profile.x.motivity);
 }
 
 void TestManager::SetSensitivity(FP_LONG sensitivity) {
-    g_Sensitivity = sensitivity;
+    profile.sensitivity = sensitivity;
     function.params->sens = FP64_ToFloat(sensitivity);
 }
 
 void TestManager::SetSensitivityY(FP_LONG sensitivityY) {
-    g_RatioYX = sensitivityY;
+    profile.ratio_yx = sensitivityY;
     function.params->ratioYX = FP64_ToFloat(sensitivityY);
 }
 
 void TestManager::SetOutCap(FP_LONG outCap) {
-    g_OutputCap = outCap;
+    profile.output_cap = outCap;
     function.params->outCap = FP64_ToFloat(outCap);
 }
 
 void TestManager::SetInCap(FP_LONG inCap) {
-    g_InputCap = inCap;
+    profile.input_cap = inCap;
     function.params->inCap = FP64_ToFloat(inCap);
 }
 
 void TestManager::SetOffset(FP_LONG offset) {
-    g_Offset = offset;
+    profile.offset = offset;
     function.params->offset = FP64_ToFloat(offset);
 }
 
 void TestManager::SetPreScale(FP_LONG preScale) {
-    g_PreScale = preScale;
+    profile.pre_scale = preScale;
     function.params->preScale = FP64_ToFloat(preScale);
 }
 
 void TestManager::SetRotationAngle(FP_LONG rotationAngle) {
-    g_RotationAngle = rotationAngle;
-    function.params->rotation = FP64_ToFloat(g_RotationAngle);
+    profile.rotation_angle = rotationAngle;
+    function.params->rotation = FP64_ToFloat(profile.rotation_angle);
 }
 
 void TestManager::SetAngleSnap_Angle(FP_LONG angleSnap_Angle) {
-    g_AngleSnap_Angle = angleSnap_Angle;
-    function.params->asAngle = FP64_ToFloat(g_AngleSnap_Angle);
+    profile.angle_snap_angle = angleSnap_Angle;
+    function.params->asAngle = FP64_ToFloat(profile.angle_snap_angle);
 }
 
 void TestManager::SetAngleSnap_Threshold(FP_LONG angleSnap_Threshold) {
-    g_AngleSnap_Threshold = angleSnap_Threshold;
-    function.params->asThreshold = FP64_ToFloat(g_AngleSnap_Threshold);
+    profile.angle_snap_threshold = angleSnap_Threshold;
+    function.params->asThreshold = FP64_ToFloat(profile.angle_snap_threshold);
 }
 
 void TestManager::SetUseSmoothing(bool useSmoothing) {
-    g_UseSmoothing = useSmoothing ? 1 : 0;
-    function.params->useSmoothing = g_UseSmoothing;
+    profile.x.use_smoothing = useSmoothing ? 1 : 0;
+    function.params->useSmoothing = profile.x.use_smoothing;
 }
 
 void TestManager::SetLutSize(unsigned long lutSize) {
-    g_LutSize = lutSize;
-    function.params->lutSize = g_LutSize;
+    profile.x.lut_size = lutSize;
+    function.params->lutSize = profile.x.lut_size;
 }
 
 void TestManager::SetLutData_x(FP_LONG values[], unsigned long count) {
     SetLutSize(count);
 
     for (unsigned long i = 0; i < count; i++) {
-        g_LutData_x[i] = values[i];
+        profile.x.lut_x[i] = values[i];
         function.params->lutDataX[i] = FP64_ToFloat(values[i]);
     }
 }
@@ -341,7 +345,7 @@ void TestManager::SetLutData_y(FP_LONG values[], unsigned long count) {
     SetLutSize(count);
 
     for (unsigned long i = 0; i < count; i++) {
-        g_LutData_y[i] = values[i];
+        profile.x.lut_y[i] = values[i];
         function.params->lutDataY[i] = FP64_ToFloat(values[i]);
     }
 }
@@ -417,6 +421,6 @@ void TestManager::SetLutData(float values_x[], float values_y[], unsigned long c
 }
 
 float TestManager::EvalFloatFunc(float x) {
-    function.params->accelMode = static_cast<AccelMode>(g_AccelerationMode);
+    function.params->accelMode = static_cast<AccelMode>(profile.x.mode);
     return function.EvalFuncAt(x);
 }

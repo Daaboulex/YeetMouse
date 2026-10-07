@@ -94,9 +94,26 @@ unsigned long atoul(const char *str);
 #define PARAM_UPDATE_UL(param) (atoul(g_param_##param))
 
 // Aggregate values that don't change with speed to save on calculations done every irq
-struct ModesConstants modesConst = {
-    .is_init = false, .C0 = 0, .r = 0, .auxiliar_accel = 0, .auxiliar_constant = 0, .accel_sub_1 = 0, .exp_sub_1 = 0,
-    .sin_a = 0, .cos_a = 0, .as_cos = 0, .as_sin = 0, .as_half_threshold = 0, .current_func_at_0 = FP64_1
+static struct accel_profile g_profile = {
+    .x = {
+        .mode = ACCELERATION_MODE,
+        .use_smoothing = USE_SMOOTHING,
+        .acceleration = C0NST_FP64_FromDouble(ACCELERATION),
+        .exponent = C0NST_FP64_FromDouble(EXPONENT),
+        .midpoint = C0NST_FP64_FromDouble(MIDPOINT),
+        .motivity = C0NST_FP64_FromDouble(MOTIVITY),
+        .lut_size = LUT_SIZE,
+        .k = { .current_func_at_0 = FP64_1 },
+    },
+    .pre_scale = C0NST_FP64_FromDouble(PRESCALE),
+    .sensitivity = C0NST_FP64_FromDouble(SENSITIVITY),
+    .ratio_yx = C0NST_FP64_FromDouble(RATIO_YX),
+    .output_cap = C0NST_FP64_FromDouble(OUTPUT_CAP),
+    .input_cap = C0NST_FP64_FromDouble(INPUT_CAP),
+    .offset = C0NST_FP64_FromDouble(OFFSET),
+    .rotation_angle = C0NST_FP64_FromDouble(ROTATION_ANGLE),
+    .angle_snap_angle = C0NST_FP64_FromDouble(ANGLE_SNAPPING_ANGLE),
+    .angle_snap_threshold = C0NST_FP64_FromDouble(ANGLE_SNAPPING_THRESHOLD),
 };
 
 static ktime_t g_next_update = 0;
@@ -107,7 +124,7 @@ INLINE void update_params(ktime_t now)
     g_update = 0;
     g_next_update = now + 1000000000ll;    //Next update is allowed after 1s of delay
 
-    modesConst.is_init = false;
+    g_profile.is_init = false;
 
     PARAM_UPDATE(InputCap);
     PARAM_UPDATE(Sensitivity);
@@ -159,7 +176,28 @@ INLINE void update_params(ktime_t now)
         g_AngleSnap_Threshold = 0;
     }
 
-    update_constants();
+    g_profile.x.mode = g_AccelerationMode;
+    g_profile.x.acceleration = g_Acceleration;
+    g_profile.x.exponent = g_Exponent;
+    g_profile.x.midpoint = g_Midpoint;
+    g_profile.x.motivity = g_Motivity;
+    g_profile.x.lut_size = g_LutSize;
+    memcpy(g_profile.x.lut_x, g_LutData_x, sizeof(g_profile.x.lut_x));
+    memcpy(g_profile.x.lut_y, g_LutData_y, sizeof(g_profile.x.lut_y));
+    g_profile.pre_scale = g_PreScale;
+    g_profile.sensitivity = g_Sensitivity;
+    g_profile.ratio_yx = g_RatioYX;
+    g_profile.output_cap = g_OutputCap;
+    g_profile.input_cap = g_InputCap;
+    g_profile.offset = g_Offset;
+    g_profile.rotation_angle = g_RotationAngle;
+    g_profile.angle_snap_angle = g_AngleSnap_Angle;
+    g_profile.angle_snap_threshold = g_AngleSnap_Threshold;
+
+    update_profile_constants(&g_profile);
+
+    g_Acceleration = g_profile.x.acceleration;
+    g_Midpoint = g_profile.x.midpoint;
 }
 
 // Acceleration happens here
@@ -208,10 +246,12 @@ int accelerate(int *x, int *y)
     //if(ms > 100) ms = 100;      //Original InterAccel has 200 here. RawAccel rounds to 100. So do we.
     last_ms = ms;
 
+    g_profile.x.use_smoothing = g_UseSmoothing;
+
     // Update acceleration parameters periodically
     update_params(now);
 
-    accel_packet(&delta_x, &delta_y, ms);
+    accel_packet(&g_profile, &delta_x, &delta_y, ms);
 
     delta_x = FP64_Add(delta_x, carry_x);
     delta_y = FP64_Add(delta_y, carry_y);
