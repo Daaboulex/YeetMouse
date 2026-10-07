@@ -1098,6 +1098,17 @@ bool Tests::TestFixedPointArithmetic() {
             //printf("%f, %f,%f,%f\n", x, FP64_ToFloat(val), std::tanh(x), FP64_ToFloat(val) - std::tanh(x));
         }
         supervisor.Validate(FP64_Tanh(FP64_FromInt(1 << 30)) == One && FP64_Tanh(-FP64_FromInt(1 << 30)) == -One);
+
+        for (FP_LONG (*atan2)(FP_LONG, FP_LONG) : {FP64_Atan2, FP64_Atan2Fast, FP64_Atan2Fastest}) {
+            for (float y = -3; y <= 3; y += 0.25f) {
+                for (float x = -3; x <= 3; x += 0.25f) {
+                    if (x != 0 || y != 0)
+                        supervisor.Validate(IsCloseEnough(atan2(FP64_FromFloat(y), FP64_FromFloat(x)), std::atan2(y, x), 1e-3f));
+                }
+            }
+            supervisor.Validate(IsCloseEnough(atan2(0, -1), std::atan2(0.f, -1.f), 1e-6f));
+            supervisor.Validate(IsCloseEnough(atan2(-1, -1), std::atan2(-1.f, -1.f), 1e-6f));
+        }
         supervisor.Validate(FP64_Tanh(FP64_FromDouble(10.8)) == One && FP64_Tanh(FP64_FromDouble(-10.8)) == -One);
         supervisor.Validate(FP64_Exp2(FP64_FromDouble(31.5)) == MaxValue && FP64_Exp2Fast(FP64_FromDouble(31.5)) == MaxValue &&
                             Exp2Fastest(FP64_FromDouble(31.5)) == MaxValue);

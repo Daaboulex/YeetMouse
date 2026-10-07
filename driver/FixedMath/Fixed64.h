@@ -1241,6 +1241,9 @@ static inline FP_LONG FP64_Atan2(FP_LONG y, FP_LONG x) {
     FP_LONG ny = y ^ (y >> 63);
     FP_LONG negMask = ((x ^ y) >> 63);
 
+    if (nx == 0 && ny == 0)
+        return (y == 0) ? Pi : (PiHalf >> 1) - Pi;
+
     if (nx >= ny) {
         FP_INT k = FP64_Atan2Div(ny, nx);
         FP_INT z = AtanPoly5Lut8(k);
@@ -1291,6 +1294,9 @@ static inline FP_LONG FP64_Atan2Fast(FP_LONG y, FP_LONG x) {
     FP_LONG ny = y ^ (y >> 63);
     FP_LONG negMask = ((x ^ y) >> 63);
 
+    if (nx == 0 && ny == 0)
+        return (y == 0) ? Pi : (PiHalf >> 1) - Pi;
+
     if (nx >= ny) {
         FP_INT k = FP64_Atan2DivFast(ny, nx);
         FP_INT z = AtanPoly3Lut8(k);
@@ -1340,6 +1346,9 @@ static inline FP_LONG FP64_Atan2Fastest(FP_LONG y, FP_LONG x) {
     FP_LONG nx = x ^ (x >> 63);
     FP_LONG ny = y ^ (y >> 63);
     FP_LONG negMask = ((x ^ y) >> 63);
+
+    if (nx == 0 && ny == 0)
+        return (y == 0) ? Pi : (PiHalf >> 1) - Pi;
 
     if (nx >= ny) {
         FP_INT z = FP64_Atan2DivFastest(ny, nx);
