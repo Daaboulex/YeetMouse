@@ -1136,6 +1136,27 @@ bool Tests::TestTimingAndRounding() {
         supervisor.Validate(x == 3 && y == -3);
         accel_round(&profile, &state, FP64_FromDouble(0.25), FP64_FromDouble(0.25), &x, &y);
         supervisor.Validate(x == 0 && y == 1);
+
+        supervisor.NextTest();
+
+        state = {};
+        accel_elapsed(&state, 5000000);
+        supervisor.Validate(accel_elapsed(&state, 6000000) == FP64_1);
+        supervisor.Validate(accel_elapsed(&state, 3006000000ll) == FP64_FromInt(3000));
+        supervisor.Validate(accel_elapsed(&state, 3005750000ll) == 0);
+        supervisor.Validate(accel_elapsed(&state, 3005750000ll + 1000000000000000ll) == FP64_FromInt(1000000000));
+        state = {};
+        supervisor.Validate(accel_elapsed(&state, LLONG_MAX) == FP64_FromInt(INT_MAX));
+
+        std::mt19937_64 rng(20261008);
+        std::uniform_int_distribution<long long> below_int(0, INT_MAX);
+        std::array<long long, 6> edges{0, 1, 999999, 1000000, 1000001, INT_MAX};
+        for (int i = 0; i < 1000000; i++) {
+            long long elapsed = i < (int) edges.size() ? edges[i] : below_int(rng);
+            state = {};
+            supervisor.Validate(accel_elapsed(&state, elapsed) ==
+                                FP64_DivPrecise(FP64_FromInt((FP_INT) elapsed), FP64_FromInt(1000000)));
+        }
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during timing and rounding\n", ex.what());
         supervisor.result = false;

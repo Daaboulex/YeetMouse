@@ -90,6 +90,7 @@ struct accel_profile {
 
 struct accel_state {
     FP_LONG carry_x, carry_y;
+    long long last_report_ns;
 };
 
 static const FP_LONG FP64_PI =   C0NST_FP64_FromDouble(3.14159);
@@ -116,6 +117,11 @@ FP_LONG accel_jump(const struct accel_curve *c, FP_LONG speed);
 FP_LONG accel_lut(const struct accel_curve *c, FP_LONG speed);
 
 FP_LONG accel_curve_eval(const struct accel_curve *c, FP_LONG speed);
+
+#define NS_PER_MS 1000000ll
+#define MAX_ELAPSED_NS ((long long) INT_MAX * NS_PER_MS)
+
+FP_LONG accel_elapsed(struct accel_state *s, long long now_ns);
 
 FP_LONG accel_time(const struct accel_profile *p, FP_LONG ms);
 

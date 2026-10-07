@@ -658,6 +658,16 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
     *delta_y_out = delta_y;
 }
 
+FP_LONG accel_elapsed(struct accel_state *s, long long now_ns) {
+    long long elapsed = now_ns - s->last_report_ns;
+    s->last_report_ns = now_ns;
+    if (elapsed < 0)
+        elapsed = 0;
+    if (elapsed > MAX_ELAPSED_NS)
+        elapsed = MAX_ELAPSED_NS;
+    return ((FP_LONG) (elapsed / NS_PER_MS) << FP64_Shift) + ((elapsed % NS_PER_MS) << FP64_Shift) / NS_PER_MS;
+}
+
 FP_LONG accel_time(const struct accel_profile *p, FP_LONG ms) {
     if (p->fixed_time)
         return p->min_time;
