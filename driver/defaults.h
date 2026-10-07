@@ -23,6 +23,11 @@
 // Rotation (in radians)
 #define ROTATION_ANGLE 0
 
+#define MIN_TIME 0
+#define MAX_TIME 100
+#define FIXED_TIME 0
+#define TRUNCATE_CARRY 0
+
 // LUT settings
 #define LUT_SIZE 0
 #define LUT_DATA 0

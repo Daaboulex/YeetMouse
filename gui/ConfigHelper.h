@@ -115,6 +115,14 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.asThreshold = val / (is_config_h ? DEG2RAD : 1);
         else if (name == "as_angle" || name == "angle_snapping_angle")
             params.asAngle = val / (is_config_h ? DEG2RAD : 1);
+        else if (name == "mintime" || name == "min_time")
+            params.minTime = val;
+        else if (name == "maxtime" || name == "max_time")
+            params.maxTime = val;
+        else if (name == "fixedtime" || name == "fixed_time")
+            params.fixedTime = val != 0;
+        else if (name == "truncatecarry" || name == "truncate_carry")
+            params.truncateCarry = val != 0;
         else if (name == "lut_size")
             params.lutSize = val;
         else if (name == "lut_data") {

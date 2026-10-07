@@ -22,6 +22,11 @@ int main() {
         bad_sum++;
     }
 
+    if (!Tests::TestTimingAndRounding()) {
+        fprintf(stderr, "Test failed for timing and rounding\n");
+        bad_sum++;
+    }
+
     if (!Tests::TestRawAccelSettings()) {
         fprintf(stderr, "Test failed for Raw Accel settings\n");
         bad_sum++;

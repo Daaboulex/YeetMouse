@@ -657,3 +657,34 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
     *delta_x_out = delta_x;
     *delta_y_out = delta_y;
 }
+
+FP_LONG accel_time(const struct accel_profile *p, FP_LONG ms) {
+    if (p->fixed_time)
+        return p->min_time;
+    if (ms < p->min_time)
+        ms = p->min_time;
+    if (ms > p->max_time)
+        ms = p->max_time;
+    return ms;
+}
+
+static int truncate_toward_zero(FP_LONG value) {
+    return (int) (value >= 0 ? (value >> FP64_Shift) : -((-value) >> FP64_Shift));
+}
+
+void accel_round(const struct accel_profile *p, struct accel_state *s, FP_LONG delta_x, FP_LONG delta_y,
+                 int *out_x, int *out_y) {
+    delta_x = FP64_Add(delta_x, s->carry_x);
+    delta_y = FP64_Add(delta_y, s->carry_y);
+
+    if (p->truncate_carry) {
+        *out_x = truncate_toward_zero(delta_x);
+        *out_y = truncate_toward_zero(delta_y);
+    } else {
+        *out_x = FP64_RoundToInt(delta_x);
+        *out_y = FP64_RoundToInt(delta_y);
+    }
+
+    s->carry_x = FP64_Sub(delta_x, FP64_FromInt(*out_x));
+    s->carry_y = FP64_Sub(delta_y, FP64_FromInt(*out_y));
+}

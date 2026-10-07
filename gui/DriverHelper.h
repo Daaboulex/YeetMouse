@@ -208,6 +208,10 @@ struct Parameters {
     float rotation = 0; // Stored in degrees, converted to radians when writing out
     float asThreshold = 0; // Stored in degrees, converted to radians when writing out
     float asAngle = 0; // Stored in degrees, converted to radians when writing out
+    float minTime = 0;
+    float maxTime = 100;
+    bool fixedTime = false;
+    bool truncateCarry = false;
 
     double lutDataX[MAX_LUT_ARRAY_SIZE]{};
     double lutDataY[MAX_LUT_ARRAY_SIZE]{};

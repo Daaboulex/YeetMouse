@@ -1100,6 +1100,49 @@ bool Tests::TestFixedPointArithmetic() {
     return supervisor.GetResult();
 }
 
+bool Tests::TestTimingAndRounding() {
+    TestSupervisor supervisor{"Timing and Rounding"};
+
+    try {
+        supervisor.NextTest();
+
+        accel_profile profile{};
+        profile.min_time = FP64_1;
+        profile.max_time = FP64_100;
+        supervisor.Validate(accel_time(&profile, FP64_FromDouble(0.25)) == FP64_1);
+        supervisor.Validate(accel_time(&profile, FP64_FromDouble(2.5)) == FP64_FromDouble(2.5));
+        supervisor.Validate(accel_time(&profile, FP64_FromInt(150)) == FP64_100);
+        profile.fixed_time = 1;
+        supervisor.Validate(accel_time(&profile, FP64_FromInt(7)) == FP64_1);
+        profile.fixed_time = 0;
+        profile.min_time = FP64_FromInt(5);
+        profile.max_time = FP64_FromInt(3);
+        supervisor.Validate(accel_time(&profile, FP64_FromInt(4)) == FP64_FromInt(3));
+
+        supervisor.NextTest();
+
+        accel_state state{};
+        int x = 0, y = 0;
+        profile.truncate_carry = 1;
+        accel_round(&profile, &state, FP64_FromDouble(2.75), FP64_FromDouble(-2.75), &x, &y);
+        supervisor.Validate(x == 2 && y == -2);
+        accel_round(&profile, &state, FP64_FromDouble(0.25), FP64_FromDouble(-0.25), &x, &y);
+        supervisor.Validate(x == 1 && y == -1);
+
+        state = {};
+        profile.truncate_carry = 0;
+        accel_round(&profile, &state, FP64_FromDouble(2.75), FP64_FromDouble(-2.75), &x, &y);
+        supervisor.Validate(x == 3 && y == -3);
+        accel_round(&profile, &state, FP64_FromDouble(0.25), FP64_FromDouble(0.25), &x, &y);
+        supervisor.Validate(x == 0 && y == 1);
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during timing and rounding\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
 bool Tests::TestRawAccelSettings() {
     TestSupervisor supervisor{"Raw Accel Settings"};
 

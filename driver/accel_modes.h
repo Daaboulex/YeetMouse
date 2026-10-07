@@ -81,7 +81,15 @@ struct accel_profile {
     FP_LONG as_sin, as_cos;
     FP_LONG as_half_threshold;
 
+    FP_LONG min_time, max_time;
+    char fixed_time;
+    char truncate_carry;
+
     bool is_init;
+};
+
+struct accel_state {
+    FP_LONG carry_x, carry_y;
 };
 
 static const FP_LONG FP64_PI =   C0NST_FP64_FromDouble(3.14159);
@@ -109,7 +117,12 @@ FP_LONG accel_lut(const struct accel_curve *c, FP_LONG speed);
 
 FP_LONG accel_curve_eval(const struct accel_curve *c, FP_LONG speed);
 
+FP_LONG accel_time(const struct accel_profile *p, FP_LONG ms);
+
 void accel_packet(const struct accel_profile *p, FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms);
+
+void accel_round(const struct accel_profile *p, struct accel_state *s, FP_LONG delta_x, FP_LONG delta_y,
+                 int *out_x, int *out_y);
 
 #ifdef __cplusplus
 }

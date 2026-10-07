@@ -81,6 +81,11 @@ PARAM_F(RotationAngle, ROTATION_ANGLE,      "Amount of clockwise rotation (in ra
 PARAM_F(AngleSnap_Threshold, ANGLE_SNAPPING_THRESHOLD,      "Rotation value at which angle snapping is triggered (in radians)");
 PARAM_F(AngleSnap_Angle, ANGLE_SNAPPING_ANGLE,      "Amount of clockwise rotation for angle snapping (in radians)");
 
+PARAM_F(MinTime,        MIN_TIME,           "Shortest time in ms one packet is taken to span; 1000 / polling rate matches Raw Accel");
+PARAM_F(MaxTime,        MAX_TIME,           "Longest time in ms one packet is taken to span");
+PARAM_BYTE(FixedTime,   FIXED_TIME,         "Take every packet to span exactly MinTime instead of the measured time");
+PARAM_BYTE(TruncateCarry, TRUNCATE_CARRY,   "Truncate toward zero when carrying fractions of counts, as Raw Accel does, instead of rounding");
+
 FP_LONG g_LutData_x[MAX_LUT_ARRAY_SIZE]; // Array to store the x-values of the LUT data
 FP_LONG g_LutData_y[MAX_LUT_ARRAY_SIZE]; // Array to store the y-values of the LUT data
 
@@ -114,7 +119,13 @@ static struct accel_profile g_profile = {
     .rotation_angle = C0NST_FP64_FromDouble(ROTATION_ANGLE),
     .angle_snap_angle = C0NST_FP64_FromDouble(ANGLE_SNAPPING_ANGLE),
     .angle_snap_threshold = C0NST_FP64_FromDouble(ANGLE_SNAPPING_THRESHOLD),
+    .min_time = C0NST_FP64_FromDouble(MIN_TIME),
+    .max_time = C0NST_FP64_FromDouble(MAX_TIME),
+    .fixed_time = FIXED_TIME,
+    .truncate_carry = TRUNCATE_CARRY,
 };
+
+static struct accel_state g_state;
 
 static ktime_t g_next_update = 0;
 INLINE void update_params(ktime_t now)
@@ -139,6 +150,10 @@ INLINE void update_params(ktime_t now)
     PARAM_UPDATE(RotationAngle);
     PARAM_UPDATE(AngleSnap_Threshold);
     PARAM_UPDATE(AngleSnap_Angle);
+    PARAM_UPDATE(MinTime);
+    PARAM_UPDATE(MaxTime);
+    g_FixedTime = PARAM_UPDATE_UL(FixedTime) != 0;
+    g_TruncateCarry = PARAM_UPDATE_UL(TruncateCarry) != 0;
     g_LutSize = PARAM_UPDATE_UL(LutSize);
     g_AccelerationMode = PARAM_UPDATE_UL(AccelerationMode);
     if(g_LutSize > MAX_LUT_ARRAY_SIZE)
@@ -194,6 +209,17 @@ INLINE void update_params(ktime_t now)
     g_profile.angle_snap_angle = g_AngleSnap_Angle;
     g_profile.angle_snap_threshold = g_AngleSnap_Threshold;
 
+    if (g_MaxTime <= 0 || g_MinTime < 0 || (g_FixedTime && g_MinTime <= 0)) {
+        printk("YeetMouse: Error: MaxTime must be above 0, MinTime not below 0, and above 0 when FixedTime is set.\n");
+        g_MinTime = 0;
+        g_MaxTime = FP64_100;
+        g_FixedTime = 0;
+    }
+    g_profile.min_time = g_MinTime;
+    g_profile.max_time = g_MaxTime;
+    g_profile.fixed_time = g_FixedTime;
+    g_profile.truncate_carry = g_TruncateCarry;
+
     update_profile_constants(&g_profile);
 
     g_Acceleration = g_profile.x.acceleration;
@@ -207,9 +233,6 @@ int accelerate(int *x, int *y)
     //static long buffer_x = 0;
     //static long buffer_y = 0;
     //Static float assignment should happen at compile-time and thus should be safe here. However, avoid non-static assignment of floats outside kernel_fpu_begin()/kernel_fpu_end()
-    static FP_LONG carry_x = 0;
-    static FP_LONG carry_y = 0;
-    //static FP_LONG carry_whl = 0;
     static FP_LONG last_ms = One;
     static ktime_t last;
     ktime_t now;
@@ -241,9 +264,6 @@ int accelerate(int *x, int *y)
     // Editor node: I have no idea, what this line above really does, but commenting it out solves all my problems
     // with incorrect data. It seems that it tries to fix a problem that doesn't exist, or doesn't exist on my
     // specific setup (PC / System / Mice)
-    if (ms > FP64_100) ms = FP64_100;
-
-    //if(ms > 100) ms = 100;      //Original InterAccel has 200 here. RawAccel rounds to 100. So do we.
     last_ms = ms;
 
     g_profile.x.use_smoothing = g_UseSmoothing;
@@ -251,22 +271,11 @@ int accelerate(int *x, int *y)
     // Update acceleration parameters periodically
     update_params(now);
 
+    ms = accel_time(&g_profile, ms);
+
     accel_packet(&g_profile, &delta_x, &delta_y, ms);
 
-    delta_x = FP64_Add(delta_x, carry_x);
-    delta_y = FP64_Add(delta_y, carry_y);
-
-    // I don't do wheel, sorry
-    //delta_whl *= g_ScrollsPerTick/3.0f;
-
-    //Cast back to int
-    *x = FP64_RoundToInt(delta_x);
-    *y = FP64_RoundToInt(delta_y);
-
-    //Save carry for next round
-    carry_x = FP64_Sub(delta_x, FP64_FromInt(*x));
-    carry_y = FP64_Sub(delta_y, FP64_FromInt(*y));
-    //carry_whl = delta_whl - *wheel;
+    accel_round(&g_profile, &g_state, delta_x, delta_y, x, y);
 
     // Used to very roughly estimate the performance, and 0.1% lows
     // ktime_t iter_time = ktime_sub(ktime_get(), now);

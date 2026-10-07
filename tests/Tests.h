@@ -46,6 +46,8 @@ public:
 
     static bool TestFixedPointArithmetic();
 
+    static bool TestTimingAndRounding();
+
     static bool TestRawAccelSettings();
 
     static bool TestRawAccelParity();
