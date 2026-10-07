@@ -1,7 +1,10 @@
 #include "Tests.h"
 
 #include <array>
+#include <climits>
 #include <cmath>
+#include <cstdlib>
+#include <random>
 
 #include "config.h"
 #include "TestManager.h"
@@ -1011,6 +1014,57 @@ bool Tests::TestFixedPointArithmetic() {
                 //printf("(%f, %i), %f,%f,%f\n", x1, x2, FP64_ToFloat(val), std::scalbln(x1, x2), FP64_ToFloat(val) - std::scalbln(x1, x2));
             }
         }
+
+        supervisor.NextTest();
+
+        const char *stress = std::getenv("YEETMOUSE_STRESS");
+        const long scale = (stress != nullptr && stress[0] == '1') ? 10000 : 1;
+
+        auto expected_division = [](FP_LONG a, FP_LONG b) -> FP_LONG {
+            bool negative = (a ^ b) < 0;
+            if (b == 0)
+                return negative ? INT64_MIN : INT64_MAX;
+            __int128 exact = (static_cast<__int128>(a) * 4294967296) / b;
+            if (exact > INT64_MAX)
+                return INT64_MAX;
+            if (exact < INT64_MIN)
+                return INT64_MIN;
+            return static_cast<FP_LONG>(exact);
+        };
+
+        auto check_division = [&](FP_LONG a, FP_LONG b) {
+            FP_LONG expected = expected_division(a, b);
+            supervisor.Validate(FP64_DivPrecise(a, b) == expected);
+            supervisor.Validate(FP64_DivPreciseSoft(a, b) == expected);
+        };
+
+        std::mt19937_64 rng(20261007);
+        for (long i = 0; i < 200000 * scale; i++)
+            check_division(static_cast<FP_LONG>(rng()) >> (rng() % 63), static_cast<FP_LONG>(rng()) >> (rng() % 63));
+
+        for (long i = 0; i < 2000 * scale; i++) {
+            for (int zeros = 0; zeros < 64; zeros++) {
+                FP_ULONG magnitude = (zeros == 0) ? (FP_ULONG) 1 << 63 : (rng() >> zeros) | ((FP_ULONG) 1 << (63 - zeros));
+                FP_LONG b = (zeros == 0) ? INT64_MIN : static_cast<FP_LONG>(magnitude) * ((rng() & 1) ? 1 : -1);
+                FP_LONG a = static_cast<FP_LONG>(rng()) >> (rng() % 63);
+                check_division(a, b);
+
+                __int128 boundary = (static_cast<__int128>(INT64_MAX) * (b < 0 ? -b : b)) >> 32;
+                for (int delta = -2; delta <= 2; delta++) {
+                    __int128 near = boundary + delta;
+                    if (near <= INT64_MAX && near >= INT64_MIN) {
+                        check_division(static_cast<FP_LONG>(near), b);
+                        check_division(static_cast<FP_LONG>(-near), b);
+                    }
+                }
+            }
+        }
+
+        const FP_LONG edges[] = {0, 1, -1, 2, -2, INT64_MAX, INT64_MIN, INT64_MAX - 1, INT64_MIN + 1,
+                                 (FP_LONG) 1 << 32, -((FP_LONG) 1 << 32), (FP_LONG) 1 << 31, ((FP_LONG) 1 << 62) + 1};
+        for (FP_LONG a : edges)
+            for (FP_LONG b : edges)
+                check_division(a, b);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during arithmetic\n", ex.what());
         supervisor.result = false;

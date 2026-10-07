@@ -277,6 +277,8 @@ static inline FP_INT FP64_Nlz(FP_ULONG x) {
     return __builtin_clzll(x); // Use the gcc built-in, it's much faster
 }
 
+#if defined(__SIZEOF_INT128__) && (defined(__x86_64__) || defined(__ppc64le__))
+#define FP64_DIV128_NATIVE 1
 // Divides a 128 bit int (u1:u0) by a 64 bit int (v)
 static inline FP_LONG Div128_64(FP_LONG u1, FP_LONG u0, FP_LONG v) {
     FP_LONG result;
@@ -377,30 +379,21 @@ static inline FP_LONG Div128_64(FP_LONG u1, FP_LONG u0, FP_LONG v) {
     return result;
 #endif
 }
-
-/// <summary>
-/// Divides two FP values.
-/// </summary>
-static inline FP_LONG FP64_DivPrecise(FP_LONG arg_a, FP_LONG arg_b) {
-#ifdef __SIZEOF_INT128__
-    return Div128_64(arg_a >> FP64_Shift, arg_a << FP64_Shift, arg_b);
-    //return (FP_LONG)(((__int128)arg_a << FP64_Shift) / (__int128)arg_b);
 #endif
+
+static inline FP_LONG FP64_DivPreciseSoft(FP_LONG arg_a, FP_LONG arg_b) {
     // From http://www.hackersdelight.org/hdcodetxt/divlu.c.txt
 
     FP_LONG sign_dif = arg_a ^ arg_b;
 
     const FP_ULONG b = 0x100000000ll; // Number base (32 bits)
-    FP_ULONG abs_arg_a = (FP_ULONG) ((arg_a < 0) ? -arg_a : arg_a);
+    FP_ULONG abs_arg_a = (arg_a < 0) ? (FP_ULONG) (-(arg_a + 1)) + 1 : (FP_ULONG) arg_a;
     FP_ULONG u1 = abs_arg_a >> 32;
     FP_ULONG u0 = abs_arg_a << 32;
-    FP_ULONG v = (FP_ULONG) ((arg_b < 0) ? -arg_b : arg_b);
+    FP_ULONG v = (arg_b < 0) ? (FP_ULONG) (-(arg_b + 1)) + 1 : (FP_ULONG) arg_b;
 
-    // Overflow?
-    if (u1 >= v) {
-        //rem = 0;
-        return 0x7fffffffffffffffll;
-    }
+    if (u1 >= v)
+        return (sign_dif < 0) ? MinValue : MaxValue;
 
     // FP64_Shift amount for norm
     FP_INT s = FP64_Nlz(v); // 0 <= s <= 63
@@ -408,7 +401,7 @@ static inline FP_LONG FP64_DivPrecise(FP_LONG arg_a, FP_LONG arg_b) {
     FP_ULONG vn1 = v >> 32; // Break the divisor into two 32-bit digits
     FP_ULONG vn0 = v & 0xffffffffll;
 
-    FP_ULONG un32 = (u1 << s) | ((u0 >> (64 - s)) & (FP_ULONG) ((FP_LONG) -s >> 63));
+    FP_ULONG un32 = (s == 0) ? u1 : ((u1 << s) | (u0 >> (64 - s)));
     FP_ULONG un10 = u0 << s; // FP64_Shift dividend left
 
     FP_ULONG un1 = un10 >> 32; // Break the right half of dividend into two digits
@@ -441,7 +434,31 @@ static inline FP_LONG FP64_DivPrecise(FP_LONG arg_a, FP_LONG arg_b) {
     // rem = (FP_LONG)r;
 
     FP_ULONG ret = q1 * b + q0;
-    return (sign_dif < 0) ? -(FP_LONG) ret : (FP_LONG) ret;
+    if (sign_dif < 0)
+        return (ret > (FP_ULONG) MaxValue) ? MinValue : -(FP_LONG) ret;
+    return (ret > (FP_ULONG) MaxValue) ? MaxValue : (FP_LONG) ret;
+}
+
+#ifdef __SIZEOF_INT128__
+static inline bool FP64_DivOverflows(FP_LONG arg_a, FP_LONG arg_b) {
+    FP_ULONG abs_a = (arg_a < 0) ? (FP_ULONG) (-(arg_a + 1)) + 1 : (FP_ULONG) arg_a;
+    FP_ULONG abs_b = (arg_b < 0) ? (FP_ULONG) (-(arg_b + 1)) + 1 : (FP_ULONG) arg_b;
+    unsigned __int128 limit = ((unsigned __int128) 1 << 63) + (((arg_a ^ arg_b) < 0) ? 1 : 0);
+    return ((unsigned __int128) abs_a << FP64_Shift) >= limit * abs_b;
+}
+#endif
+
+/// <summary>
+/// Divides two FP values.
+/// </summary>
+static inline FP_LONG FP64_DivPrecise(FP_LONG arg_a, FP_LONG arg_b) {
+#ifdef FP64_DIV128_NATIVE
+    if (FP64_DivOverflows(arg_a, arg_b))
+        return ((arg_a ^ arg_b) < 0) ? MinValue : MaxValue;
+    return Div128_64(arg_a >> FP64_Shift, arg_a << FP64_Shift, arg_b);
+#else
+    return FP64_DivPreciseSoft(arg_a, arg_b);
+#endif
 }
 
 /// <summary>
