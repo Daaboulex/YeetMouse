@@ -17,15 +17,23 @@ int main() {
         }
     }
 
-    bool arithmetic_test = Tests::TestFixedPointArithmetic();
+    if (!Tests::TestFixedPointArithmetic()) {
+        fprintf(stderr, "Test failed for fixed-point arithmetic\n");
+        bad_sum++;
+    }
 
-    if (bad_sum == 0 && arithmetic_test) {
+    if (!Tests::TestRawAccelSettings()) {
+        fprintf(stderr, "Test failed for Raw Accel settings\n");
+        bad_sum++;
+    }
+
+    if (bad_sum == 0) {
         printf(GREEN"All tests passed!\n\n" RESET);
     } else {
         printf(RED"%i %s failed!\n\n", bad_sum, (bad_sum == 1) ? "test" : "tests");
     }
 
-    const int exit_code = (bad_sum == 0 && arithmetic_test) ? 0 : 1;
+    const int exit_code = (bad_sum == 0) ? 0 : 1;
 
     return exit_code;
 }

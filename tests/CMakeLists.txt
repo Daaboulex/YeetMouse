@@ -52,9 +52,10 @@ add_executable(YeetMouseTests main.cpp
         TestManager.cpp
         Tests.cpp
         ../gui/FunctionHelper.cpp
+        ../gui/RawAccel.cpp
         ../driver/accel_modes.c)
 
-target_compile_definitions(YeetMouseTests PRIVATE TEST_ENV)
+target_compile_definitions(YeetMouseTests PRIVATE TEST_ENV FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 target_include_directories(YeetMouseTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/..

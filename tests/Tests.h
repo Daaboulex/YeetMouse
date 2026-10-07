@@ -46,6 +46,8 @@ public:
 
     static bool TestFixedPointArithmetic();
 
+    static bool TestRawAccelSettings();
+
 private:
     //static CachedFunction functions[AccelMode_Count];
 

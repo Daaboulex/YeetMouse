@@ -4,11 +4,15 @@
 #include <climits>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <random>
+#include <sstream>
 
 #include "config.h"
 #include "TestManager.h"
 #include "gui/FunctionHelper.h"
+#include "gui/RawAccel.h"
 
 //static CachedFunction functions[AccelMode_Count];
 
@@ -1089,6 +1093,77 @@ bool Tests::TestFixedPointArithmetic() {
                 check_division(a, b);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during arithmetic\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
+bool Tests::TestRawAccelSettings() {
+    TestSupervisor supervisor{"Raw Accel Settings"};
+
+    auto refused = [](const std::string &text) {
+        std::istringstream stream(text);
+        try {
+            RawAccel::Read(stream);
+        } catch (const RawAccel::Refused &) {
+            return true;
+        }
+        return false;
+    };
+
+    try {
+        supervisor.NextTest();
+
+        std::ifstream file(FIXTURES_DIR "/rawaccel/power-velocity-output-cap.json");
+        RawAccel::Settings settings = RawAccel::Read(file);
+        supervisor.Validate(settings.version == "1.7.0");
+        supervisor.Validate(settings.profiles.size() == 1 && settings.devices.size() == 1);
+        const RawAccel::Profile &profile = settings.profiles.at(0);
+        supervisor.Validate(profile.name == "default");
+        supervisor.Validate(profile.x.mode == RawAccel::Mode::Power && !profile.x.gain);
+        supervisor.Validate(profile.x.exponentPower == 0.15 && profile.x.scale == 1.0);
+        supervisor.Validate(profile.x.cap.x == 15.0 && profile.x.cap.y == 1.5);
+        supervisor.Validate(profile.x.capMode == RawAccel::CapMode::Output);
+        supervisor.Validate(profile.y.mode == RawAccel::Mode::NoAccel && profile.y.gain);
+        supervisor.Validate(profile.speed.whole && profile.speed.lpNorm == 2.0);
+        supervisor.Validate(profile.outputDpi == 500.0 && profile.ratioYX == 1.0);
+        const RawAccel::Device &device = settings.devices.at(0);
+        supervisor.Validate(device.profile == "default" && device.id == "HID\\VID_046D&PID_C539&MI_01&Col01");
+        supervisor.Validate(device.config.dpi == 800 && device.config.pollingRate == 1000);
+        supervisor.Validate(!device.config.pollTimeLock && !device.config.disable);
+        supervisor.Validate(device.config.minimumTime == RawAccel::DefaultMinimumTime);
+        supervisor.Validate(device.config.maximumTime == RawAccel::DefaultMaximumTime);
+
+        supervisor.NextTest();
+
+        std::istringstream written(RawAccel::Write(settings));
+        RawAccel::Settings again = RawAccel::Read(written);
+        supervisor.Validate(RawAccel::Write(again) == RawAccel::Write(settings));
+
+        supervisor.NextTest();
+
+        std::ifstream source(FIXTURES_DIR "/rawaccel/power-velocity-output-cap.json");
+        std::string original((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>());
+        auto replaced = [&](const std::string &from, const std::string &to) {
+            std::string text = original;
+            text.replace(text.find(from), from.size(), to);
+            return text;
+        };
+
+        supervisor.Validate(!refused(original));
+        supervisor.Validate(refused("{ not json"));
+        supervisor.Validate(refused("[]"));
+        supervisor.Validate(refused(replaced("\"version\": \"1.7.0\",", "")));
+        supervisor.Validate(refused(replaced("\"version\": \"1.7.0\"", "\"version\": \"1.6.1\"")));
+        supervisor.Validate(refused(replaced("\"exponentPower\": 0.15,", "")));
+        supervisor.Validate(refused(replaced("\"Output DPI\": 500.0", "\"Output DPI\": \"500\"")));
+        supervisor.Validate(refused(replaced("\"mode\": \"power\"", "\"mode\": \"motivity\"")));
+        supervisor.Validate(refused(replaced("\"data\": []", "\"data\": [1.0, 2.0, 3.0]")));
+        supervisor.Validate(refused(replaced("\"Polling rate Hz (keep at 0 for automatic adjustment)\": 1000",
+                                             "\"Polling rate Hz (keep at 0 for automatic adjustment)\": 1000.5")));
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during Raw Accel settings\n", ex.what());
         supervisor.result = false;
     }
 
