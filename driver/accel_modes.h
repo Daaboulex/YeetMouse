@@ -86,6 +86,8 @@ FP_LONG accel_natural(FP_LONG speed);
 FP_LONG accel_jump(FP_LONG speed);
 FP_LONG accel_lut(FP_LONG speed);
 
+void accel_packet(FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms);
+
 #ifdef __cplusplus
 }
 #endif

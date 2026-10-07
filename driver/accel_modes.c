@@ -591,3 +591,121 @@ FP_LONG accel_lut(FP_LONG speed) {
 
     return speed;
 }
+
+void accel_packet(FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
+    FP_LONG delta_x = *delta_x_out;
+    FP_LONG delta_y = *delta_y_out;
+    FP_LONG speed;
+
+    // Apply Pre-Scale
+    if (g_PreScale != FP64_1) {
+        delta_x = FP64_Mul(delta_x, g_PreScale);
+        delta_y = FP64_Mul(delta_y, g_PreScale);
+    }
+
+    // Calculate velocity
+    speed = FP64_Sqrt(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));
+    speed = FP64_DivPrecise(speed, ms);
+
+    // Apply speedcap
+    if (g_InputCap > 0) {
+        //if(speed >= g_InputCap) {
+        if (FP64_Sub(speed, g_InputCap) > 0) {
+            speed = g_InputCap;
+        }
+    }
+
+    speed = FP64_Sub(speed, g_Offset);
+
+    // Apply Rotation before everything else to keep the precision
+    if(g_RotationAngle != 0) {
+        FP_LONG new_delta_x = FP64_Mul(delta_x, modesConst.cos_a) - FP64_Mul(delta_y, modesConst.sin_a);
+        delta_y = FP64_Mul(delta_x, modesConst.sin_a) + FP64_Mul(delta_y, modesConst.cos_a);
+        delta_x = new_delta_x;
+    }
+
+    static_assert(AccelMode_Count == 10, "Wrong AccelMode count!");
+    // Apply acceleration if movement is over offset
+    if (speed > 0) {
+        switch (g_AccelerationMode) {
+            case AccelMode_Linear:
+                speed = accel_linear(speed);
+                break;
+            case AccelMode_Power:
+                speed = accel_power(speed);
+                break;
+            case AccelMode_Classic:
+                speed = accel_classic(speed);
+                break;
+            case AccelMode_Motivity:
+                speed = accel_motivity(speed);
+                break;
+            case AccelMode_Synchronous:
+                speed = accel_synchronous(speed);
+                break;
+            case AccelMode_Natural:
+                speed = accel_natural(speed);
+                break;
+            case AccelMode_Jump:
+                speed = accel_jump(speed);
+                break;
+            case AccelMode_Lut: case AccelMode_CustomCurve:
+                speed = accel_lut(speed);
+                break;
+            default:
+                speed = FP64_1;
+                break;
+        }
+    } else {
+        speed = modesConst.current_func_at_0;
+    }
+
+    // Actually apply accelerated sensitivity, allow post-scaling and apply carry from previous round
+    // Like RawAccel, sensitivity will be a final multiplier:
+    if (g_RatioYX == FP64_1) {
+        if(g_Sensitivity != FP64_1)
+            speed = FP64_Mul(speed, g_Sensitivity);
+
+        // Apply Output Limit
+        if(g_OutputCap > 0)
+            speed = FP64_Min(g_OutputCap, speed);
+
+        // Apply acceleration
+        delta_x = FP64_Mul(delta_x, speed);
+        delta_y = FP64_Mul(delta_y, speed);
+    } else {
+        speed = FP64_Mul(speed, g_Sensitivity);
+        FP_LONG speed_Y = FP64_Mul(speed, g_RatioYX);
+
+        // Apply Output Limit
+        if(g_OutputCap > 0) {
+            speed = FP64_Min(g_OutputCap, speed);
+            speed_Y = FP64_Min(g_OutputCap, speed_Y);
+        }
+
+        // Apply acceleration
+        delta_x = FP64_Mul(delta_x, speed);
+        delta_y = FP64_Mul(delta_y, speed_Y);
+    }
+
+    // Angle Snapping
+    if(modesConst.as_half_threshold != 0) {
+        FP_LONG delta_mag = FP64_Sqrt(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));
+        if (delta_mag != 0) {
+            FP_LONG current_angle = FP64_Atan2(delta_y, delta_x);
+            FP_LONG angle_diff = FP64_Sub(g_AngleSnap_Angle, current_angle);
+            FP_LONG angle_diff_quarter = FP64_PI_2 - FP64_Abs(angle_diff);
+
+            int sign = FP64_Sign(angle_diff_quarter);
+            angle_diff_quarter = FP64_Abs(angle_diff_quarter) - FP64_PI_2;
+
+            if (FP64_Abs(angle_diff_quarter) <= modesConst.as_half_threshold) {
+                delta_x = FP64_Mul(modesConst.as_cos, delta_mag) * sign;
+                delta_y = FP64_Mul(modesConst.as_sin, delta_mag) * sign;
+            }
+        }
+    }
+
+    *delta_x_out = delta_x;
+    *delta_y_out = delta_y;
+}
