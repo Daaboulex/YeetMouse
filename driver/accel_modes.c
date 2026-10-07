@@ -287,8 +287,8 @@ static struct {
 static FP_LONG synchronous_legacy(FP_LONG x) {
     if (modesConst.useClamp) {
         FP_LONG L = FP64_Mul(modesConst.gammaConst, FP64_Sub(FP64_Log(x), modesConst.logSync));
-        if (L < FP64_1) return modesConst.minSens;
-        if (L > -FP64_1) return modesConst.maxSens;
+        if (L < -FP64_1) return modesConst.minSens;
+        if (L > FP64_1) return modesConst.maxSens;
         return FP64_Exp(FP64_Mul(L, modesConst.logMot));
     }
 

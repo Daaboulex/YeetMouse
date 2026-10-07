@@ -519,6 +519,28 @@ bool Tests::TestAccelSynchronous(float range_min, float range_max) {
     try {
         supervisor.NextTest();
 
+        for (float smoothness : {0.f, 0.02f}) {
+            for (bool gain : {false, true}) {
+                TestManager::SetAccelMode(AccelMode_Synchronous);
+                TestManager::SetExponent(2.f);
+                TestManager::SetMidpoint(smoothness);
+                TestManager::SetMotivity(1.75f);
+                TestManager::SetAcceleration(5.f);
+                TestManager::SetUseSmoothing(gain);
+                TestManager::UpdateModesConstants();
+
+                for (int i = 1; i <= BASIC_TEST_STEPS; i++) {
+                    float x = range_min + static_cast<float>(i) * (range_max - range_min) / BASIC_TEST_STEPS;
+                    auto res = TestManager::AccelSynchronous(x);
+
+                    supervisor.Validate(IsAccelValueGood(res));
+                    supervisor.Validate(IsCloseEnoughRelative(res, TestManager::EvalFloatFunc(x)));
+                }
+            }
+        }
+
+        supervisor.NextTest();
+
         /* Parameter mapping (Rawaccel -> YeetMouse):
          * smooth -> midpoint
          * sync_speed -> accel
