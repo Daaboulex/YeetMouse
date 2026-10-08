@@ -1725,6 +1725,42 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(counts_match(weighted_owner, device, 12));
 
         supervisor.NextTest();
+        RawAccel::AccelArgs classic_y = owner.x;
+        classic_y.mode = RawAccel::Mode::Classic;
+        classic_y.gain = true;
+        classic_y.acceleration = 0.02;
+        classic_y.exponentClassic = 2.5;
+        classic_y.capMode = RawAccel::CapMode::Output;
+        classic_y.cap = {0, 3};
+        RawAccel::AccelArgs jump_y = owner.x;
+        jump_y.mode = RawAccel::Mode::Jump;
+        jump_y.gain = false;
+        jump_y.smooth = 0.5;
+        jump_y.cap = {10, 2};
+        RawAccel::AccelArgs flat_y = owner.x;
+        flat_y.mode = RawAccel::Mode::NoAccel;
+        int component_converted = 0;
+        for (const RawAccel::AccelArgs &vertical : {classic_y, jump_y, flat_y, owner.x}) {
+            for (RawAccel::Vec2 domain : {RawAccel::Vec2{1, 1}, RawAccel::Vec2{0.5, 1.5}}) {
+                for (RawAccel::Vec2 range : {RawAccel::Vec2{1, 1}, RawAccel::Vec2{0.4, 1.8}}) {
+                    RawAccel::Profile profile = owner;
+                    profile.speed.whole = false;
+                    profile.y = vertical;
+                    profile.domain = domain;
+                    profile.range = range;
+                    supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+                    component_converted++;
+                }
+            }
+        }
+        supervisor.Validate(component_converted == 16);
+        RawAccel::Profile component_owner = owner;
+        component_owner.speed.whole = false;
+        component_owner.y = classic_y;
+        component_owner.range = {1, 0.7};
+        supervisor.Validate(counts_match(component_owner, device, 13));
+
+        supervisor.NextTest();
         std::mt19937 table_rng(20261008);
         for (int points : {2, 3, 8, 50, 128, 200, 257}) {
             for (int round = 0; round < 6; round++) {

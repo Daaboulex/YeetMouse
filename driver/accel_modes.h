@@ -75,7 +75,8 @@ struct accel_curve {
 };
 
 struct accel_profile {
-    struct accel_curve x;
+    struct accel_curve x, y;
+    char by_component;
     FP_LONG pre_scale, sensitivity, ratio_yx, output_cap, input_cap, offset, rotation_angle, angle_snap_angle,
             angle_snap_threshold;
 

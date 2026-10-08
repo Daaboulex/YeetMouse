@@ -4,6 +4,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <vector>
 #include "DriverHelper.h"
 
 namespace ConfigHelper {
@@ -135,6 +136,37 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.rangeX = val;
         else if (name == "rangey" || name == "range_y")
             params.rangeY = val;
+        else if (name == "bycomponent" || name == "by_component")
+            params.byComponent = val != 0;
+        else if (name == "accelmodey" || name == "acceleration_mode_y")
+            params.yCurve.accelMode = std::isnan(val) ? AccelMode_From_EnumString(val_str)
+                                                      : static_cast<AccelMode>(std::clamp((int) val, 0, (int) AccelMode_Count - 1));
+        else if (name == "accely" || name == "acceleration_y")
+            params.yCurve.accel = val;
+        else if (name == "exponenty" || name == "exponent_y")
+            params.yCurve.exponent = val;
+        else if (name == "midpointy" || name == "midpoint_y")
+            params.yCurve.midpoint = val;
+        else if (name == "motivityy" || name == "motivity_y")
+            params.yCurve.motivity = val;
+        else if (name == "usesmoothingy" || name == "use_smoothing_y")
+            params.yCurve.useSmoothing = val != 0;
+        else if (name == "inputoffsety" || name == "input_offset_y")
+            params.yCurve.inputOffset = val;
+        else if (name == "legacycapy" || name == "legacy_cap_y")
+            params.yCurve.legacyCap = val;
+        else if (name == "lutvelocityy" || name == "lut_velocity_y")
+            params.yCurve.lutVelocity = val != 0;
+        else if (name == "lut_size_y")
+            params.yCurve.lutSize = val;
+        else if (name == "lut_data_y") {
+            if (val_str.size() >= MAX_LUT_TEXT_LEN)
+                return std::nullopt;
+            std::vector<char> text(val_str.begin(), val_str.end());
+            text.push_back('\0');
+            params.yCurve.lutSize = DriverHelper::ParseUserLutData(text.data(), params.yCurve.lutDataX,
+                                                                   params.yCurve.lutDataY, params.yCurve.lutSize);
+        }
         else if (name == "inputoffset" || name == "input_offset")
             params.inputOffset = val;
         else if (name == "legacycap" || name == "legacy_cap")

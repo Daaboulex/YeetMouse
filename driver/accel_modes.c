@@ -129,12 +129,7 @@ static bool classic_constants(struct accel_curve *c) {
 }
 
 // Recalculate new modes constants
-void update_profile_constants(struct accel_profile *p) {
-    struct accel_curve *c = &p->x;
-
-    p->lp_mode = p->lp_norm == FP64_FromInt(2) || p->lp_norm < FP64_1 ? LP_EUCLIDEAN : p->lp_norm >= FP64_FromInt(16) ? LP_MAX : LP_GENERAL;
-    p->lp_inverse = p->lp_mode == LP_GENERAL ? FP64_DivPrecise(FP64_1, p->lp_norm) : 0;
-
+static void update_curve_constants(struct accel_curve *c) {
     // General
     c->k.accel_sub_1 = FP64_Sub(c->acceleration, FP64_1);
     c->k.exp_sub_1 = FP64_Sub(c->exponent, FP64_1);
@@ -308,6 +303,15 @@ void update_profile_constants(struct accel_profile *p) {
     }
 
     c->k.current_func_at_0 = accel_curve_eval(c, FP64_0_01);
+}
+
+void update_profile_constants(struct accel_profile *p) {
+    p->lp_mode = p->lp_norm == FP64_FromInt(2) || p->lp_norm < FP64_1 ? LP_EUCLIDEAN : p->lp_norm >= FP64_FromInt(16) ? LP_MAX : LP_GENERAL;
+    p->lp_inverse = p->lp_mode == LP_GENERAL ? FP64_DivPrecise(FP64_1, p->lp_norm) : 0;
+
+    update_curve_constants(&p->x);
+    if (p->by_component)
+        update_curve_constants(&p->y);
 
     // Rotation (precalculate the trig. functions)
     p->sin_a = FP64_Sin(p->rotation_angle);
@@ -713,6 +717,37 @@ static FP_LONG accel_range_weight(const struct accel_profile *p, FP_LONG delta_x
     return FP64_Add(p->range_x, FP64_Mul(FP64_DivPrecise(angle, PiHalf), FP64_Sub(p->range_y, p->range_x)));
 }
 
+static FP_LONG accel_axis_scale(const struct accel_profile *p, const struct accel_curve *c, FP_LONG delta,
+                                FP_LONG domain, FP_LONG range, FP_LONG ms) {
+    FP_LONG speed, scale;
+
+    if (domain != FP64_1)
+        delta = FP64_Mul(delta, domain);
+    speed = FP64_DivPrecise(FP64_Abs(delta), ms);
+    if (p->input_cap > 0 && FP64_Sub(speed, p->input_cap) > 0)
+        speed = p->input_cap;
+    speed = FP64_Sub(speed, p->offset);
+
+    scale = speed > 0 ? accel_curve_eval(c, speed) : c->k.current_func_at_0;
+    if (range != FP64_1)
+        scale = FP64_Add(FP64_1, FP64_Mul(FP64_Sub(scale, FP64_1), range));
+    return scale;
+}
+
+static void accel_component_packet(const struct accel_profile *p, FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms) {
+    FP_LONG scale_x = FP64_Mul(accel_axis_scale(p, &p->x, *delta_x, p->domain_x, p->range_x, ms), p->sensitivity);
+    FP_LONG scale_y = FP64_Mul(FP64_Mul(accel_axis_scale(p, &p->y, *delta_y, p->domain_y, p->range_y, ms),
+                                        p->sensitivity), p->ratio_yx);
+
+    if (p->output_cap > 0) {
+        scale_x = FP64_Min(p->output_cap, scale_x);
+        scale_y = FP64_Min(p->output_cap, scale_y);
+    }
+
+    *delta_x = FP64_Mul(*delta_x, scale_x);
+    *delta_y = FP64_Mul(*delta_y, scale_y);
+}
+
 void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
     FP_LONG delta_x = *delta_x_out;
     FP_LONG delta_y = *delta_y_out;
@@ -729,6 +764,13 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
     if (p->rotation_angle != 0) {
         rotated_x = FP64_Mul(delta_x, p->cos_a) - FP64_Mul(delta_y, p->sin_a);
         rotated_y = FP64_Mul(delta_x, p->sin_a) + FP64_Mul(delta_y, p->cos_a);
+    }
+
+    if (p->by_component) {
+        accel_component_packet(p, &rotated_x, &rotated_y, ms);
+        delta_x = rotated_x;
+        delta_y = rotated_y;
+        goto snap;
     }
 
     // Calculate velocity
@@ -788,6 +830,7 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
         delta_y = FP64_Mul(delta_y, speed_Y);
     }
 
+snap:
     // Angle Snapping
     if(p->as_half_threshold != 0) {
         FP_LONG delta_mag = FP64_Sqrt(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));

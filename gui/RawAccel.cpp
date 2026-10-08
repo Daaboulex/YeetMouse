@@ -1,6 +1,8 @@
 #include "RawAccel.h"
 
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <nlohmann/json.hpp>
 
 #include "DriverHelper.h"
@@ -498,12 +500,58 @@ namespace RawAccel {
         }
     }
 
+    namespace {
+        void MapCurve(const AccelArgs &args, const Profile &profile, Parameters &out) {
+            switch (args.mode) {
+                case Mode::NoAccel:
+                    out.accelMode = AccelMode_Current;
+                    break;
+                case Mode::Power:
+                    MapPower(args, profile, out);
+                    break;
+                case Mode::Classic:
+                    MapClassic(args, out);
+                    break;
+                case Mode::Natural:
+                    MapNatural(args, out);
+                    break;
+                case Mode::Jump:
+                    MapJump(args, out);
+                    break;
+                case Mode::Synchronous:
+                    MapSynchronous(args, out);
+                    break;
+                case Mode::Lut:
+                    MapLut(args, out);
+                    break;
+                default:
+                    Require(false, std::string("the ") + ModeNames[static_cast<int>(args.mode)] + " mode");
+            }
+        }
+
+        CurveParameters CurveOf(const Parameters &mapped) {
+            CurveParameters curve;
+            curve.accelMode = mapped.accelMode;
+            curve.accel = mapped.accel;
+            curve.exponent = mapped.exponent;
+            curve.midpoint = mapped.midpoint;
+            curve.motivity = mapped.motivity;
+            curve.useSmoothing = mapped.useSmoothing;
+            curve.inputOffset = mapped.inputOffset;
+            curve.legacyCap = mapped.legacyCap;
+            curve.lutVelocity = mapped.lutVelocity;
+            curve.lutSize = mapped.lutSize;
+            std::copy(std::begin(mapped.lutDataX), std::end(mapped.lutDataX), curve.lutDataX);
+            std::copy(std::begin(mapped.lutDataY), std::end(mapped.lutDataY), curve.lutDataY);
+            return curve;
+        }
+    }
+
     Parameters ToParameters(const Profile &profile, const DeviceConfig &device) {
         Require(!device.disable, "a disabled device");
         if (!(profile.domain.x > 0) || !(profile.domain.y > 0) || !(profile.range.x >= 0) || !(profile.range.y >= 0))
             throw Refused("domain weights that are not positive or range weights that are negative");
-        Require(profile.speed.whole, "by-component mode");
-        if (!(profile.speed.lpNorm >= 1))
+        if (profile.speed.whole && !(profile.speed.lpNorm >= 1))
             throw Refused("an lp norm below 1, which YeetMouse cannot compute within its fixed-point range");
         Require(profile.speed.inputHalfLife == 0 && profile.speed.scaleHalfLife == 0 &&
                 profile.speed.outputHalfLife == 0, "input, scale or output smoothing");
@@ -545,30 +593,12 @@ namespace RawAccel {
         out.rangeX = static_cast<float>(profile.range.x);
         out.rangeY = static_cast<float>(profile.range.y);
 
-        switch (profile.x.mode) {
-            case Mode::NoAccel:
-                out.accelMode = AccelMode_Current;
-                break;
-            case Mode::Power:
-                MapPower(profile.x, profile, out);
-                break;
-            case Mode::Classic:
-                MapClassic(profile.x, out);
-                break;
-            case Mode::Natural:
-                MapNatural(profile.x, out);
-                break;
-            case Mode::Jump:
-                MapJump(profile.x, out);
-                break;
-            case Mode::Synchronous:
-                MapSynchronous(profile.x, out);
-                break;
-            case Mode::Lut:
-                MapLut(profile.x, out);
-                break;
-            default:
-                Require(false, std::string("the ") + ModeNames[static_cast<int>(profile.x.mode)] + " mode");
+        MapCurve(profile.x, profile, out);
+        if (!profile.speed.whole) {
+            Parameters vertical = out;
+            MapCurve(profile.y, profile, vertical);
+            out.byComponent = true;
+            out.yCurve = CurveOf(vertical);
         }
         return out;
     }

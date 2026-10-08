@@ -223,6 +223,21 @@ inline AccelMode AccelMode_From_EnumString(const std::string &mode_text) {
     return AccelMode_Current;
 }
 
+struct CurveParameters {
+    AccelMode accelMode = AccelMode_Current;
+    float accel = 2.0f;
+    float exponent = 0.4f;
+    float midpoint = 5.0f;
+    float motivity = 1.5f;
+    bool useSmoothing = true;
+    float inputOffset = 0;
+    float legacyCap = 0;
+    bool lutVelocity = false;
+    int lutSize = 0;
+    double lutDataX[MAX_LUT_ARRAY_SIZE]{};
+    double lutDataY[MAX_LUT_ARRAY_SIZE]{};
+};
+
 struct Parameters {
     float sens = 1.0f;
     float ratioYX = 1.0f; // Unused when anisotropy is off
@@ -253,6 +268,8 @@ struct Parameters {
     float inputOffset = 0;
     float legacyCap = 0;
     bool lutVelocity = false;
+    bool byComponent = false;
+    CurveParameters yCurve;
 
     double lutDataX[MAX_LUT_ARRAY_SIZE]{};
     double lutDataY[MAX_LUT_ARRAY_SIZE]{};

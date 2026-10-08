@@ -342,6 +342,27 @@ namespace DriverHelper {
         res &= GetParameterF("DomainY", params.domainY);
         res &= GetParameterF("RangeX", params.rangeX);
         res &= GetParameterF("RangeY", params.rangeY);
+        res &= GetParameterB("ByComponent", params.byComponent);
+        {
+            CurveParameters &y = params.yCurve;
+            int modeY{};
+            res &= GetParameterI("AccelerationModeY", modeY);
+            y.accelMode = static_cast<AccelMode>(modeY);
+            res &= GetParameterF("AccelerationY", y.accel);
+            res &= GetParameterF("ExponentY", y.exponent);
+            res &= GetParameterF("MidpointY", y.midpoint);
+            res &= GetParameterF("MotivityY", y.motivity);
+            res &= GetParameterB("UseSmoothingY", y.useSmoothing);
+            res &= GetParameterF("InputOffsetY", y.inputOffset);
+            res &= GetParameterF("LegacyCapY", y.legacyCap);
+            res &= GetParameterB("LutVelocityY", y.lutVelocity);
+            res &= GetParameterI("LutSizeY", y.lutSize);
+            std::string lutFirstY, lutSecondY;
+            res &= GetParameterS("LutDataBufY", lutFirstY);
+            if (GetParameterS("LutDataBufY2", lutSecondY))
+                lutFirstY += lutSecondY;
+            ParseDriverLutData(lutFirstY.c_str(), y.lutDataX, y.lutDataY);
+        }
         res &= GetParameterF("InputOffset", params.inputOffset);
         res &= GetParameterF("LegacyCap", params.legacyCap);
         res &= GetParameterB("LutVelocity", params.lutVelocity);
@@ -420,6 +441,24 @@ bool Parameters::SaveAll(bool auto_update) {
     res &= SetParameterTy("DomainY", domainY);
     res &= SetParameterTy("RangeX", rangeX);
     res &= SetParameterTy("RangeY", rangeY);
+    res &= SetParameterTy("ByComponent", byComponent ? 1 : 0);
+    {
+        std::string lutY = DriverHelper::EncodeLutData(yCurve.lutDataX, yCurve.lutDataY, yCurve.lutSize), firstY, secondY;
+        if (!DriverHelper::SplitLutText(lutY, firstY, secondY) && byComponent && yCurve.accelMode == AccelMode_Lut)
+            return false;
+        res &= SetParameterTy("AccelerationModeY", static_cast<int>(yCurve.accelMode));
+        res &= SetParameterTy("AccelerationY", yCurve.accel);
+        res &= SetParameterTy("ExponentY", yCurve.exponent);
+        res &= SetParameterTy("MidpointY", yCurve.midpoint);
+        res &= SetParameterTy("MotivityY", yCurve.motivity);
+        res &= SetParameterTy("UseSmoothingY", yCurve.useSmoothing ? 1 : 0);
+        res &= SetParameterTy("InputOffsetY", yCurve.inputOffset);
+        res &= SetParameterTy("LegacyCapY", yCurve.legacyCap);
+        res &= SetParameterTy("LutVelocityY", yCurve.lutVelocity ? 1 : 0);
+        res &= SetParameterTy("LutSizeY", yCurve.lutSize);
+        res &= SetParameterTy("LutDataBufY2", secondY.empty() ? std::string(";") : secondY);
+        res &= SetParameterTy("LutDataBufY", firstY.empty() ? std::string(";") : firstY);
+    }
     res &= SetParameterTy("InputOffset", inputOffset);
     res &= SetParameterTy("LegacyCap", legacyCap);
     res &= SetParameterTy("LutVelocity", lutVelocity ? 1 : 0);

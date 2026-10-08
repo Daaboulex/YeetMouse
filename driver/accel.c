@@ -76,6 +76,20 @@ PARAM_UL(LutSize,       LUT_SIZE,           "LUT data array size");
 PARAM_ARR(LutDataBuf,   LUT_DATA,           "Data of the LUT stored in a human form"); // g_LutDataBuf should not be used!
 PARAM_ARR(LutDataBuf2,  LUT_DATA_2,         "Points of the LUT that do not fit in LutDataBuf, in the same form");
 
+PARAM_BYTE(ByComponent, BY_COMPONENT,       "Give each axis its own speed and its own curve (the Y parameters below), as Raw Accel's by-component mode");
+PARAM_BYTE(AccelerationModeY, ACCELERATION_MODE_Y, "Curve of vertical movement when ByComponent is set");
+PARAM_F(AccelerationY,  ACCELERATION_Y,       "Acceleration of the vertical curve");
+PARAM_F(ExponentY,      EXPONENT_Y,           "Exponent of the vertical curve");
+PARAM_F(MidpointY,      MIDPOINT_Y,           "Midpoint of the vertical curve");
+PARAM_F(MotivityY,      MOTIVITY_Y,           "Motivity of the vertical curve");
+PARAM_BYTE(UseSmoothingY, USE_SMOOTHING_Y,   "Smoothing of the vertical curve");
+PARAM_F(InputOffsetY,   INPUT_OFFSET_Y,       "Classic input offset of the vertical curve");
+PARAM_F(LegacyCapY,     LEGACY_CAP_Y,         "Legacy cap of the vertical curve");
+PARAM_BYTE(LutVelocityY, LUT_VELOCITY_Y,     "The vertical LUT holds velocities");
+PARAM_UL(LutSizeY,      LUT_SIZE_Y,           "Points of the vertical LUT");
+PARAM_ARR(LutDataBufY,  LUT_DATA_Y,           "Data of the vertical LUT, in the form of LutDataBuf");
+PARAM_ARR(LutDataBufY2, LUT_DATA_Y_2,         "Points of the vertical LUT that do not fit in LutDataBufY");
+
 PARAM_ARR(_CustomCurveDataAggregate, CC_DATA_AGGREGATE, "Stores the Custom Curve data, SHOULD NOT BE USED ON THE DRIVER SIDE");
 
 PARAM_F(RotationAngle, ROTATION_ANGLE,      "Amount of clockwise rotation (in radians)");
@@ -110,6 +124,10 @@ unsigned long atoul(const char *str);
 
 // Aggregate values that don't change with speed to save on calculations done every irq
 static struct accel_profile g_profile = {
+    .y = {
+        .mode = ACCELERATION_MODE_Y,
+        .k = { .current_func_at_0 = 1ll << FP64_Shift },
+    },
     .x = {
         .mode = ACCELERATION_MODE,
         .use_smoothing = USE_SMOOTHING,
@@ -174,6 +192,12 @@ INLINE void update_params(ktime_t now)
     PARAM_UPDATE(DomainY);
     PARAM_UPDATE(RangeX);
     PARAM_UPDATE(RangeY);
+    PARAM_UPDATE(AccelerationY);
+    PARAM_UPDATE(ExponentY);
+    PARAM_UPDATE(MidpointY);
+    PARAM_UPDATE(MotivityY);
+    PARAM_UPDATE(InputOffsetY);
+    PARAM_UPDATE(LegacyCapY);
     PARAM_UPDATE(InputOffset);
     PARAM_UPDATE(LegacyCap);
     g_FixedTime = PARAM_UPDATE_UL(FixedTime) != 0;
@@ -232,6 +256,19 @@ INLINE void update_params(ktime_t now)
         g_RangeX = FP64_1;
         g_RangeY = FP64_1;
     }
+    g_ByComponent = PARAM_UPDATE_UL(ByComponent) != 0;
+    g_profile.by_component = g_ByComponent;
+    g_profile.y.mode = PARAM_UPDATE_UL(AccelerationModeY);
+    g_profile.y.use_smoothing = PARAM_UPDATE_UL(UseSmoothingY) != 0;
+    g_profile.y.acceleration = g_AccelerationY;
+    g_profile.y.exponent = g_ExponentY;
+    g_profile.y.midpoint = g_MidpointY;
+    g_profile.y.motivity = g_MotivityY;
+    g_profile.y.input_offset = g_InputOffsetY;
+    g_profile.y.legacy_cap = g_LegacyCapY;
+    g_profile.y.lut_velocity = PARAM_UPDATE_UL(LutVelocityY) != 0;
+    g_profile.y.lut_size = accel_lut_parse(g_param_LutDataBufY, g_param_LutDataBufY2, PARAM_UPDATE_UL(LutSizeY),
+                                           g_profile.y.lut_x, g_profile.y.lut_y);
     g_profile.lp_norm = g_LpNorm;
     g_profile.domain_x = g_DomainX;
     g_profile.domain_y = g_DomainY;
@@ -247,6 +284,8 @@ INLINE void update_params(ktime_t now)
 
     g_Acceleration = g_profile.x.acceleration;
     g_Midpoint = g_profile.x.midpoint;
+    g_AccelerationY = g_profile.y.acceleration;
+    g_MidpointY = g_profile.y.midpoint;
 }
 
 // Acceleration happens here

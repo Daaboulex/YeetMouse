@@ -243,6 +243,21 @@ void TestManager::ApplyParameters(const Parameters &params) {
     profile.domain_y = FP64_FromFloat(params.domainY);
     profile.range_x = FP64_FromFloat(params.rangeX);
     profile.range_y = FP64_FromFloat(params.rangeY);
+    profile.by_component = params.byComponent;
+    profile.y.mode = params.yCurve.accelMode;
+    profile.y.use_smoothing = params.yCurve.useSmoothing;
+    profile.y.acceleration = FP64_FromFloat(params.yCurve.accel);
+    profile.y.exponent = FP64_FromFloat(params.yCurve.exponent);
+    profile.y.midpoint = FP64_FromFloat(params.yCurve.midpoint);
+    profile.y.motivity = FP64_FromFloat(params.yCurve.motivity);
+    profile.y.input_offset = FP64_FromFloat(params.yCurve.inputOffset);
+    profile.y.legacy_cap = FP64_FromFloat(params.yCurve.legacyCap);
+    profile.y.lut_velocity = params.yCurve.lutVelocity;
+    profile.y.lut_size = params.yCurve.lutSize;
+    for (int i = 0; i < params.yCurve.lutSize && i < MAX_LUT_ARRAY_SIZE; i++) {
+        profile.y.lut_x[i] = FP64_FromDouble(params.yCurve.lutDataX[i]);
+        profile.y.lut_y[i] = FP64_FromDouble(params.yCurve.lutDataY[i]);
+    }
     profile.x.mode = params.accelMode;
     profile.x.use_smoothing = params.useSmoothing;
     profile.x.acceleration = FP64_FromFloat(params.accel);

@@ -79,6 +79,18 @@ namespace ConfigHelper {
             res_ss << "domainY=" << params.domainY << std::endl;
             res_ss << "rangeX=" << params.rangeX << std::endl;
             res_ss << "rangeY=" << params.rangeY << std::endl;
+            res_ss << "byComponent=" << params.byComponent << std::endl;
+            res_ss << "accelModeY=" << AccelMode2EnumString(params.yCurve.accelMode) << std::endl;
+            res_ss << "accelY=" << params.yCurve.accel << std::endl;
+            res_ss << "exponentY=" << params.yCurve.exponent << std::endl;
+            res_ss << "midpointY=" << params.yCurve.midpoint << std::endl;
+            res_ss << "motivityY=" << params.yCurve.motivity << std::endl;
+            res_ss << "useSmoothingY=" << params.yCurve.useSmoothing << std::endl;
+            res_ss << "inputOffsetY=" << params.yCurve.inputOffset << std::endl;
+            res_ss << "legacyCapY=" << params.yCurve.legacyCap << std::endl;
+            res_ss << "lutVelocityY=" << params.yCurve.lutVelocity << std::endl;
+            res_ss << "LUT_size_y=" << params.yCurve.lutSize << std::endl;
+            res_ss << "LUT_data_y=" << DriverHelper::EncodeLutData(params.yCurve.lutDataX, params.yCurve.lutDataY, params.yCurve.lutSize, true) << std::endl;
             res_ss << "inputOffset=" << params.inputOffset << std::endl;
             res_ss << "legacyCap=" << params.legacyCap << std::endl;
             res_ss << "lutVelocity=" << params.lutVelocity << std::endl;
@@ -139,6 +151,19 @@ namespace ConfigHelper {
             res_ss << "#define DOMAIN_Y " << params.domainY << std::endl;
             res_ss << "#define RANGE_X " << params.rangeX << std::endl;
             res_ss << "#define RANGE_Y " << params.rangeY << std::endl;
+            res_ss << "#define BY_COMPONENT " << params.byComponent << std::endl;
+            res_ss << "#define ACCELERATION_MODE_Y " << AccelMode2EnumString(params.yCurve.accelMode) << std::endl;
+            res_ss << "#define ACCELERATION_Y " << params.yCurve.accel << std::endl;
+            res_ss << "#define EXPONENT_Y " << params.yCurve.exponent << std::endl;
+            res_ss << "#define MIDPOINT_Y " << params.yCurve.midpoint << std::endl;
+            res_ss << "#define MOTIVITY_Y " << params.yCurve.motivity << std::endl;
+            res_ss << "#define USE_SMOOTHING_Y " << params.yCurve.useSmoothing << std::endl;
+            res_ss << "#define INPUT_OFFSET_Y " << params.yCurve.inputOffset << std::endl;
+            res_ss << "#define LEGACY_CAP_Y " << params.yCurve.legacyCap << std::endl;
+            res_ss << "#define LUT_VELOCITY_Y " << params.yCurve.lutVelocity << std::endl;
+            res_ss << "#define LUT_SIZE_Y " << params.yCurve.lutSize << std::endl;
+            res_ss << "#define LUT_DATA_Y " << DriverHelper::EncodeLutData(
+                params.yCurve.lutDataX, params.yCurve.lutDataY, params.yCurve.lutSize, false) << std::endl;
             res_ss << "#define INPUT_OFFSET " << params.inputOffset << std::endl;
             res_ss << "#define LEGACY_CAP " << params.legacyCap << std::endl;
             res_ss << "#define LUT_VELOCITY " << params.lutVelocity << std::endl;
