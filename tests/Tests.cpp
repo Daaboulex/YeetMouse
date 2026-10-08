@@ -1104,6 +1104,7 @@ bool Tests::TestFixedPointArithmetic() {
             //printf("%f, %f,%f,%f\n", x, FP64_ToFloat(val), std::tanh(x), FP64_ToFloat(val) - std::tanh(x));
         }
         supervisor.Validate(FP64_Tanh(FP64_FromInt(1 << 30)) == One && FP64_Tanh(-FP64_FromInt(1 << 30)) == -One);
+        supervisor.Validate(std::fabs(FP64_ToFloat(FP64_Log2(FP64_FromDouble(0.25))) + 2) < 1e-6);
 
         {
             static FP_LONG lut_x[MAX_LUT_ARRAY_SIZE], lut_y[MAX_LUT_ARRAY_SIZE];

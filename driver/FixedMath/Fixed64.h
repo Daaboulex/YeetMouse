@@ -971,7 +971,7 @@ static inline FP_LONG FP64_Log2(FP_LONG x) {
     FP_LONG y = (FP_LONG) Log2Poly4Lut16(n - ONE) << 2;
 
     // Combine integer and fractional parts (into s32.32).
-    return ((FP_LONG) offset << FP64_Shift) + y;
+    return (FP_LONG) offset * One + y;
 }
 
 static inline FP_LONG FP64_Log2Fast(FP_LONG x) {
@@ -991,7 +991,7 @@ static inline FP_LONG FP64_Log2Fast(FP_LONG x) {
     FP_LONG y = (FP_LONG) Log2Poly3Lut16(n - ONE) << 2;
 
     // Combine integer and fractional parts (into s32.32).
-    return ((FP_LONG) offset << FP64_Shift) + y;
+    return (FP_LONG) offset * One + y;
 }
 
 static inline FP_LONG FP64_Log2Fastest(FP_LONG x) {
@@ -1011,7 +1011,7 @@ static inline FP_LONG FP64_Log2Fastest(FP_LONG x) {
     FP_LONG y = (FP_LONG) Log2Poly5(n - ONE) << 2;
 
     // Combine integer and fractional parts (into s32.32).
-    return ((FP_LONG) offset << FP64_Shift) + y;
+    return (FP_LONG) offset * One + y;
 }
 
 /// <summary>
