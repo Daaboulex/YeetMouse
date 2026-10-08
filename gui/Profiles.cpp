@@ -330,18 +330,40 @@ namespace Profiles {
 }
 
 namespace Profiles {
+    namespace {
+        bool BitSet(const std::string &bitmap, unsigned bit) {
+            std::vector<std::string> words;
+            std::istringstream stream(bitmap);
+            for (std::string word; stream >> word;)
+                words.push_back(word);
+            unsigned index = bit / 64;
+            if (index >= words.size())
+                return false;
+            uint64_t value = 0;
+            const std::string &word = words[words.size() - 1 - index];
+            if (std::from_chars(word.data(), word.data() + word.size(), value, 16).ptr != word.data() + word.size())
+                return false;
+            return (value >> (bit % 64)) & 1;
+        }
+    }
+
     std::vector<ConnectedMouse> ReadConnectedMice(std::istream &devices) {
+        const unsigned PropPointer = 0, ToolPen = 0x140, ToolFinger = 0x145;
         std::vector<ConnectedMouse> mice;
         ConnectedMouse mouse;
         bool handled = false;
-        std::string line;
+        std::string line, properties, keys;
         auto finish = [&] {
-            if (handled && std::none_of(mice.begin(), mice.end(), [&](const ConnectedMouse &seen) {
+            mouse.touchpad = !handled && BitSet(properties, PropPointer) &&
+                             BitSet(keys, ToolFinger) && !BitSet(keys, ToolPen);
+            if ((handled || mouse.touchpad) && std::none_of(mice.begin(), mice.end(), [&](const ConnectedMouse &seen) {
                     return seen.vendor == mouse.vendor && seen.product == mouse.product && seen.name == mouse.name;
                 }))
                 mice.push_back(mouse);
             mouse = {};
             handled = false;
+            properties.clear();
+            keys.clear();
         };
         while (std::getline(devices, line)) {
             if (line.empty()) {
@@ -354,6 +376,10 @@ namespace Profiles {
                 }
             } else if (line.rfind("N: Name=\"", 0) == 0) {
                 mouse.name = line.substr(9, line.size() > 10 ? line.size() - 10 : 0);
+            } else if (line.rfind("B: PROP=", 0) == 0) {
+                properties = line.substr(8);
+            } else if (line.rfind("B: KEY=", 0) == 0) {
+                keys = line.substr(7);
             } else if (line.rfind("H: Handlers=", 0) == 0) {
                 std::istringstream handlers(line.substr(12));
                 std::string handler;

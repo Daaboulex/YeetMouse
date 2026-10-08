@@ -2583,10 +2583,33 @@ bool Tests::TestProfileFiles() {
                                 "\n"
                                 "I: Bus=0005 Vendor=05ac Product=0265 Version=0001\n"
                                 "N: Name=\"Magic Mouse\"\n"
-                                "H: Handlers=event7 yeetmouse\n");
+                                "H: Handlers=event7 yeetmouse\n"
+                                "\n"
+                                "I: Bus=001c Vendor=05ac Product=0343 Version=0352\n"
+                                "N: Name=\"Apple SPI Trackpad\"\n"
+                                "H: Handlers=event2 mouse0 \n"
+                                "B: PROP=5\n"
+                                "B: EV=1b\n"
+                                "B: KEY=e520 10000 0 0 0 0\n"
+                                "B: ABS=67f800001000003\n"
+                                "\n"
+                                "I: Bus=0018 Vendor=04f3 Product=2b7c Version=0100\n"
+                                "N: Name=\"Touchscreen\"\n"
+                                "H: Handlers=event8\n"
+                                "B: PROP=2\n"
+                                "B: KEY=420 0 0 0 0 0\n"
+                                "\n"
+                                "I: Bus=0003 Vendor=056a Product=0374 Version=0100\n"
+                                "N: Name=\"Pen Tablet\"\n"
+                                "H: Handlers=event9\n"
+                                "B: PROP=1\n"
+                                "B: KEY=1c63 0 0 0 0 0\n");
         std::vector<Profiles::ConnectedMouse> mice = Profiles::ReadConnectedMice(proc);
-        supervisor.Validate(mice.size() == 2 && mice[0].vendor == 0x046d && mice[0].product == 0xc539 &&
-                            mice[0].name == "Logitech G502" && mice[1].vendor == 0x05ac && mice[1].name == "Magic Mouse");
+        supervisor.Validate(mice.size() == 3 && mice[0].vendor == 0x046d && mice[0].product == 0xc539 &&
+                            mice[0].name == "Logitech G502" && !mice[0].touchpad && mice[1].vendor == 0x05ac &&
+                            mice[1].name == "Magic Mouse" && !mice[1].touchpad);
+        supervisor.Validate(mice.size() == 3 && mice[2].name == "Apple SPI Trackpad" && mice[2].product == 0x0343 &&
+                            mice[2].touchpad);
 
         supervisor.NextTest();
         std::filesystem::remove_all(root);

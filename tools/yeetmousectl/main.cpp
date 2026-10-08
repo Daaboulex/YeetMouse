@@ -180,7 +180,9 @@ static int DeviceList() {
         for (const Profiles::ConnectedMouse &mouse : mice) {
             const Profiles::DeviceLine *line = line_of(mouse.vendor, mouse.product);
             std::cout << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name << "\" "
-                      << (line ? line->profile : std::string("default")) << "\n";
+                      << (mouse.touchpad ? std::string("touchpad, set by the desktop's touchpad settings")
+                                         : line ? line->profile : std::string("default"))
+                      << "\n";
         }
         for (const Profiles::DeviceLine &line : lines)
             if (std::none_of(mice.begin(), mice.end(), [&](const Profiles::ConnectedMouse &mouse) {

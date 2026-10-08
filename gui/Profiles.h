@@ -39,6 +39,7 @@ namespace Profiles {
         uint16_t vendor = 0;
         uint16_t product = 0;
         std::string name;
+        bool touchpad = false;
     };
 
     std::string DeviceId(uint16_t vendor, uint16_t product);
