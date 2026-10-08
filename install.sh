@@ -181,9 +181,11 @@ if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
 	sudo systemctl restart yeetmouse.service || true
 else
 	echo "systemd not detected; installed driver and yeetmousectl, but did not enable a boot-time service."
-	echo "To persist settings across reboot on this system, run:"
+	echo "To persist settings, profiles and devices across reboot on this system, run:"
+	echo "  chown root:yeetmouse /sys/module/yeetmouse/parameters/* /dev/yeetmouse"
 	echo "  /usr/bin/yeetmousectl apply /etc/yeetmouse.conf"
-	echo "from your init system's startup mechanism."
+	echo "  /usr/bin/yeetmousectl load"
+	echo "from your init system's startup mechanism, after the yeetmouse module is loaded."
 fi
 
 trap - ERR
