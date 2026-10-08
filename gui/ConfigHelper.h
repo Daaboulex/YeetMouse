@@ -144,6 +144,14 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.scaleSmoothHalfLife = val;
         else if (name == "outputsmoothhalflife" || name == "output_smooth_half_life")
             params.outputSmoothHalfLife = val;
+        else if (name == "axissnap" || name == "axis_snap")
+            params.axisSnap = val / (is_config_h ? DEG2RAD : 1);
+        else if (name == "speedclamp" || name == "speed_clamp")
+            params.speedClamp = val;
+        else if (name == "ratiolr" || name == "ratio_lr")
+            params.ratioLR = val;
+        else if (name == "ratioud" || name == "ratio_ud")
+            params.ratioUD = val;
         else if (name == "accelmodey" || name == "acceleration_mode_y")
             params.yCurve.accelMode = std::isnan(val) ? AccelMode_From_EnumString(val_str)
                                                       : static_cast<AccelMode>(std::clamp((int) val, 0, (int) AccelMode_Count - 1));

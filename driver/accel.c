@@ -79,6 +79,10 @@ PARAM_ARR(LutDataBuf2,  LUT_DATA_2,         "Points of the LUT that do not fit i
 PARAM_F(InputSmoothHalfLife, INPUT_SMOOTH_HALF_LIFE, "Half-life in ms of Raw Accel's input speed smoothing; 0 is off");
 PARAM_F(ScaleSmoothHalfLife, SCALE_SMOOTH_HALF_LIFE, "Half-life in ms of Raw Accel's sensitivity smoothing; 0 is off");
 PARAM_F(OutputSmoothHalfLife, OUTPUT_SMOOTH_HALF_LIFE, "Half-life in ms of Raw Accel's output speed smoothing; 0 is off");
+PARAM_F(AxisSnap,       AXIS_SNAP,          "Raw Accel's angle snapping in radians, up to pi/4: movement this close to an axis is put on it");
+PARAM_F(SpeedClamp,     SPEED_CLAMP,        "Raw Accel's input speed cap: a faster movement is scaled down to it; 0 is off");
+PARAM_F(RatioLR,        RATIO_LR,           "Factor for movement to the left, as Raw Accel's L/R ratio");
+PARAM_F(RatioUD,        RATIO_UD,           "Factor for movement upward, as Raw Accel's U/D ratio");
 PARAM_BYTE(ByComponent, BY_COMPONENT,       "Give each axis its own speed and its own curve (the Y parameters below), as Raw Accel's by-component mode");
 PARAM_BYTE(AccelerationModeY, ACCELERATION_MODE_Y, "Curve of vertical movement when ByComponent is set");
 PARAM_F(AccelerationY,  ACCELERATION_Y,       "Acceleration of the vertical curve");
@@ -162,6 +166,10 @@ static struct accel_profile g_profile = {
     .domain_y = C0NST_FP64_FromDouble(DOMAIN_Y),
     .range_x = C0NST_FP64_FromDouble(RANGE_X),
     .range_y = C0NST_FP64_FromDouble(RANGE_Y),
+    .axis_snap = C0NST_FP64_FromDouble(AXIS_SNAP),
+    .speed_clamp = C0NST_FP64_FromDouble(SPEED_CLAMP),
+    .ratio_lr = C0NST_FP64_FromDouble(RATIO_LR),
+    .ratio_ud = C0NST_FP64_FromDouble(RATIO_UD),
     .clock_on_any_report = CLOCK_ON_ANY_REPORT,
 };
 
@@ -198,6 +206,10 @@ INLINE void update_params(ktime_t now)
     PARAM_UPDATE(InputSmoothHalfLife);
     PARAM_UPDATE(ScaleSmoothHalfLife);
     PARAM_UPDATE(OutputSmoothHalfLife);
+    PARAM_UPDATE(AxisSnap);
+    PARAM_UPDATE(SpeedClamp);
+    PARAM_UPDATE(RatioLR);
+    PARAM_UPDATE(RatioUD);
     PARAM_UPDATE(AccelerationY);
     PARAM_UPDATE(ExponentY);
     PARAM_UPDATE(MidpointY);
@@ -281,6 +293,17 @@ INLINE void update_params(ktime_t now)
         g_ScaleSmoothHalfLife = 0;
         g_OutputSmoothHalfLife = 0;
     }
+    if (g_AxisSnap < 0 || g_AxisSnap > FP64_Add(PiHalf >> 1, C0NST_FP64_FromDouble(1e-6)) || g_SpeedClamp < 0 || g_RatioLR <= 0 || g_RatioUD <= 0) {
+        printk("YeetMouse: Error: AxisSnap must lie in [0, pi/4], SpeedClamp not below 0 and RatioLR and RatioUD above 0.\n");
+        g_AxisSnap = 0;
+        g_SpeedClamp = 0;
+        g_RatioLR = FP64_1;
+        g_RatioUD = FP64_1;
+    }
+    g_profile.axis_snap = g_AxisSnap;
+    g_profile.speed_clamp = g_SpeedClamp;
+    g_profile.ratio_lr = g_RatioLR;
+    g_profile.ratio_ud = g_RatioUD;
     g_profile.input_half_life = g_InputSmoothHalfLife;
     g_profile.scale_half_life = g_ScaleSmoothHalfLife;
     g_profile.output_half_life = g_OutputSmoothHalfLife;

@@ -96,6 +96,7 @@ struct accel_profile {
 
     FP_LONG lp_norm, lp_inverse, domain_x, domain_y, range_x, range_y;
     FP_LONG input_half_life, scale_half_life, output_half_life;
+    FP_LONG axis_snap, speed_clamp, ratio_lr, ratio_ud;
     struct accel_smoothing input_k, scale_k, output_k;
     char lp_mode;
     char fixed_time;

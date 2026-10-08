@@ -1304,6 +1304,8 @@ bool Tests::TestTimingAndRounding() {
         linear.domain_y = FP64_1;
         linear.range_x = FP64_1;
         linear.range_y = FP64_1;
+        linear.ratio_lr = FP64_1;
+        linear.ratio_ud = FP64_1;
         update_profile_constants(&linear);
         for (int dx = -300; dx <= 300; dx += 7) {
             for (int dy = -300; dy <= 300; dy += 11) {
@@ -1815,6 +1817,41 @@ bool Tests::TestRawAccelParity() {
             supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
             supervisor.Validate(counts_match(profile, device, 15));
         }
+
+        supervisor.NextTest();
+        for (bool whole : {true, false}) {
+            for (double snap : {0.0, 10.0, 30.0, 45.0}) {
+                for (double cap : {0.0, 40.0}) {
+                    for (RawAccel::Vec2 ratios : {RawAccel::Vec2{1, 1}, RawAccel::Vec2{0.5, 1.5}}) {
+                        RawAccel::Profile profile = owner;
+                        profile.speed.whole = whole;
+                        profile.y = classic_y;
+                        profile.snap = snap;
+                        profile.speedMax = cap;
+                        profile.ratioLR = ratios.x;
+                        profile.ratioUD = ratios.y;
+                        profile.rotation = snap == 30.0 ? 8 : 0;
+                        supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+                    }
+                }
+            }
+        }
+        RawAccel::Profile clamped_rising = owner;
+        clamped_rising.x.mode = RawAccel::Mode::Classic;
+        clamped_rising.x.gain = false;
+        clamped_rising.x.acceleration = 0.02;
+        clamped_rising.x.exponentClassic = 2;
+        clamped_rising.x.cap = {0, 0};
+        clamped_rising.speedMax = 20;
+        supervisor.Validate(!refused(clamped_rising, device) && vectors_match(clamped_rising, device));
+        RawAccel::Profile snapped_owner = owner;
+        snapped_owner.snap = 20;
+        snapped_owner.speedMax = 60;
+        snapped_owner.ratioLR = 0.8;
+        snapped_owner.ratioUD = 1.2;
+        supervisor.Validate(counts_match(snapped_owner, device, 16));
+        snapped_owner.snap = 46;
+        supervisor.Validate(refused(snapped_owner, device));
 
         supervisor.NextTest();
         std::mt19937 table_rng(20261008);

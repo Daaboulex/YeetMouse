@@ -555,9 +555,10 @@ namespace RawAccel {
             throw Refused("an lp norm below 1, which YeetMouse cannot compute within its fixed-point range");
         if (!(profile.speed.inputHalfLife >= 0) || !(profile.speed.scaleHalfLife >= 0) || !(profile.speed.outputHalfLife >= 0))
             throw Refused("a negative smoothing half-life");
-        Require(profile.ratioLR == 1 && profile.ratioUD == 1, "the L/R and U/D ratios");
-        Require(profile.snap == 0, "Raw Accel angle snapping");
-        Require(profile.speedMax == 0, "the Raw Accel input speed cap");
+        if (!(profile.ratioLR > 0) || !(profile.ratioUD > 0))
+            throw Refused("an L/R or U/D ratio that is not positive");
+        if (!(profile.snap >= 0 && profile.snap <= 45) || !(profile.speedMax >= 0))
+            throw Refused("a snap angle outside 0 to 45 degrees or a negative speed cap");
         if (!(profile.outputDpi > 0))
             throw Refused("an output DPI that is not positive");
         if (device.dpi < 0 || device.pollingRate < 0 || !(device.maximumTime > 0) || !(device.minimumTime > 0))
@@ -588,6 +589,10 @@ namespace RawAccel {
         out.truncateCarry = true;
         out.clockOnAnyReport = true;
         out.lpNorm = static_cast<float>(profile.speed.lpNorm);
+        out.axisSnap = static_cast<float>(profile.snap);
+        out.speedClamp = static_cast<float>(profile.speedMax);
+        out.ratioLR = static_cast<float>(profile.ratioLR);
+        out.ratioUD = static_cast<float>(profile.ratioUD);
         out.inputSmoothHalfLife = static_cast<float>(profile.speed.inputHalfLife);
         out.scaleSmoothHalfLife = static_cast<float>(profile.speed.scaleHalfLife);
         out.outputSmoothHalfLife = static_cast<float>(profile.speed.outputHalfLife);

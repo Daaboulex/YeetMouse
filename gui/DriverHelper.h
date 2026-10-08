@@ -272,6 +272,10 @@ struct Parameters {
     float inputSmoothHalfLife = 0;
     float scaleSmoothHalfLife = 0;
     float outputSmoothHalfLife = 0;
+    float axisSnap = 0; // Stored in degrees, converted to radians when writing out
+    float speedClamp = 0;
+    float ratioLR = 1;
+    float ratioUD = 1;
     CurveParameters yCurve;
 
     double lutDataX[MAX_LUT_ARRAY_SIZE]{};

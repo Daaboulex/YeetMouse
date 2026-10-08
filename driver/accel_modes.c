@@ -836,6 +836,33 @@ static void accel_component_packet(const struct accel_profile *p, struct accel_s
     }
 }
 
+static FP_LONG vector_length(FP_LONG x, FP_LONG y) {
+    return FP64_SqrtPrecise(FP64_Add(FP64_Mul(x, x), FP64_Mul(y, y)));
+}
+
+static void accel_snap_and_clamp(const struct accel_profile *p, FP_LONG *x, FP_LONG *y, FP_LONG ms) {
+    if (p->axis_snap != 0 && *y != 0) {
+        FP_LONG angle = *x == 0 ? PiHalf : FP64_Abs(*x) == FP64_Abs(*y) ? PiHalf >> 1 : FP64_Atan2(FP64_Abs(*y), FP64_Abs(*x));
+        FP_LONG length = vector_length(*x, *y);
+        if (angle > FP64_Sub(PiHalf, p->axis_snap)) {
+            *x = 0;
+            *y = *y < 0 ? -length : length;
+        } else if (angle < p->axis_snap) {
+            *x = *x < 0 ? -length : length;
+            *y = 0;
+        }
+    }
+
+    if (p->speed_clamp > 0) {
+        FP_LONG speed = FP64_DivPrecise(vector_length(*x, *y), ms);
+        if (speed > p->speed_clamp) {
+            FP_LONG ratio = FP64_DivPrecise(p->speed_clamp, speed);
+            *x = FP64_Mul(*x, ratio);
+            *y = FP64_Mul(*y, ratio);
+        }
+    }
+}
+
 void accel_packet(const struct accel_profile *p, struct accel_state *s, FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
     FP_LONG delta_x = *delta_x_out;
     FP_LONG delta_y = *delta_y_out;
@@ -853,6 +880,8 @@ void accel_packet(const struct accel_profile *p, struct accel_state *s, FP_LONG 
         rotated_x = FP64_Mul(delta_x, p->cos_a) - FP64_Mul(delta_y, p->sin_a);
         rotated_y = FP64_Mul(delta_x, p->sin_a) + FP64_Mul(delta_y, p->cos_a);
     }
+    if (p->axis_snap != 0 || p->speed_clamp > 0)
+        accel_snap_and_clamp(p, &rotated_x, &rotated_y, ms);
 
     if (p->by_component) {
         accel_component_packet(p, s, &rotated_x, &rotated_y, ms);
@@ -862,7 +891,8 @@ void accel_packet(const struct accel_profile *p, struct accel_state *s, FP_LONG 
     }
 
     // Calculate velocity
-    if (p->lp_mode != LP_EUCLIDEAN || p->domain_x != FP64_1 || p->domain_y != FP64_1)
+    if (p->lp_mode != LP_EUCLIDEAN || p->domain_x != FP64_1 || p->domain_y != FP64_1 || p->axis_snap != 0 ||
+        p->speed_clamp > 0)
         speed = accel_speed(p, rotated_x, rotated_y);
     else
         speed = accel_speed(p, delta_x, delta_y);
@@ -952,6 +982,11 @@ snap:
             }
         }
     }
+
+    if (p->ratio_lr != FP64_1 && delta_x < 0)
+        delta_x = FP64_Mul(delta_x, p->ratio_lr);
+    if (p->ratio_ud != FP64_1 && delta_y < 0)
+        delta_y = FP64_Mul(delta_y, p->ratio_ud);
 
     *delta_x_out = delta_x;
     *delta_y_out = delta_y;

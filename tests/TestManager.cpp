@@ -13,6 +13,8 @@ static accel_profile profile = [] {
     initial.domain_y = FP64_1;
     initial.range_x = FP64_1;
     initial.range_y = FP64_1;
+    initial.ratio_lr = FP64_1;
+    initial.ratio_ud = FP64_1;
     return initial;
 }();
 static CachedFunction function;
@@ -247,6 +249,10 @@ void TestManager::ApplyParameters(const Parameters &params) {
     profile.input_half_life = FP64_FromFloat(params.inputSmoothHalfLife);
     profile.scale_half_life = FP64_FromFloat(params.scaleSmoothHalfLife);
     profile.output_half_life = FP64_FromFloat(params.outputSmoothHalfLife);
+    profile.axis_snap = FP64_FromDouble(params.axisSnap * DEG2RAD);
+    profile.speed_clamp = FP64_FromFloat(params.speedClamp);
+    profile.ratio_lr = FP64_FromFloat(params.ratioLR);
+    profile.ratio_ud = FP64_FromFloat(params.ratioUD);
     profile.y.mode = params.yCurve.accelMode;
     profile.y.use_smoothing = params.yCurve.useSmoothing;
     profile.y.acceleration = FP64_FromFloat(params.yCurve.accel);

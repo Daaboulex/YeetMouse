@@ -346,6 +346,11 @@ namespace DriverHelper {
         res &= GetParameterF("InputSmoothHalfLife", params.inputSmoothHalfLife);
         res &= GetParameterF("ScaleSmoothHalfLife", params.scaleSmoothHalfLife);
         res &= GetParameterF("OutputSmoothHalfLife", params.outputSmoothHalfLife);
+        res &= GetParameterF("AxisSnap", params.axisSnap);
+        params.axisSnap /= DEG2RAD;
+        res &= GetParameterF("SpeedClamp", params.speedClamp);
+        res &= GetParameterF("RatioLR", params.ratioLR);
+        res &= GetParameterF("RatioUD", params.ratioUD);
         {
             CurveParameters &y = params.yCurve;
             int modeY{};
@@ -448,6 +453,10 @@ bool Parameters::SaveAll(bool auto_update) {
     res &= SetParameterTy("InputSmoothHalfLife", inputSmoothHalfLife);
     res &= SetParameterTy("ScaleSmoothHalfLife", scaleSmoothHalfLife);
     res &= SetParameterTy("OutputSmoothHalfLife", outputSmoothHalfLife);
+    res &= SetParameterTy("AxisSnap", axisSnap * DEG2RAD);
+    res &= SetParameterTy("SpeedClamp", speedClamp);
+    res &= SetParameterTy("RatioLR", ratioLR);
+    res &= SetParameterTy("RatioUD", ratioUD);
     {
         std::string lutY = DriverHelper::EncodeLutData(yCurve.lutDataX, yCurve.lutDataY, yCurve.lutSize), firstY, secondY;
         if (!DriverHelper::SplitLutText(lutY, firstY, secondY) && byComponent && yCurve.accelMode == AccelMode_Lut)

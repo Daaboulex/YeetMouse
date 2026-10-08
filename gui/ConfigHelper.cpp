@@ -83,6 +83,10 @@ namespace ConfigHelper {
             res_ss << "inputSmoothHalfLife=" << params.inputSmoothHalfLife << std::endl;
             res_ss << "scaleSmoothHalfLife=" << params.scaleSmoothHalfLife << std::endl;
             res_ss << "outputSmoothHalfLife=" << params.outputSmoothHalfLife << std::endl;
+            res_ss << "axisSnap=" << params.axisSnap << std::endl;
+            res_ss << "speedClamp=" << params.speedClamp << std::endl;
+            res_ss << "ratioLR=" << params.ratioLR << std::endl;
+            res_ss << "ratioUD=" << params.ratioUD << std::endl;
             res_ss << "accelModeY=" << AccelMode2EnumString(params.yCurve.accelMode) << std::endl;
             res_ss << "accelY=" << params.yCurve.accel << std::endl;
             res_ss << "exponentY=" << params.yCurve.exponent << std::endl;
@@ -158,6 +162,10 @@ namespace ConfigHelper {
             res_ss << "#define INPUT_SMOOTH_HALF_LIFE " << params.inputSmoothHalfLife << std::endl;
             res_ss << "#define SCALE_SMOOTH_HALF_LIFE " << params.scaleSmoothHalfLife << std::endl;
             res_ss << "#define OUTPUT_SMOOTH_HALF_LIFE " << params.outputSmoothHalfLife << std::endl;
+            res_ss << "#define AXIS_SNAP " << (params.axisSnap * DEG2RAD) << std::endl;
+            res_ss << "#define SPEED_CLAMP " << params.speedClamp << std::endl;
+            res_ss << "#define RATIO_LR " << params.ratioLR << std::endl;
+            res_ss << "#define RATIO_UD " << params.ratioUD << std::endl;
             res_ss << "#define ACCELERATION_MODE_Y " << AccelMode2EnumString(params.yCurve.accelMode) << std::endl;
             res_ss << "#define ACCELERATION_Y " << params.yCurve.accel << std::endl;
             res_ss << "#define EXPONENT_Y " << params.yCurve.exponent << std::endl;
