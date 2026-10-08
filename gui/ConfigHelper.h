@@ -123,6 +123,10 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.fixedTime = val != 0;
         else if (name == "truncatecarry" || name == "truncate_carry")
             params.truncateCarry = val != 0;
+        else if (name == "inputoffset" || name == "input_offset")
+            params.inputOffset = val;
+        else if (name == "legacycap" || name == "legacy_cap")
+            params.legacyCap = val;
         else if (name == "lut_size")
             params.lutSize = val;
         else if (name == "lut_data") {

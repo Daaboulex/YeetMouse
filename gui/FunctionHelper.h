@@ -65,4 +65,6 @@ private:
 
 bool PowerConstantsFit(const Parameters &params);
 
+bool ClassicConstantsFit(const Parameters &params);
+
 #endif //GUI_FUNCTIONHELPER_H

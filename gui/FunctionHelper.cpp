@@ -59,6 +59,31 @@ bool PowerConstantsFit(const Parameters &params) {
     return Fits(curve * capX + powerConstant - capX * cap);
 }
 
+bool ClassicConstantsFit(const Parameters &params) {
+    double accel = params.accel, exponent = params.exponent, offset = params.inputOffset;
+    double capY = std::fabs(params.midpoint - 1.0), distance = 0, base = 0;
+
+    if (!Fits(accel) || !Fits(exponent) || !Fits(offset) || !Fits(params.midpoint) || !Fits(params.legacyCap) ||
+        offset < 0 || params.legacyCap < 0)
+        return false;
+    if (!params.useSmoothing || capY == 0)
+        return true;
+
+    if (!Fits(capY / exponent) || !Fits(1 / (exponent - 1)) || !PowFits(capY / exponent, 1 / (exponent - 1), distance))
+        return false;
+    distance /= accel;
+    if (!Fits(distance))
+        return false;
+    if (offset == 0)
+        return Fits((exponent - 1) / exponent) && Fits(capY * distance) && Fits((exponent - 1) / exponent * capY * distance);
+
+    double capX = distance + offset;
+    if (!Fits(capX) || !Fits(distance * accel) || !PowFits(distance * accel, exponent - 1, base))
+        return false;
+    base *= distance / capX;
+    return Fits(base) && Fits(base - capY) && Fits((base - capY) * capX);
+}
+
 CachedFunction::CachedFunction(float xStride, Parameters *params)
         : x_stride(xStride), params(params) { }
 
@@ -234,35 +259,41 @@ float CachedFunction::EvalFuncAt(float x) const {
                     val = std::pow(x * params->accel, params->exponent) + (power_constant / x);
                 }
             }
+            if (!params->useSmoothing && params->legacyCap != 0)
+                val = std::min(val, params->legacyCap);
             //val = std::pow(x * params->accel, params->exponent) + (((std::pow(params->midpoint / (params->exponent + 1), 1 / params->exponent) / params->accel) * params->midpoint * params->exponent / (params->exponent + 1)) / x);
 
             break;
         }
         case AccelMode_Classic: // Classic
         {
-            if (params->useSmoothing) {
+            float offset = params->inputOffset;
+            auto base = [&](float speed) {
+                return std::pow((speed - offset) * params->accel, params->exponent - 1.0f) * (speed - offset) / speed;
+            };
+            if (x <= offset) {
+                val = 1.0;
+            } else if (params->useSmoothing) {
                 // The sign is used to have the possibility to
                 // allow negative values
                 float sign = 1.0;
-                float accel_raised = std::pow(params->accel, params->exponent - 1.0);
                 float cap_y = params->midpoint - 1.0;
                 float cap_x = 0.0;
+                float constant = 0.0;
                 if (cap_y != 0.0) {
                     if (cap_y < 0.0) {
                         cap_y = -cap_y;
                         sign = -sign;
                     }
-                    cap_x = (std::pow(cap_y / params->exponent, 1.0 / (params->exponent - 1.0))) / params->accel;
+                    cap_x = offset + std::pow(cap_y / params->exponent, 1.0 / (params->exponent - 1.0)) / params->accel;
+                    constant = (base(cap_x) - cap_y) * cap_x;
                 }
-                float m = accel_raised * std::pow(cap_x, params->exponent - 1.0);
-                float constant = (m - cap_y) * cap_x;
-                if (x < cap_x) {
-                    val = sign * std::pow(x * params->accel, params->exponent - 1.0) + 1.0;
-                } else {
-                    val = sign * (constant / x + cap_y) + 1.0;
-                }
+                val = sign * (x < cap_x ? base(x) : constant / x + cap_y) + 1.0;
+            } else if (params->legacyCap != 0) {
+                float cap = params->legacyCap - 1.0f;
+                val = (cap < 0 ? -1.0f : 1.0f) * std::min(base(x), std::fabs(cap)) + 1.0f;
             } else {
-                val = std::pow(x * params->accel, params->exponent - 1.0) + 1.0;
+                val = base(x) + 1.0;
             }
             break;
         }
@@ -536,10 +567,14 @@ bool CachedFunction::ValidateSettings() {
         if (params->useSmoothing && (params->exponent == 0 || params->exponent - 1 == 0)) {
             isValid = false;
         }
+
+        if (!ClassicConstantsFit(*params)) {
+            isValid = false;
+        }
     }
 
     if (params->accelMode == AccelMode_Power) {
-        if (!PowerConstantsFit(*params)) {
+        if (!PowerConstantsFit(*params) || params->legacyCap < 0) {
             isValid = false;
         }
 

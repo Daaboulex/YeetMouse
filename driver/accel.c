@@ -85,6 +85,8 @@ PARAM_F(MinTime,        MIN_TIME,           "Shortest time in ms one packet is t
 PARAM_F(MaxTime,        MAX_TIME,           "Longest time in ms one packet is taken to span");
 PARAM_BYTE(FixedTime,   FIXED_TIME,         "Take every packet to span exactly MinTime instead of the measured time");
 PARAM_BYTE(TruncateCarry, TRUNCATE_CARRY,   "Truncate toward zero when carrying fractions of counts, as Raw Accel does, instead of rounding");
+PARAM_F(InputOffset,    INPUT_OFFSET,       "Classic only: speed at or below which the sensitivity is 1, inside the curve as in Raw Accel");
+PARAM_F(LegacyCap,      LEGACY_CAP,         "Classic and Power without smoothing: sensitivity cap of the curve, below 1 the classic curve falls toward it; 0 is none");
 
 FP_LONG g_LutData_x[MAX_LUT_ARRAY_SIZE]; // Array to store the x-values of the LUT data
 FP_LONG g_LutData_y[MAX_LUT_ARRAY_SIZE]; // Array to store the y-values of the LUT data
@@ -107,6 +109,8 @@ static struct accel_profile g_profile = {
         .exponent = C0NST_FP64_FromDouble(EXPONENT),
         .midpoint = C0NST_FP64_FromDouble(MIDPOINT),
         .motivity = C0NST_FP64_FromDouble(MOTIVITY),
+        .input_offset = C0NST_FP64_FromDouble(INPUT_OFFSET),
+        .legacy_cap = C0NST_FP64_FromDouble(LEGACY_CAP),
         .lut_size = LUT_SIZE,
         .k = { .current_func_at_0 = FP64_1 },
     },
@@ -150,6 +154,8 @@ INLINE void update_params(ktime_t now)
     PARAM_UPDATE(AngleSnap_Angle);
     PARAM_UPDATE(MinTime);
     PARAM_UPDATE(MaxTime);
+    PARAM_UPDATE(InputOffset);
+    PARAM_UPDATE(LegacyCap);
     g_FixedTime = PARAM_UPDATE_UL(FixedTime) != 0;
     g_TruncateCarry = PARAM_UPDATE_UL(TruncateCarry) != 0;
     g_LutSize = PARAM_UPDATE_UL(LutSize);
@@ -194,6 +200,8 @@ INLINE void update_params(ktime_t now)
     g_profile.x.exponent = g_Exponent;
     g_profile.x.midpoint = g_Midpoint;
     g_profile.x.motivity = g_Motivity;
+    g_profile.x.input_offset = g_InputOffset;
+    g_profile.x.legacy_cap = g_LegacyCap;
     g_profile.x.lut_size = g_LutSize;
     memcpy(g_profile.x.lut_x, g_LutData_x, sizeof(g_profile.x.lut_x));
     memcpy(g_profile.x.lut_y, g_LutData_y, sizeof(g_profile.x.lut_y));

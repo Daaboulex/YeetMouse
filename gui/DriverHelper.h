@@ -212,6 +212,8 @@ struct Parameters {
     float maxTime = 100;
     bool fixedTime = false;
     bool truncateCarry = false;
+    float inputOffset = 0;
+    float legacyCap = 0;
 
     double lutDataX[MAX_LUT_ARRAY_SIZE]{};
     double lutDataY[MAX_LUT_ARRAY_SIZE]{};

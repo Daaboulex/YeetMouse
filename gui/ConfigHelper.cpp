@@ -73,6 +73,8 @@ namespace ConfigHelper {
             res_ss << "maxTime=" << params.maxTime << std::endl;
             res_ss << "fixedTime=" << params.fixedTime << std::endl;
             res_ss << "truncateCarry=" << params.truncateCarry << std::endl;
+            res_ss << "inputOffset=" << params.inputOffset << std::endl;
+            res_ss << "legacyCap=" << params.legacyCap << std::endl;
             res_ss << "LUT_size=" << params.lutSize << std::endl;
             res_ss << "LUT_data=" << DriverHelper::EncodeLutData(params.lutDataX, params.lutDataY, params.lutSize, true) << std::endl;
             res_ss << "CC_data_aggregate=" << params.customCurve.ExportCustomCurve();
@@ -124,6 +126,8 @@ namespace ConfigHelper {
             res_ss << "#define MAX_TIME " << params.maxTime << std::endl;
             res_ss << "#define FIXED_TIME " << params.fixedTime << std::endl;
             res_ss << "#define TRUNCATE_CARRY " << params.truncateCarry << std::endl;
+            res_ss << "#define INPUT_OFFSET " << params.inputOffset << std::endl;
+            res_ss << "#define LEGACY_CAP " << params.legacyCap << std::endl;
             res_ss << "#define LUT_SIZE " << params.lutSize << std::endl;
             res_ss << "#define LUT_DATA " << DriverHelper::EncodeLutData(
                 params.lutDataX, params.lutDataY, params.lutSize, false) << std::endl;

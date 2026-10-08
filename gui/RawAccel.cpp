@@ -369,15 +369,70 @@ namespace RawAccel {
                     cap = base(args.cap.x);
                 else if (args.capMode == CapMode::Output && args.cap.y > 0)
                     cap = args.cap.y;
-                if (cap > 0) {
-                    Require(profile.ratioYX == 1, "a Y/X ratio together with a power velocity cap");
-                    out.outCap = static_cast<float>(cap * profile.outputDpi / YeetMouseDpi);
-                }
+                if (cap > 0)
+                    out.legacyCap = static_cast<float>(cap);
             }
 
             if (!PowerConstantsFit(out))
                 throw Refused("a power output offset or gain cap whose constants leave YeetMouse's fixed-point "
                               "range");
+        }
+    }
+
+    namespace {
+        void MapClassic(const AccelArgs &args, Parameters &out) {
+            double e = args.exponentClassic, a = args.acceleration, offset = args.inputOffset;
+            if (!(e > 1) || !(a > 0) || !(offset >= 0) || args.cap.x < 0 || args.cap.y < 0)
+                throw Refused("classic needs an exponent above 1, a positive acceleration and no negative offset or cap");
+
+            bool smoothing = false;
+            double capY = 1, legacyCap = 0;
+            switch (args.capMode) {
+                case CapMode::InOut: {
+                    if (!(args.cap.x > offset) || !(args.cap.y > 0))
+                        throw Refused("classic with cap mode in_out needs a cap point beyond the input offset");
+                    double y = std::fabs(args.cap.y - 1);
+                    a = args.gain ? std::pow(y / e, 1 / (e - 1)) / (args.cap.x - offset)
+                                  : std::pow(args.cap.x * y * std::pow(args.cap.x - offset, -e), 1 / (e - 1));
+                    smoothing = args.gain;
+                    if (args.gain)
+                        capY = args.cap.y;
+                    else
+                        legacyCap = args.cap.y;
+                    break;
+                }
+                case CapMode::Input:
+                    if (args.cap.x > 0) {
+                        if (args.cap.x < offset)
+                            throw Refused("a classic input cap below the input offset");
+                        smoothing = args.gain;
+                        if (args.gain)
+                            capY = 1 + e * std::pow(a * (args.cap.x - offset), e - 1);
+                        else
+                            legacyCap = 1 + std::pow(a, e - 1) * std::pow(args.cap.x - offset, e) / args.cap.x;
+                    }
+                    break;
+                case CapMode::Output:
+                    if (args.cap.y > 0) {
+                        smoothing = args.gain;
+                        if (args.gain)
+                            capY = args.cap.y;
+                        else
+                            legacyCap = args.cap.y;
+                    }
+                    break;
+            }
+
+            out.accelMode = AccelMode_Classic;
+            out.accel = static_cast<float>(a * SpeedScale);
+            out.exponent = static_cast<float>(e);
+            out.inputOffset = static_cast<float>(offset / SpeedScale);
+            out.useSmoothing = smoothing;
+            out.midpoint = static_cast<float>(capY);
+            out.legacyCap = static_cast<float>(legacyCap);
+            out.motivity = 0;
+            if (!ClassicConstantsFit(out))
+                throw Refused("a classic cap whose constants leave YeetMouse's fixed-point range");
         }
     }
 
@@ -427,6 +482,9 @@ namespace RawAccel {
                 break;
             case Mode::Power:
                 MapPower(profile.x, profile, out);
+                break;
+            case Mode::Classic:
+                MapClassic(profile.x, out);
                 break;
             default:
                 Require(false, std::string("the ") + ModeNames[static_cast<int>(profile.x.mode)] + " mode");

@@ -1346,13 +1346,14 @@ bool Tests::TestRawAccelSettings() {
 bool Tests::TestRawAccelParity() {
     TestSupervisor supervisor{"Raw Accel Parity"};
 
-    auto close = [](FP_LONG actual, double expected) {
+    auto close = [](FP_LONG actual, double expected, double tolerance) {
         double value = FP64_ToFloat(actual);
         double scale = std::max(std::fabs(expected), 1e-6);
-        return std::fabs(value - expected) / scale < 1e-6;
+        return std::fabs(value - expected) / scale < tolerance;
     };
 
-    auto vectors_match = [&](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device) {
+    auto vectors_match = [&](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device,
+                             double tolerance = 1e-6) {
         TestManager::ApplyParameters(RawAccel::ToParameters(profile, device));
         RawAccelOracle oracle(profile, device);
         bool good = true;
@@ -1364,7 +1365,7 @@ bool Tests::TestRawAccelParity() {
                 FP_LONG x = FP64_FromInt(dx);
                 FP_LONG y = FP64_FromInt(dy);
                 accel_packet(&TestManager::GetProfile(), &x, &y, FP64_1);
-                good &= close(x, expected.x) && close(y, expected.y);
+                good &= close(x, expected.x, tolerance) && close(y, expected.y, tolerance);
             }
         }
         return good;
@@ -1465,15 +1466,15 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(converted > 60);
 
         supervisor.NextTest();
-        RawAccel::Profile classic = owner;
-        classic.x.mode = RawAccel::Mode::Classic;
-        supervisor.Validate(refused(classic, device));
+        RawAccel::Profile jump = owner;
+        jump.x.mode = RawAccel::Mode::Jump;
+        supervisor.Validate(refused(jump, device));
         RawAccel::Profile stretched = owner;
         stretched.domain = {1, 2};
         supervisor.Validate(refused(stretched, device));
         RawAccel::Profile anisotropic = owner;
         anisotropic.ratioYX = 2;
-        supervisor.Validate(refused(anisotropic, device));
+        supervisor.Validate(!refused(anisotropic, device) && vectors_match(anisotropic, device));
         RawAccel::DeviceConfig disabled = device;
         disabled.disable = true;
         supervisor.Validate(refused(owner, disabled));
@@ -1491,6 +1492,40 @@ bool Tests::TestRawAccelParity() {
         overflowing_offset.x.exponentPower = 0.05;
         overflowing_offset.x.outputOffset = 4;
         supervisor.Validate(refused(overflowing_offset, device));
+
+        supervisor.NextTest();
+        int classic_converted = 0;
+        for (bool gain : {false, true}) {
+            for (RawAccel::CapMode cap_mode : {RawAccel::CapMode::Output, RawAccel::CapMode::Input, RawAccel::CapMode::InOut}) {
+                for (double offset : {0.0, 3.0}) {
+                    for (double exponent : {1.5, 2.0, 3.0}) {
+                        for (RawAccel::Vec2 cap : {RawAccel::Vec2{0, 0}, RawAccel::Vec2{20, 1.8}, RawAccel::Vec2{25, 0.6}}) {
+                            RawAccel::Profile profile = owner;
+                            profile.x.mode = RawAccel::Mode::Classic;
+                            profile.x.gain = gain;
+                            profile.x.capMode = cap_mode;
+                            profile.x.inputOffset = offset;
+                            profile.x.exponentClassic = exponent;
+                            profile.x.acceleration = 0.01;
+                            profile.x.cap = cap;
+                            if (refused(profile, device))
+                                continue;
+                            classic_converted++;
+                            supervisor.Validate(vectors_match(profile, device, 1e-4));
+                        }
+                    }
+                }
+            }
+        }
+        supervisor.Validate(classic_converted > 80);
+        RawAccel::Profile classic_owner = owner;
+        classic_owner.x.mode = RawAccel::Mode::Classic;
+        classic_owner.x.gain = false;
+        classic_owner.x.inputOffset = 2;
+        classic_owner.x.exponentClassic = 2;
+        classic_owner.x.acceleration = 0.02;
+        classic_owner.x.cap = {0, 0.7};
+        supervisor.Validate(!refused(classic_owner, device) && counts_match(classic_owner, device, 5));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
         supervisor.result = false;

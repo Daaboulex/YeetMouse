@@ -336,6 +336,8 @@ namespace DriverHelper {
         res &= GetParameterF("MaxTime", params.maxTime);
         res &= GetParameterB("FixedTime", params.fixedTime);
         res &= GetParameterB("TruncateCarry", params.truncateCarry);
+        res &= GetParameterF("InputOffset", params.inputOffset);
+        res &= GetParameterF("LegacyCap", params.legacyCap);
         std::string Lut_dataBuf;
         res &= GetParameterS("LutDataBuf", Lut_dataBuf);
         Lut_dataBuf.copy(lutUserData, MAX_LUT_BUF_LEN-1, 0);
@@ -413,6 +415,8 @@ bool Parameters::SaveAll(bool auto_update) {
     res &= SetParameterTy("MaxTime", maxTime);
     res &= SetParameterTy("FixedTime", fixedTime ? 1 : 0);
     res &= SetParameterTy("TruncateCarry", truncateCarry ? 1 : 0);
+    res &= SetParameterTy("InputOffset", inputOffset);
+    res &= SetParameterTy("LegacyCap", legacyCap);
 
     // Specific
     res &= SetParameterTy("Acceleration", accel);

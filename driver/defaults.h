@@ -27,6 +27,8 @@
 #define MAX_TIME 100
 #define FIXED_TIME 0
 #define TRUNCATE_CARRY 0
+#define INPUT_OFFSET 0
+#define LEGACY_CAP 0
 
 // LUT settings
 #define LUT_SIZE 0

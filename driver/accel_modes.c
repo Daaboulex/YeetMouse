@@ -71,6 +71,63 @@ static bool power_constants(struct accel_curve *c) {
     return true;
 }
 
+static bool classic_constants(struct accel_curve *c) {
+    FP_LONG sign = FP64_1, cap_y, cap_x = 0, constant = 0;
+
+    if (!c->use_smoothing) {
+        if (c->legacy_cap == 0)
+            return true;
+        cap_y = FP64_Sub(c->legacy_cap, FP64_1);
+        if (cap_y < 0) {
+            cap_y = -cap_y;
+            sign = Neg1;
+        }
+        c->k.cap_y = cap_y;
+        c->k.sign = sign;
+        return true;
+    }
+
+    if (__builtin_sub_overflow(c->midpoint, FP64_1, &cap_y))
+        return false;
+    if (cap_y < 0) {
+        if (!mul_checked(cap_y, Neg1, &cap_y))
+            return false;
+        sign = Neg1;
+    }
+
+    if (cap_y != 0) {
+        FP_LONG inverse_exponent, base, power, factor, distance, ratio;
+        if (!(div_checked(cap_y, c->exponent, &base) &&
+              div_checked(FP64_1, c->k.exp_sub_1, &inverse_exponent) &&
+              pow_checked(base, inverse_exponent, &power) &&
+              div_checked(power, c->acceleration, &cap_x)))
+            return false;
+        if (c->input_offset == 0) {
+            if (!(div_checked(c->k.exp_sub_1, c->exponent, &factor) &&
+                  mul_checked(cap_y, cap_x, &constant) &&
+                  mul_checked(factor, constant, &constant) &&
+                  mul_checked(constant, Neg1, &constant)))
+                return false;
+        } else {
+            distance = cap_x;
+            if (!(!__builtin_add_overflow(cap_x, c->input_offset, &cap_x) &&
+                  mul_checked(distance, c->acceleration, &base) &&
+                  pow_checked(base, c->k.exp_sub_1, &base) &&
+                  div_checked(distance, cap_x, &ratio) &&
+                  mul_checked(base, ratio, &base) &&
+                  !__builtin_sub_overflow(base, cap_y, &base) &&
+                  mul_checked(base, cap_x, &constant)))
+                return false;
+        }
+    }
+
+    c->k.cap_x = cap_x;
+    c->k.cap_y = cap_y;
+    c->k.gain_constant = constant;
+    c->k.sign = sign;
+    return true;
+}
+
 // Recalculate new modes constants
 void update_profile_constants(struct accel_profile *p) {
     struct accel_curve *c = &p->x;
@@ -143,29 +200,14 @@ void update_profile_constants(struct accel_profile *p) {
             printk("YeetMouse: Error: Acceleration mode 'Classic' is not supported for exponent 0 or 1 while using the the smooth cap.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
-        } else {
-            if (c->use_smoothing) {
-                FP_LONG sign = FP64_1;
-                FP_LONG cap_y = FP64_Sub(c->midpoint, FP64_1);
-                FP_LONG cap_x = FP64_FromInt(0);
-                FP_LONG constant = FP64_FromInt(0);
-                if (cap_y != 0) {
-                    if (cap_y < 0) {
-                        cap_y = FP64_Mul(cap_y, Neg1);
-                        sign = Neg1;
-                    }
-                    cap_x = FP64_DivPrecise(FP64_Pow(FP64_DivPrecise(cap_y, c->exponent),
-                                                     FP64_DivPrecise(FP64_1, c->k.exp_sub_1)), c->acceleration);
-                }
-                FP_LONG factor = FP64_DivPrecise(FP64_Sub(c->exponent, FP64_1), c->exponent);
-                constant = FP64_Mul(cap_y, cap_x);
-                constant = FP64_Mul(factor, constant);
-                constant = FP64_Mul(constant, Neg1);
-                c->k.cap_x = cap_x;
-                c->k.cap_y = cap_y;
-                c->k.gain_constant = constant;
-                c->k.sign = sign;
-            }
+        } else if (c->input_offset < 0 || c->legacy_cap < 0) {
+            printk("YeetMouse: Error: Acceleration mode 'Classic' is not supported for a negative input offset or legacy cap.\n");
+            c->acceleration = 0;
+            c->mode = AccelMode_Current;
+        } else if (!classic_constants(c)) {
+            printk("YeetMouse: Error: Acceleration mode 'Classic' is not supported for a cap whose constants leave the fixed-point range.\n");
+            c->acceleration = 0;
+            c->mode = AccelMode_Current;
         }
     }
 
@@ -216,6 +258,11 @@ void update_profile_constants(struct accel_profile *p) {
     }
 
     // Power
+    if (c->mode == AccelMode_Power && c->legacy_cap < 0) {
+        printk("YeetMouse: Error: Acceleration mode 'Power' is not supported for a negative legacy cap.\n");
+        c->acceleration = 0;
+        c->mode = AccelMode_Current;
+    }
     if (c->mode == AccelMode_Power) {
         if (c->exponent == 0 || c->exponent == -FP64_1 || c->acceleration == 0) {
             printk("YeetMouse: Error: Acceleration mode 'Power' is not supported for exponent 0 or -1 or acceleration 0.\n");
@@ -406,37 +453,32 @@ FP_LONG accel_power(const struct accel_curve *c, FP_LONG speed) {
                 speed = FP64_Add(FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
         }
     }
+    if (!c->use_smoothing && c->legacy_cap != 0 && speed > c->legacy_cap)
+        speed = c->legacy_cap;
     return speed;
 }
 
 FP_LONG accel_classic(const struct accel_curve *c, FP_LONG speed) {
-    // (Speed * Acceleration) ^ (Exponent - 1) + 1
-    // Same as above just without adding the one
-    //speed *= c->acceleration;
-    //speed += 1;
-    //B_pow(&speed, &c->exponent);
+    FP_LONG distance = FP64_Sub(speed, c->input_offset);
+    FP_LONG base;
 
-    // FIXED-POINT:
-    FP_LONG accel_classic_result = speed;
-    accel_classic_result = FP64_Mul(accel_classic_result, c->acceleration);
-    accel_classic_result = FP64_PowFast(accel_classic_result, c->k.exp_sub_1);
+    if (distance <= 0)
+        return FP64_1;
 
-    // if Use Smooth Cap is on, we proceed to calculate the transition
-    // point and the function that provides the smooth cap
+    base = FP64_PowFast(FP64_Mul(distance, c->acceleration), c->k.exp_sub_1);
+    if (c->input_offset != 0)
+        base = FP64_Mul(base, FP64_DivPrecise(distance, speed));
+
     if (c->use_smoothing) {
-        // we setup the y cap
-        if (speed < c->k.cap_x) {
-            accel_classic_result = FP64_Mul(c->k.sign, accel_classic_result);
-            speed = FP64_Add(accel_classic_result, FP64_1);
-        } else {
-            speed = FP64_Add(FP64_Mul(c->k.sign,
-                                      FP64_Add(FP64_DivPrecise(c->k.gain_constant, speed),
-                                               c->k.cap_y)), FP64_1);
-        }
-    } else
-        speed = FP64_Add(accel_classic_result, FP64_1);
+        if (speed >= c->k.cap_x)
+            base = FP64_Add(FP64_DivPrecise(c->k.gain_constant, speed), c->k.cap_y);
+        return FP64_Add(FP64_Mul(c->k.sign, base), FP64_1);
+    }
 
-    return speed;
+    if (c->legacy_cap != 0)
+        return FP64_Add(FP64_Mul(c->k.sign, base < c->k.cap_y ? base : c->k.cap_y), FP64_1);
+
+    return FP64_Add(base, FP64_1);
 }
 
 FP_LONG accel_motivity(const struct accel_curve *c, FP_LONG speed) {
