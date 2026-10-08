@@ -1,55 +1,49 @@
 # Proofs
 
 Bounded model checking of the fixed-point code with [CBMC](https://www.cprover.org/cbmc/). Each
-harness states a property for every possible input, not for samples. Run from the repository root
-with the userspace Linux headers on the include path:
-
-```sh
-cbmc tests/proofs/<harness>.c -I . -I <linux-headers>/include <flags>
-```
-
-On NixOS: `nix shell nixpkgs#cbmc nixpkgs#gcc`, headers from `nix build nixpkgs#linuxHeaders`.
+harness states a property for every possible input, not for samples. `tests/proofs/run.sh [<proof>...]`
+runs them with the flags each needs and prints what holds; with no argument it runs div_defined,
+mul_guard, pow_guard, accel_lut, lut_parse and power_constants. `LINUX_HEADERS` names the userspace
+kernel headers (default `/usr/include`). On NixOS: `nix shell nixpkgs#cbmc nixpkgs#gcc`, headers from
+`nix build nixpkgs#linuxHeaders`. CI runs the script with the fork's locked nixpkgs
+(`.github/workflows/proofs.yml`).
 
 ## div_defined.c: the division is always defined
 
-Flags: `--unwind 4 --unwinding-assertions --signed-overflow-check --undefined-shift-check
---div-by-zero-check --conversion-check --bounds-check`
-
 For every pair of 64-bit operands, `FP64_DivPreciseSoft` and `FP64_DivOverflows` perform no
 signed overflow, no undefined shift (including a count-leading-zeros of zero), no division by
-zero and no out-of-range conversion, and every loop ends within its bound. Result: 37 of 37
-properties hold.
+zero and no out-of-range conversion, and every loop ends within its bound. Result (2026-10-08, CBMC
+6.11 on the M1): 0 of 35 properties fail, 1 s.
 
 ## accel_lut.c: the lookup table stays in its curve
 
-Compile together with `driver/accel_modes.c -DTEST_ENV`. Flags: `--function main
---no-standard-checks --bounds-check --pointer-check --unwind 130 --unwinding-assertions
---slice-formula`
-
-For every table the driver accepts (2 to 128 points, x non-decreasing, the last two x different)
+Compiled together with `driver/accel_modes.c`, the loop bound covering the 257 points a table
+holds since the Raw Accel work (a bound of 130 left the larger tables unchecked and failed its
+unwinding assertion). For every table the driver accepts (2 to 257 points, x non-decreasing, the last two x different)
 and every positive speed, `accel_lut` reads below the end of each array and inside the curve, and
-returns the first y at or below the first x. The arrays are reached through a pointer to the
+a table of sensitivities returns the first y at or below the first x (a table of velocities returns
+the first y over the first x there, Raw Accel's rule, which the parity tests cover; the harness
+leaves `lut_velocity` free and asserts the first-point property only when it is off). The arrays are reached through a pointer to the
 curve, so CBMC checks the start of an array only against the start of the curve: a read just
 before `lut_y` lands in `lut_x` and is not flagged. The index arithmetic is unchanged since
-82e8f8b, where the arrays were separate globals and CBMC proved both bounds of every read. Result:
-holds; with the old `speed < x[0]` test the second property fails.
+82e8f8b, where the arrays were separate globals and CBMC proved both bounds of every read. Result
+(2026-10-08, CBMC 6.11 on the M1): 0 of 3050 properties fail, 1125 s. With the old `speed < x[0]`
+test the first-point property failed (measured on 128-point tables before 82e8f8b).
 
 ## lut_parse.c: the lookup table text stays in its buffers
 
-Built with `goto-cc -DTEST_ENV --function main`, then `goto-instrument --remove-function-body
-FP64_DivPrecise` and `--generate-function-body FP64_DivPrecise --generate-function-body-options
-nondet-return` (div_defined.c proves the division defined; its value cannot move a pointer), then
-`cbmc --no-standard-checks --bounds-check --pointer-check --unwind 20 --unwinding-assertions`.
+Built with goto-cc, with FP64_DivPrecise replaced by a body returning any value (div_defined.c
+proves the division defined; its value cannot move a pointer).
 
 For any bytes in both buffers (each NUL-terminated, the guarantee of module_param_string) and any
 table size, `accel_lut_parse` reads and writes only inside its buffers and arrays, and returns
-either the requested size or 0, never a table with missing points. Result: 0 of 2112 properties
-fail, 334 s on the M1. With the old unconditional step over a separator it reads past the end of
+either the requested size or 0, never a table with missing points. Result (2026-10-08): 0 of 3049
+properties fail, 405 s on the M1. With the old unconditional step over a separator it reads past the end of
 a buffer whose last number has none.
 
 ## div_precise.c and div_overflows.c: the division is exact
 
-Flags as for div_defined.c. `div_precise.c` states that `FP64_DivPreciseSoft(a, b)` is the exact
+`div_precise.c` states that `FP64_DivPreciseSoft(a, b)` is the exact
 quotient of a times 2^32 by b, truncated toward zero, whenever it fits in 64 bits, and saturates by
 sign otherwise. `div_overflows.c` states that `FP64_DivOverflows` flags exactly the quotients
 that do not fit. Both are written with multiplication only. Proving two 64-bit multiplier or
@@ -100,21 +94,17 @@ builtins; a step that would not fit refuses the setting. Proving the whole funct
 the polynomial power and the portable division inlined did not finish in four hours, so the proof
 is split, each part for every 64-bit input:
 
-- `mul_guard.c` (flags as for div_defined.c without the bounds options): `FP64_MulOverflows`
-  flags exactly the products whose Q32.32 value does not fit, and a product it lets through is
-  exact. 0 of 16 properties fail, 143 s on the M1.
-- `pow_guard.c` (`--unwind 70 --unwinding-assertions` plus every check of div_defined.c and
-  `--pointer-check`): when `FP64_PowOverflows` lets a power through, `FP64_Pow` performs no
+- `mul_guard.c`: `FP64_MulOverflows` flags exactly the products whose Q32.32 value does not fit,
+  and a product it lets through is exact. 0 of 16 properties fail, 135 s on the M1 (2026-10-08).
+- `pow_guard.c`: when `FP64_PowOverflows` lets a power through, `FP64_Pow` performs no
   signed overflow, undefined shift or out-of-range conversion inside its log and exp2 polynomials
   and returns a value that is not negative. It refuses from 2^31, where `FP64_Exp2` would shift
-  a value in [1, 2) into the sign bit. 0 of 75 fail, 78 s.
+  a value in [1, 2) into the sign bit. 0 of 75 fail, 75 s.
 - The division: div_defined.c above.
-- `power_constants.c`, built with `goto-cc`, the three helpers' bodies removed with
-  `goto-instrument --remove-function-body` and replaced by `--generate-function-body
-  'mul_checked|div_checked|pow_checked' --generate-function-body-options 'havoc,params:.*'`,
-  so each may return either answer and write any value, then `cbmc` with the pow_guard.c flags:
-  whatever the helpers return, `power_constants` itself overflows nothing. 0 of 2404 fail; with
-  one of its additions unguarded it fails on that addition.
+- `power_constants.c`, built with goto-cc, the three helpers' bodies replaced by ones that may
+  return either answer and write any value: whatever the helpers return, `power_constants` itself
+  overflows nothing. 0 of 3399 fail, 1 s (2026-10-08); with one of its additions unguarded it
+  fails on that addition.
 
 The GUI and the Raw Accel converter judge the same steps in double precision with
 `PowerConstantsFit`, against 2^30, one bit inside the driver's range, so a setting they pass is

@@ -1,0 +1,24 @@
+name: Proofs (CBMC)
+
+on:
+  pull_request:
+    branches: [ "master" ]
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+jobs:
+  proofs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Prove the fixed-point guards and the table parsers
+        run: |
+          headers="$(nix build --inputs-from ./nix --no-link --print-out-paths nixpkgs#linuxHeaders)/include"
+          LINUX_HEADERS="$headers" nix shell --inputs-from ./nix nixpkgs#cbmc nixpkgs#gcc -c tests/proofs/run.sh
