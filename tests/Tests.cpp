@@ -1511,7 +1511,7 @@ bool Tests::TestRawAccelParity() {
                             if (refused(profile, device))
                                 continue;
                             classic_converted++;
-                            supervisor.Validate(vectors_match(profile, device, 1e-4));
+                            supervisor.Validate(vectors_match(profile, device));
                         }
                     }
                 }

@@ -465,7 +465,7 @@ FP_LONG accel_classic(const struct accel_curve *c, FP_LONG speed) {
     if (distance <= 0)
         return FP64_1;
 
-    base = FP64_PowFast(FP64_Mul(distance, c->acceleration), c->k.exp_sub_1);
+    base = FP64_Pow(FP64_Mul(distance, c->acceleration), c->k.exp_sub_1);
     if (c->input_offset != 0)
         base = FP64_Mul(base, FP64_DivPrecise(distance, speed));
 
