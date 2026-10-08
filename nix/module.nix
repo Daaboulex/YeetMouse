@@ -10,9 +10,7 @@ with lib;
 let
   cfg = config.hardware.yeetmouse;
 
-  degToRad = x: x * 0.017453292;
   floatRange = lower: upper: types.addCheck types.float (x: x >= lower && x <= upper);
-  apply = x: if x != null then x else 0.0;
 
   parameterBasePath = "/sys/module/yeetmouse/parameters";
 
@@ -21,21 +19,18 @@ let
       angle = mkOption {
         type = floatRange (-180.0) 180.0;
         default = 0.0;
-        apply = degToRad;
         description = "Rotation adjustment to apply to mouse inputs (in degrees)";
       };
 
       snappingAngle = mkOption {
         type = floatRange 0.0 179.9;
         default = 0.0;
-        apply = degToRad;
         description = "Rotation angle to snap to";
       };
 
       snappingThreshold = mkOption {
         type = floatRange 0.0 179.9;
         default = 0.0;
-        apply = degToRad;
         description = "Threshold until applying snapping angle";
       };
     };
@@ -460,12 +455,12 @@ let
             param = "AccelerationMode";
           }
           {
-            value = concatStringsSep ";" params.data;
-            param = "LutDataBuf";
+            value = length params.data;
+            param = "LutSize";
           }
           {
-            value = toString (length params.data);
-            param = "LutSize";
+            value = concatStringsSep ";" params.data;
+            param = "LutDataBuf";
           }
         ];
       };
@@ -606,65 +601,184 @@ in
         ++ (optionals (params ? lut) params.lut);
     };
 
+    defaultConfig = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = ''
+        Config file in yeetmousectl's format, seeded as /etc/yeetmouse.conf: the settings of every
+        mouse devices.conf does not list. When null, the options above render it, or rawAccel
+        provides it. Seeding copies a file only when it is missing, so the GUI owns it afterwards.
+      '';
+    };
+
     profiles = mkOption {
-      type = types.listOf (
-        types.submodule {
-          options = {
-            vendorId = mkOption {
-              type = types.strMatching "[0-9a-f]{4}";
-              description = "USB vendor id of the mouse, four lowercase hex digits as udev's ATTRS{idVendor} reports it";
-            };
-            productId = mkOption {
-              type = types.strMatching "[0-9a-f]{4}";
-              description = "USB product id of the mouse, four lowercase hex digits as udev's ATTRS{idProduct} reports it";
-            };
-            file = mkOption {
-              type = types.path;
-              description = "Configuration file in yeetmousectl's format, applied with yeetmousectl apply when the mouse connects";
-            };
-          };
-        }
-      );
-      default = [ ];
-      description = "Per-device configurations applied by udev when a matching USB mouse connects, after the global settings";
+      type = types.attrsOf types.path;
+      default = { };
+      example = literalExpression "{ power = ./power.conf; }";
+      description = ''
+        Named profiles seeded as /etc/yeetmouse/profiles/<name>.conf: curve settings in
+        yeetmousectl's format, without preScale, minTime, maxTime or fixedTime, which belong to a
+        mouse's line in devices.conf. Run one for a game with `yeetmousectl run <name> -- %command%`.
+      '';
+    };
+
+    devices = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = ''
+        devices.conf seeded as /etc/yeetmouse/devices.conf: one line per mouse,
+        "vvvv:pppp <profile|disabled> preScale= minTime= maxTime= fixedTime=".
+      '';
+    };
+
+    rawAccel = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = ''
+        Raw Accel 1.7 settings.json converted at build time: its first profile with its default
+        device settings becomes the default config, and its profiles and devices join the ones above.
+        A setting YeetMouse cannot reproduce exactly fails the build.
+      '';
     };
   };
 
-  config = mkIf cfg.enable {
-    boot.extraModulePackages = [ yeetmouse ];
-    environment.systemPackages = [ yeetmouse ];
-    users.groups.yeetmouse = { };
-    services.udev = {
-      extraRules =
-        let
-          chgrp = "${pkgs.coreutils}/bin/chgrp";
-          echo = "${pkgs.coreutils}/bin/echo";
-          yeetmouseConfig =
-            let
-              globalParams = [
-                cfg.inputCap
-                cfg.outputCap
-                cfg.offset
-                cfg.preScale
-              ];
-              params = globalParams ++ cfg.sensitivity ++ cfg.rotation ++ cfg.mode;
-              paramToString = entry: ''
-                ${echo} "${entry.value}" > "${parameterBasePath}/${entry.param}"
-              '';
-            in
-            pkgs.writeShellScriptBin "yeetmouseConfig" ''
-              ${concatMapStrings (s: (paramToString s) + "\n") params}
-              ${echo} "1" > /sys/module/yeetmouse/parameters/update
-            '';
-          profileRule = profile: ''
-            ACTION=="add", SUBSYSTEM=="input", ENV{ID_INPUT_MOUSE}=="1", SUBSYSTEMS=="usb", ATTRS{idVendor}=="${profile.vendorId}", ATTRS{idProduct}=="${profile.productId}", RUN+="${yeetmouse}/bin/yeetmousectl apply ${profile.file}"
-          '';
-        in
-        ''
-          SUBSYSTEM=="module", KERNEL=="yeetmouse", ACTION=="add", RUN+="${chgrp} -R yeetmouse ${parameterBasePath}"
-          SUBSYSTEMS=="usb|input|hid", ATTRS{bInterfaceClass}=="03", ATTRS{bInterfaceSubClass}=="01", ATTRS{bInterfaceProtocol}=="02", ATTRS{bInterfaceNumber}=="00", RUN+="${yeetmouseConfig}/bin/yeetmouseConfig"
-        ''
-        + concatMapStrings profileRule cfg.profiles;
-    };
-  };
+  config = mkIf cfg.enable (
+    let
+      configKeys = {
+        AccelerationMode = "accelMode";
+        Acceleration = "accel";
+        Exponent = "exponent";
+        Midpoint = "midpoint";
+        Motivity = "motivity";
+        UseSmoothing = "useSmoothing";
+        LutSize = "LUT_size";
+        LutDataBuf = "LUT_data";
+        Sensitivity = "sens";
+        RatioYX = "ratioYX";
+        InputCap = "inCap";
+        OutputCap = "outCap";
+        Offset = "offset";
+        PreScale = "preScale";
+        RotationAngle = "rotation";
+        AngleSnap_Angle = "as_angle";
+        AngleSnap_Threshold = "as_threshold";
+      };
+      modeNames = [
+        "AccelMode_Current"
+        "AccelMode_Linear"
+        "AccelMode_Power"
+        "AccelMode_Classic"
+        "AccelMode_Motivity"
+        "AccelMode_Synchronous"
+        "AccelMode_Natural"
+        "AccelMode_Jump"
+        "AccelMode_Lut"
+      ];
+      configLine =
+        entry:
+        if entry.param == "AccelerationMode" then
+          "accelMode=${elemAt modeNames (toInt entry.value)}\n"
+        else
+          "${configKeys.${entry.param}}=${toString entry.value}\n";
+      renderedDefault = pkgs.writeText "yeetmouse.conf" (
+        concatMapStrings configLine (
+          [
+            cfg.inputCap
+            cfg.outputCap
+            cfg.offset
+            cfg.preScale
+          ]
+          ++ cfg.sensitivity
+          ++ cfg.rotation
+          ++ cfg.mode
+        )
+      );
+      rawAccel = pkgs.runCommand "yeetmouse-rawaccel" { } ''
+        ${yeetmouse}/bin/yeetmousectl import-rawaccel ${cfg.rawAccel} --into $out
+      '';
+      defaultConfig =
+        if cfg.defaultConfig != null then
+          cfg.defaultConfig
+        else if cfg.rawAccel != null then
+          "${rawAccel}/yeetmouse.conf"
+        else
+          renderedDefault;
+      etc = pkgs.runCommand "yeetmouse-etc" { } ''
+        mkdir -p $out/yeetmouse/profiles
+        install -m 644 ${defaultConfig} $out/yeetmouse.conf
+        ${optionalString (cfg.rawAccel != null) ''
+          install -m 644 ${rawAccel}/yeetmouse/profiles/*.conf $out/yeetmouse/profiles/
+          install -m 644 ${rawAccel}/yeetmouse/devices.conf $out/yeetmouse/devices.conf
+        ''}
+        ${concatStrings (
+          mapAttrsToList (name: file: ''
+            if [ -e $out/yeetmouse/profiles/${name}.conf ]; then
+              echo "hardware.yeetmouse: the profile ${name} is given twice" >&2
+              exit 1
+            fi
+            install -m 644 ${file} $out/yeetmouse/profiles/${name}.conf
+          '') cfg.profiles
+        )}
+        ${optionalString (cfg.devices != null) ''
+          cat ${cfg.devices} >> $out/yeetmouse/devices.conf
+        ''}
+        ${yeetmouse}/bin/yeetmousectl check $out
+      '';
+      seed = pkgs.writeShellScript "yeetmouse-seed" ''
+        set -eu
+        PATH=${makeBinPath [ pkgs.coreutils ]}
+        seed() {
+          if [ ! -e "$2" ]; then
+            install -m 0664 -g yeetmouse "$1" "$2"
+          fi
+        }
+        install -d -m 2775 -g yeetmouse /etc/yeetmouse /etc/yeetmouse/profiles
+        seed ${etc}/yeetmouse.conf /etc/yeetmouse.conf
+        for profile in ${etc}/yeetmouse/profiles/*.conf; do
+          if [ -e "$profile" ]; then
+            seed "$profile" "/etc/yeetmouse/profiles/$(basename "$profile")"
+          fi
+        done
+        if [ -e ${etc}/yeetmouse/devices.conf ]; then
+          seed ${etc}/yeetmouse/devices.conf /etc/yeetmouse/devices.conf
+        fi
+        for attempt in $(seq 1 50); do
+          if [ -e ${parameterBasePath}/update ] && [ -e /dev/yeetmouse ]; then
+            break
+          fi
+          sleep 0.1
+        done
+        chgrp yeetmouse ${parameterBasePath}/* /dev/yeetmouse
+      '';
+    in
+    {
+      assertions = [
+        {
+          assertion = all (
+            name: builtins.match "[A-Za-z0-9][A-Za-z0-9._-]{0,30}" name != null && name != "disabled"
+          ) (attrNames cfg.profiles);
+          message = "hardware.yeetmouse.profiles: a name uses letters, digits, '.', '_' or '-', starts with a letter or digit, has at most 31 characters and is not \"disabled\"";
+        }
+      ];
+      boot.extraModulePackages = [ yeetmouse ];
+      boot.kernelModules = [ "yeetmouse" ];
+      environment.systemPackages = [ yeetmouse ];
+      users.groups.yeetmouse = { };
+      systemd.services.yeetmouse = {
+        description = "Apply YeetMouse configuration, profiles and devices";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "systemd-modules-load.service" ];
+        wants = [ "systemd-modules-load.service" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          ExecStartPre = seed;
+          ExecStart = [
+            "${yeetmouse}/bin/yeetmousectl apply /etc/yeetmouse.conf"
+            "${yeetmouse}/bin/yeetmousectl load"
+          ];
+        };
+      };
+    }
+  );
 }
