@@ -6,7 +6,8 @@ SRC = main.cpp  \
       ../../gui/DriverHelper.cpp \
       ../../gui/CustomCurve.cpp \
       ../../gui/FunctionHelper.cpp \
-      ../../gui/RawAccel.cpp
+      ../../gui/RawAccel.cpp \
+      ../../gui/ImGuiStubs.cpp
 
 OBJ = $(SRC:.cpp=.o)
 
