@@ -3,49 +3,62 @@
 #include <iomanip>
 #include <limits>
 #include <optional>
+#include <cerrno>
+#include <climits>
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#include <vector>
 
-static char *OpenFile() {
-    char *filename = new char[512];
-    char cwd[1024];
-    char command[2048] = R"(zenity --file-selection --title="Select a config file" 2> /dev/null)";
-    FILE *f = nullptr;
-    if (getcwd(cwd, sizeof(cwd)) != nullptr)
-        sprintf(command, R"(zenity --file-selection --title="Select a config file" --filename="%s/" 2> /dev/null)",
-                cwd);
+namespace ConfigHelper {
+    std::optional<std::string> ChooseFile(const std::string &title, bool save) {
+        int output[2];
+        if (pipe(output) != 0)
+            return std::nullopt;
 
-    f = popen(command, "r");
-    auto res = fgets(filename, 512, f);
-    if (!res) {
-        delete[] filename;
-        return nullptr;
+        std::vector<std::string> args = {"zenity", "--file-selection", "--title=" + title};
+        if (save)
+            args.emplace_back("--save");
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)) != nullptr)
+            args.push_back("--filename=" + std::string(cwd) + "/");
+        std::vector<char *> argv;
+        for (std::string &arg : args)
+            argv.push_back(arg.data());
+        argv.push_back(nullptr);
+
+        posix_spawn_file_actions_t actions;
+        posix_spawn_file_actions_init(&actions);
+        posix_spawn_file_actions_adddup2(&actions, output[1], STDOUT_FILENO);
+        posix_spawn_file_actions_addclose(&actions, output[0]);
+        posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+        pid_t zenity = 0;
+        int spawned = posix_spawnp(&zenity, "zenity", &actions, nullptr, argv.data(), environ);
+        posix_spawn_file_actions_destroy(&actions);
+        close(output[1]);
+        if (spawned != 0) {
+            close(output[0]);
+            return std::nullopt;
+        }
+
+        std::string path;
+        char buffer[512];
+        ssize_t got;
+        while ((got = read(output[0], buffer, sizeof(buffer))) > 0)
+            path.append(buffer, static_cast<std::size_t>(got));
+        close(output[0]);
+        int status = 0;
+        while (waitpid(zenity, &status, 0) < 0 && errno == EINTR)
+            ;
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+            return std::nullopt;
+        if (!path.empty() && path.back() == '\n')
+            path.pop_back();
+        if (path.empty())
+            return std::nullopt;
+        return path;
     }
-    res[strlen(res) - 1] = 0;
-
-    pclose(f);
-
-    return res;
-}
-
-static char *SaveFile() {
-    char *filename = new char[512];
-    char cwd[1024];
-    char command[2048] = R"(zenity --save --file-selection --title="Save Config" 2> /dev/null)";
-    FILE *f = nullptr;
-    if (getcwd(cwd, sizeof(cwd)) != nullptr)
-        sprintf(command, R"(zenity --save --file-selection --title="Save Config" --filename="%s/" 2> /dev/null)", cwd);
-
-    f = popen(command, "r");
-    auto res = fgets(filename, 512, f);
-    if (!res) {
-        delete[] filename;
-        return nullptr;
-    }
-    res[strlen(res) - 1] = 0;
-
-    pclose(f);
-
-    return res;
 }
 
 namespace ConfigHelper {
@@ -106,12 +119,10 @@ namespace ConfigHelper {
             res_ss << "CC_data_aggregate=" << params.customCurve.ExportCustomCurve();
 
             if (save_to_file) {
-                auto out_path = SaveFile();
+                auto out_path = ChooseFile("Save Config", true);
                 if (!out_path)
                     return "";
-                std::ofstream out_file(out_path);
-
-                delete[] out_path;
+                std::ofstream out_file(*out_path);
 
                 if (!out_file.good())
                     return "";
@@ -187,12 +198,10 @@ namespace ConfigHelper {
             res_ss << "#define CC_DATA_AGGREGATE " << params.customCurve.ExportCustomCurve();
 
             if (save_to_file) {
-                auto out_path = SaveFile();
+                auto out_path = ChooseFile("Save Config", true);
                 if (!out_path)
                     return "";
-                std::ofstream out_file(out_path);
-
-                delete[] out_path;
+                std::ofstream out_file(*out_path);
 
                 if (!out_file.good())
                     return "";
@@ -210,17 +219,16 @@ namespace ConfigHelper {
     }
 
     bool ImportFile(char *lut_data, Parameters &params) {
-        const char *filepath = OpenFile();
+        auto filepath = ChooseFile("Select a config file", false);
 
-        if (filepath == nullptr)
+        if (!filepath)
             return false;
 
         bool is_config_h = false;
-        auto file_name_len = strlen(filepath);
         try {
-            is_config_h = filepath[file_name_len - 1] == 'h' && filepath[file_name_len - 2] == '.';
+            is_config_h = filepath->size() >= 2 && filepath->compare(filepath->size() - 2, 2, ".h") == 0;
 
-            std::fstream file(filepath);
+            std::fstream file(*filepath);
 
             if (!file.good())
                 return {};
@@ -237,7 +245,7 @@ namespace ConfigHelper {
 
             // Automatically re-export in the correct format
             if (is_old_config) {
-                std::ofstream out_file(filepath);
+                std::ofstream out_file(*filepath);
 
                 if (out_file.is_open()) {
                     if (is_config_h)
@@ -249,9 +257,7 @@ namespace ConfigHelper {
                 }
             }
 
-            delete[] filepath;
         } catch (std::exception &ex) {
-            delete[] filepath;
             printf("Import error: %s\n", ex.what());
             return false;
         }

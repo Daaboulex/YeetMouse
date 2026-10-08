@@ -8,6 +8,8 @@
 #include "DriverHelper.h"
 
 namespace ConfigHelper {
+    std::optional<std::string> ChooseFile(const std::string &title, bool save);
+
     std::string ExportPlainText(Parameters params, bool save_to_file);
 
     std::string ExportConfig(Parameters params, bool save_to_file);

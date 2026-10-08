@@ -2837,6 +2837,29 @@ bool Tests::TestConfigFiles() {
         supervisor.Validate(read && read->byComponent && read->lutVelocity && read->yCurve.accelMode == AccelMode_Lut &&
                             read->axisSnap == 15 && read->inputSmoothHalfLife == 0.5f && read->ratioLR == 0.8f &&
                             read->minTime == 0.125f && read->clockOnAnyReport && !read->truncateCarry);
+
+        supervisor.NextTest();
+        std::filesystem::path bin = std::filesystem::path(SCRATCH_DIR) / "bin";
+        std::filesystem::remove_all(SCRATCH_DIR);
+        std::filesystem::create_directories(bin);
+        const char *saved_path = std::getenv("PATH");
+        std::string original_path = saved_path ? saved_path : "";
+        auto fake_zenity = [&](const std::string &script) {
+            std::ofstream(bin / "zenity") << "#!/bin/sh\n" << script << "\n";
+            std::filesystem::permissions(bin / "zenity", std::filesystem::perms::owner_all);
+        };
+        setenv("PATH", (bin.string() + ":" + original_path).c_str(), 1);
+        fake_zenity("for a in \"$@\"; do case \"$a\" in --save) echo /chosen/to-save.conf; exit 0;; esac; done\n"
+                    "echo \"/chosen/with \\\"quotes\\\" and spaces.conf\"");
+        supervisor.Validate(ConfigHelper::ChooseFile("Pick", false) == std::string("/chosen/with \"quotes\" and spaces.conf"));
+        supervisor.Validate(ConfigHelper::ChooseFile("Pick", true) == std::string("/chosen/to-save.conf"));
+        fake_zenity("echo /cancelled.conf; exit 1");
+        supervisor.Validate(!ConfigHelper::ChooseFile("Pick", false));
+        setenv("PATH", bin.string().c_str(), 1);
+        std::filesystem::remove(bin / "zenity");
+        supervisor.Validate(!ConfigHelper::ChooseFile("Pick", false));
+        setenv("PATH", original_path.c_str(), 1);
+        std::filesystem::remove_all(SCRATCH_DIR);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during config files\n", ex.what());
         supervisor.result = false;
