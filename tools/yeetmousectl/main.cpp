@@ -338,6 +338,16 @@ static int MergeRawAccel(const std::string &file) {
     return 0;
 }
 
+static int CheckSetup(const std::string &etc) {
+    std::vector<std::string> problems = Profiles::CheckSetup(etc);
+    for (const std::string &problem : problems)
+        std::cerr << problem << std::endl;
+    if (!problems.empty())
+        return 1;
+    std::cout << etc << ": the default config, profiles and devices.conf are valid." << std::endl;
+    return 0;
+}
+
 static std::string DumpDriver() {
     Parameters params{};
 
@@ -358,6 +368,7 @@ int main(int argc, char **argv) {
                 "  yeetmousectl import-rawaccel <settings.json> [<device id> | --into <etc dir> | --merge]\n"
                 "  yeetmousectl export-rawaccel [<config> | --from <etc dir>]\n"
                 "  yeetmousectl load\n"
+                "  yeetmousectl check [<etc dir>]\n"
                 "  yeetmousectl profile list | save <name> <config> | remove <name>\n"
                 "  yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | remove <vendor:product>\n"
                 "  yeetmousectl run <profile> -- <command> [args...]\n";
@@ -427,6 +438,9 @@ int main(int argc, char **argv) {
 
     if (cmd == "load" && argc == 2)
         return LoadAll();
+
+    if (cmd == "check" && argc <= 3)
+        return CheckSetup(argc == 3 ? argv[2] : "/etc");
 
     if (cmd == "profile") {
         const std::string sub = argc >= 3 ? argv[2] : "";

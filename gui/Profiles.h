@@ -108,6 +108,8 @@ namespace Profiles {
 
     void MergeSetup(const std::filesystem::path &root, const Setup &setup);
 
+    std::vector<std::string> CheckSetup(const std::filesystem::path &etc);
+
     class GameClaim {
     public:
         explicit GameClaim(const std::string &name);

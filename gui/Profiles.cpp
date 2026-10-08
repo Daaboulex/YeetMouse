@@ -753,3 +753,48 @@ namespace Profiles {
         SaveFile(root / "devices.conf", WriteDevices(lines));
     }
 }
+
+namespace Profiles {
+    std::vector<std::string> CheckSetup(const std::filesystem::path &etc) {
+        std::vector<std::string> problems;
+        std::filesystem::path root = etc / "yeetmouse";
+        std::vector<std::string> names;
+        try {
+            names = ProfileNames(root);
+        } catch (const Refused &refused) {
+            problems.push_back(refused.what());
+        }
+        for (const std::string &name : names) {
+            try {
+                yeetmouse_profile_args args;
+                if (!DriverHelper::ProfileArgs(LoadProfileFile(root, name), name, args))
+                    throw Refused("profile \"" + name + "\" holds a value out of the driver's range");
+            } catch (const Refused &refused) {
+                problems.push_back(refused.what());
+            }
+        }
+        try {
+            std::vector<DeviceLine> lines = LoadDevicesFile(root);
+            DevicesArgs(lines);
+            for (const DeviceLine &line : lines)
+                if (!line.disabled() && std::find(names.begin(), names.end(), line.profile) == names.end())
+                    problems.push_back(DeviceId(line.vendor, line.product) + " names the profile \"" + line.profile +
+                                       "\", which " + (root / "profiles").string() + " does not hold");
+        } catch (const Refused &refused) {
+            problems.push_back(refused.what());
+        }
+        std::filesystem::path defaults = etc / "yeetmouse.conf";
+        if (std::filesystem::exists(defaults)) {
+            std::ifstream stream(defaults);
+            static char lut_data[MAX_LUT_TEXT_LEN];
+            bool is_config_h = false;
+            auto params = ConfigHelper::ImportAny(stream, lut_data, is_config_h);
+            yeetmouse_profile_args args;
+            if (!params || is_config_h)
+                problems.push_back(defaults.string() + " is not a YeetMouse config");
+            else if (!DriverHelper::ProfileArgs(*params, "default", args))
+                problems.push_back(defaults.string() + " holds a value out of the driver's range");
+        }
+        return problems;
+    }
+}
