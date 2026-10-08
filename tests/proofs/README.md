@@ -54,7 +54,8 @@ quotient of a times 2^32 by b, truncated toward zero, whenever it fits in 64 bit
 sign otherwise. `div_overflows.c` states that `FP64_DivOverflows` flags exactly the quotients
 that do not fit. Both are written with multiplication only. Proving two 64-bit multiplier or
 divider circuits equal is hard for SAT and SMT solvers and can run for hours or days; these two
-are kept for long runs. The argument below does not depend on them.
+are kept for long runs. The argument below does not depend on them. On 2026-10-08 four-hour runs of
+div_precise.c on the M1, one with CaDiCaL and one with Bitwuzla, ended without an answer.
 
 ### Why the guard is exact
 
