@@ -154,10 +154,10 @@ int CustomCurve::ExportCurveToLUT(double *LUT_data_x, double *LUT_data_y) const 
     // Using premade LUT
     double u = 0; // [0,1]
     constexpr double U_STEP_FACTOR = 0.1;
-    constexpr double u_step = U_STEP_FACTOR / (MAX_LUT_ARRAY_SIZE - 1);
+    constexpr double u_step = U_STEP_FACTOR / (CUSTOM_CURVE_LUT_POINTS - 1);
     float last_added_u = 0;
     double target_u = 0; // Point at which to actually add a point (dynamically changes)
-    for (int i = 0; LUT_size < (MAX_LUT_ARRAY_SIZE - 1) && u < 1.f; i++) {
+    for (int i = 0; LUT_size < (CUSTOM_CURVE_LUT_POINTS - 1) && u < 1.f; i++) {
         float t = 0;
         //u = ((float)i / (MAX_LUT_ARRAY_SIZE - 1));
 
@@ -196,7 +196,7 @@ int CustomCurve::ExportCurveToLUT(double *LUT_data_x, double *LUT_data_y) const 
         }
 
         if (t <= 0.0001)
-            u = (double) i / (MAX_LUT_ARRAY_SIZE - 1) * U_STEP_FACTOR + u_step;
+            u = (double) i / (CUSTOM_CURVE_LUT_POINTS - 1) * U_STEP_FACTOR + u_step;
             // recalibrate position, it's like with IMUs and GPS, this is the GPS
         else
             u += u_step;

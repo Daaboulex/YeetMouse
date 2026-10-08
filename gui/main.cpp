@@ -41,7 +41,7 @@ AccelMode used_mode = AccelMode_Linear;
 bool was_initialized = false;
 bool has_privilege = false;
 
-static char LUT_user_data[MAX_LUT_BUF_LEN];
+static char LUT_user_data[MAX_LUT_TEXT_LEN];
 
 void ResetParameters();
 void ApplyImportedParameters(Parameters cur_params[NUM_MODES], const Parameters& imported_params);

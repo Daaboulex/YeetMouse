@@ -34,6 +34,19 @@ before `lut_y` lands in `lut_x` and is not flagged. The index arithmetic is unch
 82e8f8b, where the arrays were separate globals and CBMC proved both bounds of every read. Result:
 holds; with the old `speed < x[0]` test the second property fails.
 
+## lut_parse.c: the lookup table text stays in its buffers
+
+Built with `goto-cc -DTEST_ENV --function main`, then `goto-instrument --remove-function-body
+FP64_DivPrecise` and `--generate-function-body FP64_DivPrecise --generate-function-body-options
+nondet-return` (div_defined.c proves the division defined; its value cannot move a pointer), then
+`cbmc --no-standard-checks --bounds-check --pointer-check --unwind 20 --unwinding-assertions`.
+
+For any bytes in both buffers (each NUL-terminated, the guarantee of module_param_string) and any
+table size, `accel_lut_parse` reads and writes only inside its buffers and arrays, and returns
+either the requested size or 0, never a table with missing points. Result: 0 of 2112 properties
+fail, 334 s on the M1. With the old unconditional step over a separator it reads past the end of
+a buffer whose last number has none.
+
 ## div_precise.c and div_overflows.c: the division is exact
 
 Flags as for div_defined.c. `div_precise.c` states that `FP64_DivPreciseSoft(a, b)` is the exact

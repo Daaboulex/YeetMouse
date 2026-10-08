@@ -34,6 +34,7 @@
 // LUT settings
 #define LUT_SIZE 0
 #define LUT_DATA 0
+#define LUT_DATA_2 0
 
 // Custom Curve (Not used on the driver side)
 #define CC_DATA_AGGREGATE

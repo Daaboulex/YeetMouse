@@ -5,15 +5,18 @@
 #include <string>
 #include <filesystem>
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 
 #include "CustomCurve.h"
 #include "../shared_definitions.h"
 
 #define YEETMOUSE_PARAMS_DIR "/sys/module/yeetmouse/parameters/"
 
-#define MAX_LUT_ARRAY_SIZE 128  // THIS NEEDS TO BE THE SAME AS IN THE DRIVER CODE
+#define MAX_LUT_ARRAY_SIZE 257  // THIS NEEDS TO BE THE SAME AS IN THE DRIVER CODE
 #define MAX_LUT_BUF_LEN 4096
-#define DRIVER_DECIMALS 9
+#define DRIVER_DECIMALS 10
+#define MAX_LUT_TEXT_LEN (2 * MAX_LUT_BUF_LEN)
 
 #define DEG2RAD (M_PI / 180.0)
 
@@ -46,7 +49,36 @@ namespace DriverHelper {
     /// Reads all driver parameters
     bool ParseAllParameters(Parameters& params, char *lutUserData);
 
-    std::string EncodeLutData(double *data_x, double *data_y, size_t size, bool strict_format = true);
+    inline std::string FormatDriverNumber(double value) {
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(DRIVER_DECIMALS) << value;
+        std::string text = out.str();
+        text.erase(text.find_last_not_of('0') + 1);
+        if (text.back() == '.')
+            text.pop_back();
+        return text;
+    }
+
+    inline std::string EncodeLutData(const double *data_x, const double *data_y, size_t size, bool strict_format = true) {
+        std::string res;
+        for (size_t i = 0; i < size; i++)
+            res += FormatDriverNumber(data_x[i]) + (strict_format ? "," : ";") + FormatDriverNumber(data_y[i]) + ";";
+        return res;
+    }
+
+    inline bool SplitLutText(const std::string &text, std::string &first, std::string &second) {
+        if (text.size() < MAX_LUT_BUF_LEN) {
+            first = text;
+            second.clear();
+            return true;
+        }
+        size_t cut = text.rfind(';', MAX_LUT_BUF_LEN - 2);
+        if (cut == std::string::npos || text.size() - cut - 1 >= MAX_LUT_BUF_LEN)
+            return false;
+        first = text.substr(0, cut + 1);
+        second = text.substr(cut + 1);
+        return true;
+    }
 } // DriverHelper
 
 inline std::string AccelMode2String(AccelMode mode) {

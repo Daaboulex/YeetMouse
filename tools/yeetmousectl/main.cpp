@@ -14,7 +14,7 @@ static int ApplyConfig(const std::string &file) {
         return 1;
     }
 
-    char lut_data[4096] = {0};
+    char lut_data[MAX_LUT_TEXT_LEN] = {0};
     bool is_config_h = false;
 
     auto parsed = ConfigHelper::ImportAny(stream, (char *) lut_data, is_config_h);
@@ -40,7 +40,7 @@ static int ApplyConfig(const std::string &file) {
 static std::string DumpDriver() {
     Parameters params{};
 
-    char LUT_user_data[MAX_LUT_BUF_LEN];
+    char LUT_user_data[MAX_LUT_TEXT_LEN];
 
     DriverHelper::ParseAllParameters(params, LUT_user_data);
 

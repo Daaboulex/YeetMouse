@@ -132,6 +132,8 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
         else if (name == "lut_size")
             params.lutSize = val;
         else if (name == "lut_data") {
+            if (val_str.size() >= MAX_LUT_TEXT_LEN)
+                return std::nullopt;
             strcpy(lut_data, val_str.c_str());
             params.lutSize = DriverHelper::ParseUserLutData(lut_data, params.lutDataX, params.lutDataY,
                                                              params.lutSize);

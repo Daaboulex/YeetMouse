@@ -1105,6 +1105,32 @@ bool Tests::TestFixedPointArithmetic() {
         }
         supervisor.Validate(FP64_Tanh(FP64_FromInt(1 << 30)) == One && FP64_Tanh(-FP64_FromInt(1 << 30)) == -One);
 
+        {
+            static FP_LONG lut_x[MAX_LUT_ARRAY_SIZE], lut_y[MAX_LUT_ARRAY_SIZE];
+            std::vector<double> xs, ys;
+            std::mt19937 text_rng(20261008);
+            double x = 0.5;
+            for (int i = 0; i < MAX_LUT_ARRAY_SIZE; i++) {
+                xs.push_back(static_cast<float>(x));
+                ys.push_back(static_cast<float>(0.25 + static_cast<double>(text_rng() % 100000) / 9973));
+                x += 0.1 + static_cast<double>(text_rng() % 10000) / 997;
+            }
+            std::string text = DriverHelper::EncodeLutData(xs.data(), ys.data(), xs.size()), first, second;
+            supervisor.Validate(text.size() >= MAX_LUT_BUF_LEN);
+            supervisor.Validate(DriverHelper::SplitLutText(text, first, second));
+            supervisor.Validate(first.size() < MAX_LUT_BUF_LEN && second.size() < MAX_LUT_BUF_LEN && first + second == text);
+            supervisor.Validate(accel_lut_parse(first.c_str(), second.c_str(), MAX_LUT_ARRAY_SIZE, lut_x, lut_y) == MAX_LUT_ARRAY_SIZE);
+            bool exact = true;
+            for (int i = 0; i < MAX_LUT_ARRAY_SIZE; i++)
+                exact &= std::llabs(lut_x[i] - FP64_FromDouble(xs[i])) <= 1 && std::llabs(lut_y[i] - FP64_FromDouble(ys[i])) <= 1;
+            supervisor.Validate(exact);
+            supervisor.Validate(accel_lut_parse("1,2;3,4", "5,6;", 3, lut_x, lut_y) == 3 && lut_x[2] == FP64_FromInt(5) && lut_y[2] == FP64_FromInt(6));
+            supervisor.Validate(accel_lut_parse("1,2;3,4;", ";", 3, lut_x, lut_y) == 0);
+            supervisor.Validate(accel_lut_parse("1,2;x,4;", "", 2, lut_x, lut_y) == 0);
+            supervisor.Validate(accel_lut_parse("1,2;3,4;", "", MAX_LUT_ARRAY_SIZE + 1, lut_x, lut_y) == 0);
+            supervisor.Validate(accel_lut_parse("1,2;3,4;5,6;", ";", 2, lut_x, lut_y) == 2 && lut_y[1] == FP64_FromInt(4));
+        }
+
         for (double v = 0.01; v < 2e9; v *= 1.0137) {
             FP_LONG square = FP64_FromDouble(v);
             double truth = std::sqrt(static_cast<double>(square) / 4294967296.0);
@@ -1663,7 +1689,7 @@ bool Tests::TestRawAccelParity() {
 
         supervisor.NextTest();
         std::mt19937 table_rng(20261008);
-        for (int points : {2, 3, 8, 50, 128}) {
+        for (int points : {2, 3, 8, 50, 128, 200, 257}) {
             for (int round = 0; round < 6; round++) {
                 RawAccel::Profile profile = owner;
                 profile.x.mode = RawAccel::Mode::Lut;
@@ -1694,7 +1720,7 @@ bool Tests::TestRawAccelParity() {
         bad_table.x.data = {2, 1, 10};
         supervisor.Validate(refused(bad_table, device));
         bad_table.x.data.clear();
-        for (int i = 0; i < 129; i++) {
+        for (int i = 0; i < 258; i++) {
             bad_table.x.data.push_back(static_cast<float>(i + 1));
             bad_table.x.data.push_back(1);
         }

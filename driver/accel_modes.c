@@ -620,6 +620,43 @@ FP_LONG accel_lut(const struct accel_curve *c, FP_LONG speed) {
     return speed;
 }
 
+unsigned long accel_lut_parse(const char *first, const char *second, unsigned long size, FP_LONG *x, FP_LONG *y) {
+    const char *p = first;
+    bool in_second = false;
+    unsigned long values = 0;
+
+    if (size > MAX_LUT_ARRAY_SIZE)
+        return 0;
+
+    while (values < 2 * size) {
+        FP_LONG value;
+        int consumed;
+
+        if (*p == '\0') {
+            if (in_second)
+                return 0;
+            p = second;
+            in_second = true;
+            continue;
+        }
+
+        consumed = FP64_FromString(p, &value);
+        if (consumed <= 0)
+            return 0;
+        p += consumed;
+        if (*p == ',' || *p == ';')
+            p++;
+
+        if (values % 2 == 0)
+            x[values / 2] = value;
+        else
+            y[values / 2] = value;
+        values++;
+    }
+
+    return size;
+}
+
 FP_LONG accel_curve_eval(const struct accel_curve *c, FP_LONG speed) {
     static_assert(AccelMode_Count == 10, "Wrong AccelMode count!");
     switch (c->mode) {

@@ -339,9 +339,11 @@ namespace DriverHelper {
         res &= GetParameterF("InputOffset", params.inputOffset);
         res &= GetParameterF("LegacyCap", params.legacyCap);
         res &= GetParameterB("LutVelocity", params.lutVelocity);
-        std::string Lut_dataBuf;
+        std::string Lut_dataBuf, lutDataSecond;
         res &= GetParameterS("LutDataBuf", Lut_dataBuf);
-        Lut_dataBuf.copy(lutUserData, MAX_LUT_BUF_LEN-1, 0);
+        if (GetParameterS("LutDataBuf2", lutDataSecond))
+            Lut_dataBuf += lutDataSecond;
+        lutUserData[Lut_dataBuf.copy(lutUserData, MAX_LUT_TEXT_LEN - 1, 0)] = '\0';
         ParseDriverLutData(Lut_dataBuf.c_str(), params.lutDataX, params.lutDataY);
 
         // Load custom curve data
@@ -363,16 +365,6 @@ namespace DriverHelper {
         return res;
     }
 
-    std::string EncodeLutData(double *data_x, double *data_y, size_t size, bool strict_format) {
-        std::stringstream res;
-        res << std::fixed << std::setprecision(DRIVER_DECIMALS);
-
-        for (int i = 0; i < size * 2; i++) {
-            res << (i % 2 == 0 ? data_x[i / 2] : data_y[i / 2]) << ((strict_format && i % 2 == 0) ? "," : ";");
-        }
-
-        return res.str();
-    }
 } // DriverHelper
 
 //Parameters::Parameters(float sens, float sensCap, float speedCap, float offset, float accel, float exponent,
@@ -387,11 +379,11 @@ bool Parameters::SaveAll(bool auto_update) {
 
     // LUT
     auto encodedLutData = DriverHelper::EncodeLutData(lutDataX, lutDataY, lutSize);
-    if (!encodedLutData.empty() && encodedLutData.size() < MAX_LUT_BUF_LEN) {
+    std::string lutFirst, lutSecond;
+    if (!encodedLutData.empty() && DriverHelper::SplitLutText(encodedLutData, lutFirst, lutSecond)) {
         res &= SetParameterTy("LutSize", lutSize);
-        //res &= SetParameterTy("LutStride", LUT_stride);
-        //printf("encoded: %s, size: %zu, stride: %i\n", encoded.c_str(), LUT_size, LUT_stride);
-        res &= SetParameterTy("LutDataBuf", encodedLutData);
+        res &= SetParameterTy("LutDataBuf2", lutSecond.empty() ? std::string(";") : lutSecond);
+        res &= SetParameterTy("LutDataBuf", lutFirst);
     } else if (accelMode == AccelMode_Lut || accelMode == AccelMode_CustomCurve)
         return false;
 

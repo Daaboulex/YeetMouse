@@ -11,7 +11,7 @@ extern "C" {
 #include <linux/module.h>
 #include "FixedMath/Fixed64.h"
 
-#define MAX_LUT_ARRAY_SIZE 128
+#define MAX_LUT_ARRAY_SIZE 257
 #define MAX_LUT_BUF_LEN 4096
 
 #define SYNC_START (-3)
@@ -118,6 +118,8 @@ FP_LONG accel_jump(const struct accel_curve *c, FP_LONG speed);
 FP_LONG accel_lut(const struct accel_curve *c, FP_LONG speed);
 
 FP_LONG accel_curve_eval(const struct accel_curve *c, FP_LONG speed);
+
+unsigned long accel_lut_parse(const char *first, const char *second, unsigned long size, FP_LONG *x, FP_LONG *y);
 
 #define NS_PER_MS 1000000ll
 #define MAX_ELAPSED_NS ((long long) INT_MAX * NS_PER_MS)

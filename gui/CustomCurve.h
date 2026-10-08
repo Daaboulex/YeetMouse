@@ -11,6 +11,7 @@
 
 #define CURVE_POINTS_MARGIN 0.001f
 #define BEZIER_FRAG_SEGMENTS 50
+#define CUSTOM_CURVE_LUT_POINTS 128
 #define CURVE_EXPORT_PRECISION 3 // Decimal points precision for exporting Custom Curves
 
 struct Ex_Vec2 : ImVec2 {

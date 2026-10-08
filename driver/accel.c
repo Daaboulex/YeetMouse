@@ -74,6 +74,7 @@ PARAM  (UseSmoothing,   USE_SMOOTHING,      "Whether to smooth out functions (do
 
 PARAM_UL(LutSize,       LUT_SIZE,           "LUT data array size");
 PARAM_ARR(LutDataBuf,   LUT_DATA,           "Data of the LUT stored in a human form"); // g_LutDataBuf should not be used!
+PARAM_ARR(LutDataBuf2,  LUT_DATA_2,         "Points of the LUT that do not fit in LutDataBuf, in the same form");
 
 PARAM_ARR(_CustomCurveDataAggregate, CC_DATA_AGGREGATE, "Stores the Custom Curve data, SHOULD NOT BE USED ON THE DRIVER SIDE");
 
@@ -163,27 +164,7 @@ INLINE void update_params(ktime_t now)
     g_LutVelocity = PARAM_UPDATE_UL(LutVelocity) != 0;
     g_LutSize = PARAM_UPDATE_UL(LutSize);
     g_AccelerationMode = PARAM_UPDATE_UL(AccelerationMode);
-    if(g_LutSize > MAX_LUT_ARRAY_SIZE)
-        g_LutSize = MAX_LUT_ARRAY_SIZE;
-    // LutDataBuf get auto updated, we don't need to do anything, just extract the data
-    // Populate the g_LutData with the data in the buffer
-    char* p = g_param_LutDataBuf;
-    int i = 0;
-    for(; i < g_LutSize*2 && *p; i++) {
-        FP_LONG val;
-        p += FP64_FromString(p, &val) + 1; // + 1 to skip the ';' or ','
-        // The format for the driver side is very strict tho, so don't edit it by hand pls.
-        ((i % 2 == 0) ? g_LutData_x : g_LutData_y)[i/2] = val;
-
-        // Debug stuff (you know it didn't work the first time (nor the 10th time... (that's at least 10 'blue screens')))
-        //char buf[25];
-        //FP64_ToString(val, buf, 4);
-        //printk("YeetMouse: Converted %s, next char is: %i\n", buf, *p);
-    }
-
-    // Did not work correctly
-    if(i % 2 == 1)
-        g_LutSize = 0;
+    g_LutSize = accel_lut_parse(g_param_LutDataBuf, g_param_LutDataBuf2, g_LutSize, g_LutData_x, g_LutData_y);
 
     // Sanity check
     if(g_LutSize <= 1 && (g_AccelerationMode == AccelMode_Lut || g_AccelerationMode == AccelMode_CustomCurve))
