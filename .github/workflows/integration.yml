@@ -54,6 +54,20 @@ jobs:
           sleep 1
           sudo yeetmousectl profile remove probe
 
+      - name: Check the driver skips generic uinput devices and takes real ones
+        run: |
+          gcc -Wall -Werror -o uinput_mouse tests/uinput_mouse.c
+          sudo modprobe uinput
+          sudo ./uinput_mouse 0001 yeetmouse-probe-generic
+          sudo ./uinput_mouse 046d yeetmouse-probe-real
+          log=$(sudo dmesg)
+          grep -F "skipping incompatible device yeetmouse-probe-generic" <<< "$log"
+          grep -F "found a possible mouse yeetmouse-probe-real" <<< "$log"
+          if grep -F "found a possible mouse yeetmouse-probe-generic" <<< "$log"; then
+            echo "the driver took a generic uinput device"
+            exit 1
+          fi
+
       - name: Run uninstall script
         env:
           SUDO_USER: runner
