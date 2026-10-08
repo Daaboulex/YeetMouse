@@ -263,7 +263,7 @@ static inline FP_INT FP64_MulIntLongLow(FP_INT a, FP_LONG b) {
     //FP_ASSERT(a >= 0);
     FP_INT bi = (FP_INT) (b >> FP64_Shift);
     FP_LONG bf = b & FractionMask;
-    return (FP_INT) LogicalShiftRight(a * bf, FP64_Shift) + a * bi;
+    return (FP_INT) ((uint32_t) LogicalShiftRight(a * bf, FP64_Shift) + (uint32_t) a * (uint32_t) bi);
 }
 
 static inline FP_LONG FP64_MulIntLongLong(FP_INT a, FP_LONG b) {
@@ -1174,7 +1174,7 @@ static inline FP_LONG FP64_Sin(FP_LONG x) {
     FP_INT z = FP64_MulIntLongLow(RCP_HALF_PI, x);
 
     // Compute sine and convert to s32.32.
-    return (FP_LONG) FP64_UnitSin(z) << 2;
+    return (FP_LONG) FP64_UnitSin(z) * 4;
 }
 
 static inline FP_LONG FP64_SinFast(FP_LONG x) {
@@ -1183,7 +1183,7 @@ static inline FP_LONG FP64_SinFast(FP_LONG x) {
     FP_INT z = FP64_MulIntLongLow(RCP_HALF_PI, x);
 
     // Compute sine and convert to s32.32.
-    return (FP_LONG) FP64_UnitSinFast(z) << 2;
+    return (FP_LONG) FP64_UnitSinFast(z) * 4;
 }
 
 static inline FP_LONG FP64_SinFastest(FP_LONG x) {
@@ -1192,7 +1192,7 @@ static inline FP_LONG FP64_SinFastest(FP_LONG x) {
     FP_INT z = FP64_MulIntLongLow(RCP_HALF_PI, x);
 
     // Compute sine and convert to s32.32.
-    return (FP_LONG) FP64_UnitSinFastest(z) << 2;
+    return (FP_LONG) FP64_UnitSinFastest(z) * 4;
 }
 
 static inline FP_LONG FP64_Cos(FP_LONG x) {

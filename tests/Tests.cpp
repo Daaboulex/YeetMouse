@@ -1100,6 +1100,16 @@ bool Tests::TestFixedPointArithmetic() {
     try {
         supervisor.NextTest();
 
+        for (int i = -4000; i <= 4000; i++) {
+            double x = i * 0.005;
+            FP_LONG angle = FP64_FromDouble(x);
+            double sine = static_cast<double>(FP64_Sin(angle)) / 4294967296.0;
+            double cosine = static_cast<double>(FP64_Cos(angle)) / 4294967296.0;
+            supervisor.Validate(std::fabs(sine - std::sin(x)) < 1e-7 && std::fabs(cosine - std::cos(x)) < 1e-7);
+        }
+
+        supervisor.NextTest();
+
         for (int i = 0; i < BASIC_TEST_STEPS; i++) {
             float x = -30 + static_cast<float>(i) * 60 / BASIC_TEST_STEPS; // Range -10, 10
             auto val = FP64_Tanh(FP64_FromFloat(x));
