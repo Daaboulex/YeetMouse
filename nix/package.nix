@@ -45,9 +45,7 @@ kernel.stdenv.mkDerivation rec {
 
   postBuild = ''
     make "-j$NIX_BUILD_CORES" -C $sourceRoot/tools/yeetmousectl "CC=$CC" "CXX=$CXX"
-    make "-j$NIX_BUILD_CORES" -C $sourceRoot/gui "M=$sourceRoot/gui" "CC=$CC" \
-      "LIBS=-lglfw -lGL" \
-      "CXXFLAGS=-Wno-sign-compare -Wno-unused-function -Wno-return-type -isystem $sourceRoot/gui/External"
+    make "-j$NIX_BUILD_CORES" -C $sourceRoot/gui "CC=$CC" "CXX=$CXX"
   '';
 
   postInstall =
