@@ -7,6 +7,7 @@
 #include "FunctionHelper.h"
 #include "ImGuiExtensions.h"
 #include "ConfigHelper.h"
+#include "ProfilesGui.h"
 #include <chrono>
 #include <fstream>
 #include <vector>
@@ -61,6 +62,10 @@ static int OnGui() {
     static bool show_custom_curve_control_points = true, move_control_points_along = false, show_custom_curve_LUT_points
             = false;
 
+    const ProfilesGui::Apply load_into_editor = [](const Parameters &imported) {
+        ApplyImportedParameters(params, imported);
+    };
+
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             ImGui::BeginDisabled(!functions[selected_mode].isValid);
@@ -112,8 +117,10 @@ static int OnGui() {
             if (changed) {
                 ApplyImportedParameters(params, imported_params);
             }
+            ProfilesGui::FileMenuItems(params[selected_mode], load_into_editor);
             ImGui::EndMenu();
         }
+        ProfilesGui::DevicesMenu();
         ImGui::EndMainMenuBar();
     }
 
@@ -156,6 +163,8 @@ static int OnGui() {
 
         bool change = false;
 
+        change |= ProfilesGui::ProfilePicker(params[selected_mode], load_into_editor);
+
         change |= ImGui::Checkbox("Use anisotropy", &params[selected_mode].useAnisotropy);
         ImGui::SetItemTooltip("Separate X/Y sensitivity values");
 
@@ -169,7 +178,7 @@ static int OnGui() {
         change |= ImGui::DragFloat("##OutCap_Param", &params[selected_mode].outCap, 0.05, 0, 100, "Output Cap. %0.2f");
         change |= ImGui::DragFloat("##InCap_Param", &params[selected_mode].inCap, 0.1, 0, 200, "Input Cap. %0.2f");
         change |= ImGui::DragFloat("##Offset_Param", &params[selected_mode].offset, 0.05, -50, 50, "Offset %0.2f");
-        bool pre_scale_change = ImGui::DragFloat("##PreScale_Param", &params[selected_mode].preScale, 0.01, 0.01, 10, "Pre-Scale %0.2f");
+        bool pre_scale_change = ProfilesGui::EditingDefault() && ImGui::DragFloat("##PreScale_Param", &params[selected_mode].preScale, 0.01, 0.01, 10, "Pre-Scale %0.2f");
 #else
         if (params[selected_mode].useAnisotropy) {
             change |= ImGui::SliderFloat("##Sens_Param", &params[selected_mode].sens, 0.005, 5, "Sensitivity X %.3f");
@@ -179,7 +188,7 @@ static int OnGui() {
         change |= ImGui::SliderFloat("##OutCap_Param", &params[selected_mode].outCap, 0, 5, "Output Cap. %0.2f");
         change |= ImGui::SliderFloat("##InCap_Param", &params[selected_mode].inCap, 0, 120, "Input Cap. %0.2f");
         change |= ImGui::SliderFloat("##Offset_Param", &params[selected_mode].offset, -50, 50, "Offset %0.2f");
-        bool pre_scale_change = ImGui::SliderFloat("##PreScale_Param", &params[selected_mode].preScale, 0.01, 10, "Pre-Scale %0.2f");
+        bool pre_scale_change = ProfilesGui::EditingDefault() && ImGui::SliderFloat("##PreScale_Param", &params[selected_mode].preScale, 0.01, 10, "Pre-Scale %0.2f");
 #endif
         if (pre_scale_change) {
             PLOT_X_RANGE = PLOT_X_DEFAULT_RANGE / params[selected_mode].preScale;
@@ -189,7 +198,7 @@ static int OnGui() {
             }
             change |= pre_scale_change;
         }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip) && ImGui::BeginTooltip()) {
+        if (ProfilesGui::EditingDefault() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip) && ImGui::BeginTooltip()) {
             ImGui::Text(
                 "Used to adjust for different DPI values (Set to 800/DPI)");
             float item_width = ImGui::GetItemRectSize().x;
@@ -474,6 +483,7 @@ static int OnGui() {
             }
         }
         ImGui::PopID();
+        change |= ProfilesGui::ModeExtras(params[selected_mode]);
 
         ImGui::SeparatorText("Rotation");
         change |= ImGui::SliderFloat("##Adv_AS_Threshold", &params[selected_mode].asThreshold, 0, 179.99,
@@ -484,6 +494,8 @@ static int OnGui() {
                                      u8"Rotation Angle %0.2f°");
         if (params[selected_mode].asThreshold > 0)
             ImGui::SetItemTooltip("Rotation is applied after Angle Snapping");
+
+        change |= ProfilesGui::RawAccelFeatures(params[selected_mode]);
 
         if (change)
             functions[selected_mode].PreCacheFunc();
@@ -1130,10 +1142,12 @@ static int OnGui() {
                              !functions[selected_mode].isValid);
 
         if (ImGui::Button("Apply", {avail.x / 3 - (ImGui::GetStyle().ItemSpacing.x * 2), -1})) {
-            params[selected_mode].SaveAll();
-            functions[0] = functions[selected_mode];
-            params[0] = params[selected_mode];
-            used_mode = selected_mode;
+            if (!ProfilesGui::SaveEdited(params[selected_mode])) {
+                params[selected_mode].SaveAll();
+                functions[0] = functions[selected_mode];
+                params[0] = params[selected_mode];
+                used_mode = selected_mode;
+            }
             last_apply_clicked = steady_clock::now();
         }
 
@@ -1142,7 +1156,7 @@ static int OnGui() {
         ImGui::PushStyleColor(ImGuiCol_Button, ImColor::HSV(0.3, 0.75, 0.76).Value);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImColor::HSV(0.3, 0.7, 0.8).Value);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImColor::HSV(0.3, 0.67, 0.83).Value);
-        if (ImGui::Button("Apply + Save", {-1, -1})) {
+        if (ImGui::Button("Apply + Save", {-1, -1}) && !ProfilesGui::SaveEdited(params[selected_mode])) {
             params[selected_mode].SaveAll(false);
             if (!DriverHelper::SavePersistentParameters())
                 fprintf(stderr, "Failed to save parameters in /etc/yeetmouse.conf\n");
@@ -1181,6 +1195,8 @@ static int OnGui() {
         ImGui::GetForegroundDrawList()->AddText(ImVec2(10, 55),
                                                 ImColor::HSV(0.975, 0.9, 1).operator ImU32(),
                                                 "Could not read and initialize driver parameters, working on dummy data");
+
+    ProfilesGui::Popups(params[selected_mode], load_into_editor);
 
     return 0;
 }

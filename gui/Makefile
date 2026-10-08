@@ -25,7 +25,7 @@ GLFW_LIBS := $(shell $(PKG_CONFIG) --libs glfw3 2>/dev/null)
 OPENGL_LIBS := -lGL -ldl
 
 # Define the source files
-SOURCES = main.cpp gui.cpp DriverHelper.cpp ImGuiExtensions.cpp FunctionHelper.cpp CustomCurve.cpp ConfigHelper.cpp $(wildcard External/ImGui/*.cpp) $(wildcard gui/lib/*.cpp)
+SOURCES = main.cpp gui.cpp DriverHelper.cpp ImGuiExtensions.cpp FunctionHelper.cpp CustomCurve.cpp ConfigHelper.cpp RawAccel.cpp Profiles.cpp ProfilesGui.cpp $(wildcard External/ImGui/*.cpp) $(wildcard gui/lib/*.cpp)
 
 # Define the object files
 OBJECTS = $(patsubst %.cpp, %.o, $(SOURCES))
