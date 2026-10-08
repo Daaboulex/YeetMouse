@@ -449,6 +449,21 @@ namespace RawAccel {
             out.useSmoothing = args.gain;
         }
 
+        void MapSynchronous(const AccelArgs &args, Parameters &out) {
+            if (!(args.gamma > 0) || !(args.motivity > 1) || !(args.syncSpeed > 0) || !(args.smooth >= 0 && args.smooth <= 1))
+                throw Refused("synchronous needs a positive gamma and sync speed, a motivity above 1 and a smoothness "
+                              "from 0 to 1");
+            if (args.gain)
+                throw Refused("synchronous with gain: its integration table is laid out in Raw Accel's 1000 DPI speed "
+                              "units, so YeetMouse's 800 DPI convention moves it by up to 0.25 percent");
+            out.accelMode = AccelMode_Synchronous;
+            out.accel = static_cast<float>(args.syncSpeed / SpeedScale);
+            out.exponent = static_cast<float>(args.gamma);
+            out.motivity = static_cast<float>(args.motivity);
+            out.midpoint = static_cast<float>(args.smooth);
+            out.useSmoothing = args.gain;
+        }
+
         void MapNatural(const AccelArgs &args, Parameters &out) {
             if (!(args.decayRate > 0) || !(args.limit > 0) || !(args.inputOffset >= 0))
                 throw Refused("natural needs a positive decay rate and limit and no negative offset");
@@ -519,6 +534,9 @@ namespace RawAccel {
                 break;
             case Mode::Jump:
                 MapJump(profile.x, out);
+                break;
+            case Mode::Synchronous:
+                MapSynchronous(profile.x, out);
                 break;
             default:
                 Require(false, std::string("the ") + ModeNames[static_cast<int>(profile.x.mode)] + " mode");

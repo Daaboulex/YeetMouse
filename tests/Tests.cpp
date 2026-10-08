@@ -1472,9 +1472,9 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(converted > 60);
 
         supervisor.NextTest();
-        RawAccel::Profile synchronous = owner;
-        synchronous.x.mode = RawAccel::Mode::Synchronous;
-        supervisor.Validate(refused(synchronous, device));
+        RawAccel::Profile lookup = owner;
+        lookup.x.mode = RawAccel::Mode::Lut;
+        supervisor.Validate(refused(lookup, device));
         RawAccel::Profile stretched = owner;
         stretched.domain = {1, 2};
         supervisor.Validate(refused(stretched, device));
@@ -1595,6 +1595,32 @@ bool Tests::TestRawAccelParity() {
         jump_owner.x.smooth = 0.5;
         jump_owner.x.cap = {12, 2};
         supervisor.Validate(counts_match(jump_owner, device, 7));
+
+        supervisor.NextTest();
+        for (double smooth : {0.0, 0.25, 0.5, 1.0}) {
+            for (double sync : {2.0, 5.0, 30.0}) {
+                for (double gamma : {0.5, 1.0, 3.0}) {
+                    RawAccel::Profile profile = owner;
+                    profile.x.mode = RawAccel::Mode::Synchronous;
+                    profile.x.gain = false;
+                    profile.x.smooth = smooth;
+                    profile.x.syncSpeed = sync;
+                    profile.x.gamma = gamma;
+                    profile.x.motivity = 1.5;
+                    supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+                }
+            }
+        }
+        RawAccel::Profile synchronous_owner = owner;
+        synchronous_owner.x.mode = RawAccel::Mode::Synchronous;
+        synchronous_owner.x.gain = false;
+        synchronous_owner.x.smooth = 0.5;
+        synchronous_owner.x.syncSpeed = 8;
+        synchronous_owner.x.gamma = 1;
+        synchronous_owner.x.motivity = 2;
+        supervisor.Validate(counts_match(synchronous_owner, device, 8));
+        synchronous_owner.x.gain = true;
+        supervisor.Validate(refused(synchronous_owner, device));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
         supervisor.result = false;
