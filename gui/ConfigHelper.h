@@ -127,6 +127,8 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.inputOffset = val;
         else if (name == "legacycap" || name == "legacy_cap")
             params.legacyCap = val;
+        else if (name == "lutvelocity" || name == "lut_velocity")
+            params.lutVelocity = val != 0;
         else if (name == "lut_size")
             params.lutSize = val;
         else if (name == "lut_data") {

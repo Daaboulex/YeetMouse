@@ -19,6 +19,7 @@ fixedTime=0
 truncateCarry=0
 inputOffset=0
 legacyCap=0
+lutVelocity=0
 LUT_size=0
 LUT_data=
 CC_data_aggregate=

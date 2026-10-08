@@ -240,6 +240,7 @@ void TestManager::ApplyParameters(const Parameters &params) {
     profile.x.motivity = FP64_FromFloat(params.motivity);
     profile.x.input_offset = FP64_FromFloat(params.inputOffset);
     profile.x.legacy_cap = FP64_FromFloat(params.legacyCap);
+    profile.x.lut_velocity = params.lutVelocity;
     profile.x.lut_size = params.lutSize;
     for (int i = 0; i < params.lutSize && i < MAX_LUT_ARRAY_SIZE; i++) {
         profile.x.lut_x[i] = FP64_FromDouble(params.lutDataX[i]);

@@ -86,6 +86,7 @@ PARAM_F(MaxTime,        MAX_TIME,           "Longest time in ms one packet is ta
 PARAM_BYTE(FixedTime,   FIXED_TIME,         "Take every packet to span exactly MinTime instead of the measured time");
 PARAM_BYTE(TruncateCarry, TRUNCATE_CARRY,   "Truncate toward zero when carrying fractions of counts, as Raw Accel does, instead of rounding");
 PARAM_F(InputOffset,    INPUT_OFFSET,       "Classic only: speed at or below which the sensitivity is 1, inside the curve as in Raw Accel");
+PARAM_BYTE(LutVelocity, LUT_VELOCITY,       "LUT values are velocities divided by the speed, as Raw Accel's gain lookup tables");
 PARAM_F(LegacyCap,      LEGACY_CAP,         "Classic and Power without smoothing: sensitivity cap of the curve, below 1 the classic curve falls toward it; 0 is none");
 
 FP_LONG g_LutData_x[MAX_LUT_ARRAY_SIZE]; // Array to store the x-values of the LUT data
@@ -112,6 +113,7 @@ static struct accel_profile g_profile = {
         .input_offset = C0NST_FP64_FromDouble(INPUT_OFFSET),
         .legacy_cap = C0NST_FP64_FromDouble(LEGACY_CAP),
         .lut_size = LUT_SIZE,
+        .lut_velocity = LUT_VELOCITY,
         .k = { .current_func_at_0 = 1ll << FP64_Shift },
     },
     .pre_scale = C0NST_FP64_FromDouble(PRESCALE),
@@ -158,6 +160,7 @@ INLINE void update_params(ktime_t now)
     PARAM_UPDATE(LegacyCap);
     g_FixedTime = PARAM_UPDATE_UL(FixedTime) != 0;
     g_TruncateCarry = PARAM_UPDATE_UL(TruncateCarry) != 0;
+    g_LutVelocity = PARAM_UPDATE_UL(LutVelocity) != 0;
     g_LutSize = PARAM_UPDATE_UL(LutSize);
     g_AccelerationMode = PARAM_UPDATE_UL(AccelerationMode);
     if(g_LutSize > MAX_LUT_ARRAY_SIZE)
@@ -203,6 +206,7 @@ INLINE void update_params(ktime_t now)
     g_profile.x.input_offset = g_InputOffset;
     g_profile.x.legacy_cap = g_LegacyCap;
     g_profile.x.lut_size = g_LutSize;
+    g_profile.x.lut_velocity = g_LutVelocity;
     memcpy(g_profile.x.lut_x, g_LutData_x, sizeof(g_profile.x.lut_x));
     memcpy(g_profile.x.lut_y, g_LutData_y, sizeof(g_profile.x.lut_y));
     g_profile.pre_scale = g_PreScale;

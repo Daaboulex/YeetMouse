@@ -65,6 +65,7 @@ struct accel_curve {
     char use_smoothing;
     FP_LONG acceleration, exponent, midpoint, motivity, input_offset, legacy_cap;
     unsigned long lut_size;
+    char lut_velocity;
     FP_LONG lut_x[MAX_LUT_ARRAY_SIZE], lut_y[MAX_LUT_ARRAY_SIZE];
     struct accel_curve_constants k;
 };

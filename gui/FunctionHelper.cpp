@@ -371,6 +371,8 @@ float CachedFunction::EvalFuncAt(float x) const {
 
             if (x < params->lutDataX[0]) {
                 val = params->lutDataY[0];
+                if (params->lutVelocity)
+                    val /= params->lutDataX[0];
                 break;
             }
 
@@ -414,6 +416,8 @@ float CachedFunction::EvalFuncAt(float x) const {
 
             // Interpolate between p and p+1 elements
             val = LERP(p, p1, frac);
+            if (params->lutVelocity)
+                val /= x;
             break;
         }
         default: {
@@ -546,6 +550,10 @@ bool CachedFunction::ValidateSettings() {
                 isValid = false;
                 return isValid;
             }
+        }
+        if (params->accelMode == AccelMode_Lut && params->lutVelocity && !(params->lutDataX[0] > 0)) {
+            isValid = false;
+            return isValid;
         }
         // Check if is sorted
         for (int i = 1; i < params->lutSize; i++) {

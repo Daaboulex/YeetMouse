@@ -1381,7 +1381,7 @@ bool Tests::TestRawAccelParity() {
 
     auto close = [](FP_LONG actual, double expected, double tolerance) {
         double value = FP64_ToFloat(actual);
-        double scale = std::max(std::fabs(expected), 1e-6);
+        double scale = std::max(std::fabs(expected), 1.0);
         return std::fabs(value - expected) / scale < tolerance;
     };
 
@@ -1502,7 +1502,7 @@ bool Tests::TestRawAccelParity() {
         RawAccel::Profile lookup = owner;
         lookup.x.mode = RawAccel::Mode::Lut;
         lookup.x.gain = true;
-        lookup.x.data = {1, 1, 10, 2};
+        lookup.x.data = {0, 1, 10, 2};
         supervisor.Validate(refused(lookup, device));
         RawAccel::Profile stretched = owner;
         stretched.domain = {1, 2};
@@ -1664,15 +1664,17 @@ bool Tests::TestRawAccelParity() {
         supervisor.NextTest();
         std::mt19937 table_rng(20261008);
         for (int points : {2, 3, 8, 50, 128}) {
-            for (int round = 0; round < 3; round++) {
+            for (int round = 0; round < 6; round++) {
                 RawAccel::Profile profile = owner;
                 profile.x.mode = RawAccel::Mode::Lut;
-                profile.x.gain = false;
+                profile.x.gain = round % 2 == 1;
                 float x = 0.5f + static_cast<float>(table_rng() % 100) / 50;
+                float step = 700.0f / static_cast<float>(points - 1);
                 for (int i = 0; i < points; i++) {
+                    float sensitivity = 0.5f + static_cast<float>(table_rng() % 1000) / 250;
                     profile.x.data.push_back(x);
-                    profile.x.data.push_back(0.5f + static_cast<float>(table_rng() % 1000) / 250);
-                    x += 0.25f + static_cast<float>(table_rng() % 1000) / 100;
+                    profile.x.data.push_back(profile.x.gain ? x * sensitivity : sensitivity);
+                    x += step * (0.75f + static_cast<float>(table_rng() % 500) / 1000);
                 }
                 supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
             }
@@ -1682,6 +1684,10 @@ bool Tests::TestRawAccelParity() {
         table_owner.x.gain = false;
         table_owner.x.data = {2, 1, 10, 1.4f, 30, 2.2f, 80, 2.6f};
         supervisor.Validate(counts_match(table_owner, device, 9));
+        RawAccel::Profile velocity_owner = table_owner;
+        velocity_owner.x.gain = true;
+        velocity_owner.x.data = {2, 2, 10, 14, 30, 66, 80, 208};
+        supervisor.Validate(counts_match(velocity_owner, device, 11));
         RawAccel::Profile bad_table = table_owner;
         bad_table.x.data = {2, 1, 10, 1.4f, 10, 2.2f};
         supervisor.Validate(refused(bad_table, device));

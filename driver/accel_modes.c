@@ -289,6 +289,10 @@ void update_profile_constants(struct accel_profile *p) {
     if (c->mode == AccelMode_Lut || c->mode == AccelMode_CustomCurve) {
         if (c->lut_size <= 1 || c->lut_x[c->lut_size-1] == c->lut_x[c->lut_size-2])
             c->mode = AccelMode_Current;
+        else if (c->lut_velocity && c->lut_x[0] <= 0) {
+            c->mode = AccelMode_Current;
+            printk("YeetMouse: Error: Acceleration mode 'LUT' is not supported for velocity values whose first speed is not positive.\n");
+        }
 
         // Check if LUT_x is sorted
         for (int i = 1; i < c->lut_size; i++) {
@@ -578,9 +582,13 @@ FP_LONG accel_natural(const struct accel_curve *c, FP_LONG speed) {
 FP_LONG accel_lut(const struct accel_curve *c, FP_LONG speed) {
     // Assumes the size and values are valid. Please don't change LUT parameters by hand.
 
-    if(speed <= c->lut_x[0]) // Check if the speed is below the first given point
-        speed = c->lut_y[0];
+    if(speed <= c->lut_x[0]) { // Check if the speed is below the first given point
+        if (c->lut_velocity)
+            return FP64_DivPrecise(c->lut_y[0], c->lut_x[0]);
+        return c->lut_y[0];
+    }
     else {
+        FP_LONG query = speed;
         int l = 0, r = c->lut_size - 1, best_point = r, iter = 0; // We REALLY don't want an infinity loop in kernel
         while (l <= r && iter < 10) {
             int mid = (r + l) / 2;
@@ -605,6 +613,8 @@ FP_LONG accel_lut(const struct accel_curve *c, FP_LONG speed) {
                                        c->lut_x[index + 1] - c->lut_x[index]);
 
         speed = FP64_Lerp(p, p1, frac);
+        if (c->lut_velocity)
+            speed = FP64_DivPrecise(speed, query);
     }
 
     return speed;

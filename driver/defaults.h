@@ -29,6 +29,7 @@
 #define TRUNCATE_CARRY 0
 #define INPUT_OFFSET 0
 #define LEGACY_CAP 0
+#define LUT_VELOCITY 0
 
 // LUT settings
 #define LUT_SIZE 0

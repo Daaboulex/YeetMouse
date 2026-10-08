@@ -464,8 +464,6 @@ namespace RawAccel {
         }
 
         void MapLut(const AccelArgs &args, Parameters &out) {
-            if (args.gain)
-                throw Refused("a velocity lookup table (Raw Accel's gain switch) has no exact YeetMouse equivalent yet");
             if (args.data.size() % 2 != 0 || args.data.size() < 4)
                 throw Refused("a lookup table needs at least 2 whole points");
             size_t points = args.data.size() / 2;
@@ -478,7 +476,10 @@ namespace RawAccel {
                 out.lutDataX[i] = x;
                 out.lutDataY[i] = y;
             }
+            if (args.gain && !(args.data[0] > 0))
+                throw Refused("a velocity lookup table whose first speed is not positive");
             out.accelMode = AccelMode_Lut;
+            out.lutVelocity = args.gain;
             out.lutSize = static_cast<int>(points);
         }
 
