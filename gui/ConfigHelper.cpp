@@ -74,6 +74,11 @@ namespace ConfigHelper {
             res_ss << "fixedTime=" << params.fixedTime << std::endl;
             res_ss << "truncateCarry=" << params.truncateCarry << std::endl;
             res_ss << "clockOnAnyReport=" << params.clockOnAnyReport << std::endl;
+            res_ss << "lpNorm=" << params.lpNorm << std::endl;
+            res_ss << "domainX=" << params.domainX << std::endl;
+            res_ss << "domainY=" << params.domainY << std::endl;
+            res_ss << "rangeX=" << params.rangeX << std::endl;
+            res_ss << "rangeY=" << params.rangeY << std::endl;
             res_ss << "inputOffset=" << params.inputOffset << std::endl;
             res_ss << "legacyCap=" << params.legacyCap << std::endl;
             res_ss << "lutVelocity=" << params.lutVelocity << std::endl;
@@ -129,6 +134,11 @@ namespace ConfigHelper {
             res_ss << "#define FIXED_TIME " << params.fixedTime << std::endl;
             res_ss << "#define TRUNCATE_CARRY " << params.truncateCarry << std::endl;
             res_ss << "#define CLOCK_ON_ANY_REPORT " << params.clockOnAnyReport << std::endl;
+            res_ss << "#define LP_NORM " << params.lpNorm << std::endl;
+            res_ss << "#define DOMAIN_X " << params.domainX << std::endl;
+            res_ss << "#define DOMAIN_Y " << params.domainY << std::endl;
+            res_ss << "#define RANGE_X " << params.rangeX << std::endl;
+            res_ss << "#define RANGE_Y " << params.rangeY << std::endl;
             res_ss << "#define INPUT_OFFSET " << params.inputOffset << std::endl;
             res_ss << "#define LEGACY_CAP " << params.legacyCap << std::endl;
             res_ss << "#define LUT_VELOCITY " << params.lutVelocity << std::endl;

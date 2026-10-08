@@ -500,10 +500,11 @@ namespace RawAccel {
 
     Parameters ToParameters(const Profile &profile, const DeviceConfig &device) {
         Require(!device.disable, "a disabled device");
-        Require(profile.domain.x == 1 && profile.domain.y == 1, "the domain stretch");
-        Require(profile.range.x == 1 && profile.range.y == 1, "the range stretch");
+        if (!(profile.domain.x > 0) || !(profile.domain.y > 0) || !(profile.range.x >= 0) || !(profile.range.y >= 0))
+            throw Refused("domain weights that are not positive or range weights that are negative");
         Require(profile.speed.whole, "by-component mode");
-        Require(profile.speed.lpNorm == 2, "an lp norm other than 2");
+        if (!(profile.speed.lpNorm >= 1))
+            throw Refused("an lp norm below 1, which YeetMouse cannot compute within its fixed-point range");
         Require(profile.speed.inputHalfLife == 0 && profile.speed.scaleHalfLife == 0 &&
                 profile.speed.outputHalfLife == 0, "input, scale or output smoothing");
         Require(profile.ratioLR == 1 && profile.ratioUD == 1, "the L/R and U/D ratios");
@@ -538,6 +539,11 @@ namespace RawAccel {
         out.maxTime = static_cast<float>(device.maximumTime);
         out.truncateCarry = true;
         out.clockOnAnyReport = true;
+        out.lpNorm = static_cast<float>(profile.speed.lpNorm);
+        out.domainX = static_cast<float>(profile.domain.x);
+        out.domainY = static_cast<float>(profile.domain.y);
+        out.rangeX = static_cast<float>(profile.range.x);
+        out.rangeY = static_cast<float>(profile.range.y);
 
         switch (profile.x.mode) {
             case Mode::NoAccel:

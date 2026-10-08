@@ -28,6 +28,11 @@
 #define FIXED_TIME 0
 #define TRUNCATE_CARRY 0
 #define CLOCK_ON_ANY_REPORT 0
+#define LP_NORM 2
+#define DOMAIN_X 1
+#define DOMAIN_Y 1
+#define RANGE_X 1
+#define RANGE_Y 1
 #define INPUT_OFFSET 0
 #define LEGACY_CAP 0
 #define LUT_VELOCITY 0

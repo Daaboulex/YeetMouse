@@ -245,6 +245,11 @@ struct Parameters {
     bool fixedTime = false;
     bool truncateCarry = false;
     bool clockOnAnyReport = false;
+    float lpNorm = 2;
+    float domainX = 1;
+    float domainY = 1;
+    float rangeX = 1;
+    float rangeY = 1;
     float inputOffset = 0;
     float legacyCap = 0;
     bool lutVelocity = false;

@@ -8,6 +8,11 @@ static accel_profile profile = [] {
     initial.pre_scale = FP64_1;
     initial.sensitivity = FP64_1;
     initial.ratio_yx = FP64_1;
+    initial.lp_norm = FP64_FromInt(2);
+    initial.domain_x = FP64_1;
+    initial.domain_y = FP64_1;
+    initial.range_x = FP64_1;
+    initial.range_y = FP64_1;
     return initial;
 }();
 static CachedFunction function;
@@ -233,6 +238,11 @@ void TestManager::ApplyParameters(const Parameters &params) {
     profile.fixed_time = params.fixedTime;
     profile.truncate_carry = params.truncateCarry;
     profile.clock_on_any_report = params.clockOnAnyReport;
+    profile.lp_norm = FP64_FromFloat(params.lpNorm);
+    profile.domain_x = FP64_FromFloat(params.domainX);
+    profile.domain_y = FP64_FromFloat(params.domainY);
+    profile.range_x = FP64_FromFloat(params.rangeX);
+    profile.range_y = FP64_FromFloat(params.rangeY);
     profile.x.mode = params.accelMode;
     profile.x.use_smoothing = params.useSmoothing;
     profile.x.acceleration = FP64_FromFloat(params.accel);

@@ -19,6 +19,10 @@ extern "C" {
 #define SYNC_NUM (8)
 #define SYNC_CAPACITY ((SYNC_STOP - SYNC_START) * SYNC_NUM + 1)
 
+#define LP_EUCLIDEAN 0
+#define LP_MAX 1
+#define LP_GENERAL 2
+
 struct accel_curve_constants {
     // General
     FP_LONG accel_sub_1;
@@ -83,6 +87,9 @@ struct accel_profile {
     FP_LONG as_half_threshold;
 
     FP_LONG min_time, max_time;
+
+    FP_LONG lp_norm, lp_inverse, domain_x, domain_y, range_x, range_y;
+    char lp_mode;
     char fixed_time;
     char truncate_carry;
     char clock_on_any_report;

@@ -1287,6 +1287,11 @@ bool Tests::TestTimingAndRounding() {
         linear.pre_scale = FP64_1;
         linear.sensitivity = FP64_1;
         linear.ratio_yx = FP64_1;
+        linear.lp_norm = FP64_FromInt(2);
+        linear.domain_x = FP64_1;
+        linear.domain_y = FP64_1;
+        linear.range_x = FP64_1;
+        linear.range_y = FP64_1;
         update_profile_constants(&linear);
         for (int dx = -300; dx <= 300; dx += 7) {
             for (int dy = -300; dy <= 300; dy += 11) {
@@ -1543,6 +1548,8 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(refused(lookup, device));
         RawAccel::Profile stretched = owner;
         stretched.domain = {1, 2};
+        supervisor.Validate(!refused(stretched, device) && vectors_match(stretched, device));
+        stretched.speed.lpNorm = 0.5;
         supervisor.Validate(refused(stretched, device));
         RawAccel::Profile anisotropic = owner;
         anisotropic.ratioYX = 2;
@@ -1697,6 +1704,25 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(counts_match(synchronous_owner, device, 8));
         synchronous_owner.x.gain = true;
         supervisor.Validate(counts_match(synchronous_owner, device, 10));
+
+        supervisor.NextTest();
+        for (RawAccel::Vec2 domain : {RawAccel::Vec2{1, 1}, RawAccel::Vec2{1, 2}, RawAccel::Vec2{0.5, 1.5}}) {
+            for (RawAccel::Vec2 range : {RawAccel::Vec2{1, 1}, RawAccel::Vec2{1, 0.5}, RawAccel::Vec2{0.3, 2}, RawAccel::Vec2{0, 1}}) {
+                for (double norm : {2.0, 1.0, 1.5, 3.0, 16.0, 64.0}) {
+                    RawAccel::Profile profile = owner;
+                    profile.domain = domain;
+                    profile.range = range;
+                    profile.speed.lpNorm = norm;
+                    profile.rotation = norm == 3.0 ? 12 : 0;
+                    supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+                }
+            }
+        }
+        RawAccel::Profile weighted_owner = owner;
+        weighted_owner.domain = {1, 1.5};
+        weighted_owner.range = {1, 0.6};
+        weighted_owner.speed.lpNorm = 3;
+        supervisor.Validate(counts_match(weighted_owner, device, 12));
 
         supervisor.NextTest();
         std::mt19937 table_rng(20261008);

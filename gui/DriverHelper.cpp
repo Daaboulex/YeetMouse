@@ -337,6 +337,11 @@ namespace DriverHelper {
         res &= GetParameterB("FixedTime", params.fixedTime);
         res &= GetParameterB("TruncateCarry", params.truncateCarry);
         res &= GetParameterB("ClockOnAnyReport", params.clockOnAnyReport);
+        res &= GetParameterF("LpNorm", params.lpNorm);
+        res &= GetParameterF("DomainX", params.domainX);
+        res &= GetParameterF("DomainY", params.domainY);
+        res &= GetParameterF("RangeX", params.rangeX);
+        res &= GetParameterF("RangeY", params.rangeY);
         res &= GetParameterF("InputOffset", params.inputOffset);
         res &= GetParameterF("LegacyCap", params.legacyCap);
         res &= GetParameterB("LutVelocity", params.lutVelocity);
@@ -410,6 +415,11 @@ bool Parameters::SaveAll(bool auto_update) {
     res &= SetParameterTy("FixedTime", fixedTime ? 1 : 0);
     res &= SetParameterTy("TruncateCarry", truncateCarry ? 1 : 0);
     res &= SetParameterTy("ClockOnAnyReport", clockOnAnyReport ? 1 : 0);
+    res &= SetParameterTy("LpNorm", lpNorm);
+    res &= SetParameterTy("DomainX", domainX);
+    res &= SetParameterTy("DomainY", domainY);
+    res &= SetParameterTy("RangeX", rangeX);
+    res &= SetParameterTy("RangeY", rangeY);
     res &= SetParameterTy("InputOffset", inputOffset);
     res &= SetParameterTy("LegacyCap", legacyCap);
     res &= SetParameterTy("LutVelocity", lutVelocity ? 1 : 0);

@@ -132,6 +132,9 @@ static bool classic_constants(struct accel_curve *c) {
 void update_profile_constants(struct accel_profile *p) {
     struct accel_curve *c = &p->x;
 
+    p->lp_mode = p->lp_norm == FP64_FromInt(2) || p->lp_norm < FP64_1 ? LP_EUCLIDEAN : p->lp_norm >= FP64_FromInt(16) ? LP_MAX : LP_GENERAL;
+    p->lp_inverse = p->lp_mode == LP_GENERAL ? FP64_DivPrecise(FP64_1, p->lp_norm) : 0;
+
     // General
     c->k.accel_sub_1 = FP64_Sub(c->acceleration, FP64_1);
     c->k.exp_sub_1 = FP64_Sub(c->exponent, FP64_1);
@@ -681,10 +684,39 @@ FP_LONG accel_curve_eval(const struct accel_curve *c, FP_LONG speed) {
     }
 }
 
+static FP_LONG accel_speed(const struct accel_profile *p, FP_LONG delta_x, FP_LONG delta_y) {
+    FP_LONG big, small;
+
+    if (p->domain_x != FP64_1)
+        delta_x = FP64_Mul(delta_x, p->domain_x);
+    if (p->domain_y != FP64_1)
+        delta_y = FP64_Mul(delta_y, p->domain_y);
+
+    if (p->lp_mode == LP_EUCLIDEAN)
+        return FP64_SqrtPrecise(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));
+
+    delta_x = FP64_Abs(delta_x);
+    delta_y = FP64_Abs(delta_y);
+    big = delta_x > delta_y ? delta_x : delta_y;
+    small = delta_x > delta_y ? delta_y : delta_x;
+    if (p->lp_mode == LP_MAX || big == 0)
+        return big;
+    return FP64_Mul(big, FP64_Pow(FP64_Add(FP64_1, FP64_Pow(FP64_DivPrecise(small, big), p->lp_norm)), p->lp_inverse));
+}
+
+static FP_LONG accel_range_weight(const struct accel_profile *p, FP_LONG delta_x, FP_LONG delta_y) {
+    FP_LONG angle;
+
+    if (p->range_x == p->range_y || delta_y == 0)
+        return p->range_x;
+    angle = delta_x == 0 ? PiHalf : FP64_Atan2(FP64_Abs(delta_y), FP64_Abs(delta_x));
+    return FP64_Add(p->range_x, FP64_Mul(FP64_DivPrecise(angle, PiHalf), FP64_Sub(p->range_y, p->range_x)));
+}
+
 void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
     FP_LONG delta_x = *delta_x_out;
     FP_LONG delta_y = *delta_y_out;
-    FP_LONG speed;
+    FP_LONG speed, rotated_x, rotated_y;
 
     // Apply Pre-Scale
     if (p->pre_scale != FP64_1) {
@@ -692,8 +724,18 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
         delta_y = FP64_Mul(delta_y, p->pre_scale);
     }
 
+    rotated_x = delta_x;
+    rotated_y = delta_y;
+    if (p->rotation_angle != 0) {
+        rotated_x = FP64_Mul(delta_x, p->cos_a) - FP64_Mul(delta_y, p->sin_a);
+        rotated_y = FP64_Mul(delta_x, p->sin_a) + FP64_Mul(delta_y, p->cos_a);
+    }
+
     // Calculate velocity
-    speed = FP64_SqrtPrecise(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));
+    if (p->lp_mode != LP_EUCLIDEAN || p->domain_x != FP64_1 || p->domain_y != FP64_1)
+        speed = accel_speed(p, rotated_x, rotated_y);
+    else
+        speed = accel_speed(p, delta_x, delta_y);
     speed = FP64_DivPrecise(speed, ms);
 
     // Apply speedcap
@@ -706,18 +748,17 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
 
     speed = FP64_Sub(speed, p->offset);
 
-    // Apply Rotation before everything else to keep the precision
-    if(p->rotation_angle != 0) {
-        FP_LONG new_delta_x = FP64_Mul(delta_x, p->cos_a) - FP64_Mul(delta_y, p->sin_a);
-        delta_y = FP64_Mul(delta_x, p->sin_a) + FP64_Mul(delta_y, p->cos_a);
-        delta_x = new_delta_x;
-    }
+    delta_x = rotated_x;
+    delta_y = rotated_y;
 
     // Apply acceleration if movement is over offset
     if (speed > 0)
         speed = accel_curve_eval(&p->x, speed);
     else
         speed = p->x.k.current_func_at_0;
+
+    if (p->range_x != FP64_1 || p->range_y != FP64_1)
+        speed = FP64_Add(FP64_1, FP64_Mul(FP64_Sub(speed, FP64_1), accel_range_weight(p, delta_x, delta_y)));
 
     // Actually apply accelerated sensitivity, allow post-scaling and apply carry from previous round
     // Like RawAccel, sensitivity will be a final multiplier:

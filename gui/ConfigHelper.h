@@ -125,6 +125,16 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.truncateCarry = val != 0;
         else if (name == "clockonanyreport" || name == "clock_on_any_report")
             params.clockOnAnyReport = val != 0;
+        else if (name == "lpnorm" || name == "lp_norm")
+            params.lpNorm = val;
+        else if (name == "domainx" || name == "domain_x")
+            params.domainX = val;
+        else if (name == "domainy" || name == "domain_y")
+            params.domainY = val;
+        else if (name == "rangex" || name == "range_x")
+            params.rangeX = val;
+        else if (name == "rangey" || name == "range_y")
+            params.rangeY = val;
         else if (name == "inputoffset" || name == "input_offset")
             params.inputOffset = val;
         else if (name == "legacycap" || name == "legacy_cap")

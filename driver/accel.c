@@ -86,6 +86,11 @@ PARAM_F(MinTime,        MIN_TIME,           "Shortest time in ms one packet is t
 PARAM_F(MaxTime,        MAX_TIME,           "Longest time in ms one packet is taken to span");
 PARAM_BYTE(FixedTime,   FIXED_TIME,         "Take every packet to span exactly MinTime instead of the measured time");
 PARAM_BYTE(TruncateCarry, TRUNCATE_CARRY,   "Truncate toward zero when carrying fractions of counts, as Raw Accel does, instead of rounding");
+PARAM_F(LpNorm,         LP_NORM,            "Speed from the lp norm of the velocity: 2 the length, 16 or more the larger axis, at least 1");
+PARAM_F(DomainX,        DOMAIN_X,           "Weight of horizontal movement in the speed only, as Raw Accel's domain stretch");
+PARAM_F(DomainY,        DOMAIN_Y,           "Weight of vertical movement in the speed only, as Raw Accel's domain stretch");
+PARAM_F(RangeX,         RANGE_X,            "Share of the curve's acceleration applied to horizontal movement, as Raw Accel's range stretch");
+PARAM_F(RangeY,         RANGE_Y,            "Share of the curve's acceleration applied to vertical movement, blended by angle");
 PARAM_BYTE(ClockOnAnyReport, CLOCK_ON_ANY_REPORT, "Restart a device's packet clock on every report, a click included, as Raw Accel does, instead of on motion only");
 PARAM_F(InputOffset,    INPUT_OFFSET,       "Classic only: speed at or below which the sensitivity is 1, inside the curve as in Raw Accel");
 PARAM_BYTE(LutVelocity, LUT_VELOCITY,       "LUT values are velocities divided by the speed, as Raw Accel's gain lookup tables");
@@ -131,6 +136,11 @@ static struct accel_profile g_profile = {
     .max_time = C0NST_FP64_FromDouble(MAX_TIME),
     .fixed_time = FIXED_TIME,
     .truncate_carry = TRUNCATE_CARRY,
+    .lp_norm = C0NST_FP64_FromDouble(LP_NORM),
+    .domain_x = C0NST_FP64_FromDouble(DOMAIN_X),
+    .domain_y = C0NST_FP64_FromDouble(DOMAIN_Y),
+    .range_x = C0NST_FP64_FromDouble(RANGE_X),
+    .range_y = C0NST_FP64_FromDouble(RANGE_Y),
     .clock_on_any_report = CLOCK_ON_ANY_REPORT,
 };
 
@@ -159,6 +169,11 @@ INLINE void update_params(ktime_t now)
     PARAM_UPDATE(AngleSnap_Angle);
     PARAM_UPDATE(MinTime);
     PARAM_UPDATE(MaxTime);
+    PARAM_UPDATE(LpNorm);
+    PARAM_UPDATE(DomainX);
+    PARAM_UPDATE(DomainY);
+    PARAM_UPDATE(RangeX);
+    PARAM_UPDATE(RangeY);
     PARAM_UPDATE(InputOffset);
     PARAM_UPDATE(LegacyCap);
     g_FixedTime = PARAM_UPDATE_UL(FixedTime) != 0;
@@ -209,6 +224,19 @@ INLINE void update_params(ktime_t now)
         g_MaxTime = FP64_100;
         g_FixedTime = 0;
     }
+    if (g_LpNorm < FP64_1 || g_DomainX <= 0 || g_DomainY <= 0 || g_RangeX < 0 || g_RangeY < 0) {
+        printk("YeetMouse: Error: LpNorm must be at least 1, the domain weights above 0 and the range weights not below 0.\n");
+        g_LpNorm = FP64_FromInt(2);
+        g_DomainX = FP64_1;
+        g_DomainY = FP64_1;
+        g_RangeX = FP64_1;
+        g_RangeY = FP64_1;
+    }
+    g_profile.lp_norm = g_LpNorm;
+    g_profile.domain_x = g_DomainX;
+    g_profile.domain_y = g_DomainY;
+    g_profile.range_x = g_RangeX;
+    g_profile.range_y = g_RangeY;
     g_profile.min_time = g_MinTime;
     g_profile.max_time = g_MaxTime;
     g_profile.fixed_time = g_FixedTime;
