@@ -776,6 +776,7 @@ in
           ExecStart = [
             "${yeetmouse}/bin/yeetmousectl apply /etc/yeetmouse.conf"
             "${yeetmouse}/bin/yeetmousectl load"
+            "-${yeetmouse}/bin/yeetmousectl touchpads --record"
           ];
         };
       };

@@ -10,6 +10,7 @@ ExecStartPre=/bin/sh -c 'for i in $(seq 1 50); do [ -e /sys/module/yeetmouse/par
 ExecStartPre=/bin/sh -c 'chown root:yeetmouse /sys/module/yeetmouse/parameters/* /dev/yeetmouse'
 ExecStart=/usr/bin/yeetmousectl apply /etc/yeetmouse.conf
 ExecStart=/usr/bin/yeetmousectl load
+ExecStart=-/usr/bin/yeetmousectl touchpads --record
 RemainAfterExit=yes
 
 [Install]

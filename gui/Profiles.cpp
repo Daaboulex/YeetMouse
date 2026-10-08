@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
+#include <linux/input.h>
 #include <functional>
 #include <map>
 #include <set>
@@ -16,6 +17,7 @@
 #include <unistd.h>
 
 #include "ConfigHelper.h"
+#include "FunctionHelper.h"
 
 namespace Profiles {
     namespace {
@@ -383,8 +385,11 @@ namespace Profiles {
             } else if (line.rfind("H: Handlers=", 0) == 0) {
                 std::istringstream handlers(line.substr(12));
                 std::string handler;
-                while (handlers >> handler)
+                while (handlers >> handler) {
                     handled |= handler == "yeetmouse";
+                    if (handler.rfind("event", 0) == 0)
+                        mouse.event = handler;
+                }
             }
         }
         finish();
@@ -796,5 +801,135 @@ namespace Profiles {
                 problems.push_back(defaults.string() + " holds a value out of the driver's range");
         }
         return problems;
+    }
+}
+
+namespace Profiles {
+    TouchpadCurve SampleTouchpadCurve(const Parameters &profile, double resolution) {
+        std::vector<std::string> unsupported;
+        auto need = [&](bool supported, const char *what) {
+            if (!supported)
+                unsupported.emplace_back(what);
+        };
+        need(!profile.byComponent, "by-component curves");
+        need(profile.domainX == 1 && profile.domainY == 1, "domain weights");
+        need(profile.rangeX == 1 && profile.rangeY == 1, "range weights");
+        need(profile.lpNorm == 2, "an lp norm other than 2");
+        need(profile.inputSmoothHalfLife == 0 && profile.scaleSmoothHalfLife == 0 && profile.outputSmoothHalfLife == 0,
+             "smoothing");
+        need(profile.axisSnap == 0 && profile.asThreshold == 0, "angle snapping");
+        need(profile.speedClamp == 0, "the speed cap");
+        need(profile.ratioLR == 1 && profile.ratioUD == 1, "directional ratios");
+        need(profile.rotation == 0, "rotation");
+        need(!profile.useAnisotropy || profile.ratioYX == 1, "a Y/X ratio");
+        if (!unsupported.empty()) {
+            std::string list;
+            for (const std::string &what : unsupported)
+                list += (list.empty() ? "" : ", ") + what;
+            throw Refused("a touchpad curve is one speed function; this profile also uses " + list);
+        }
+        if (!(resolution > 0) || !std::isfinite(resolution))
+            throw Refused("the touchpad's resolution is unknown");
+
+        double dpi = resolution * 25.4;
+        TouchpadCurve curve;
+        curve.step = TouchpadCurveTopSpeed * dpi / 1000 / static_cast<double>(TouchpadCurvePoints - 1);
+        if (!(curve.step > 0) || curve.step > LibinputCurveLimit)
+            throw Refused("the touchpad's resolution gives a curve step libinput cannot take");
+
+        Parameters model = profile;
+        model.sens = 1;
+        model.outCap = 0;
+        model.preScale = 1;
+        CachedFunction function(1, &model);
+        function.PreCacheConstants();
+        for (std::size_t i = 0; i < TouchpadCurvePoints; i++) {
+            double speed = curve.step * static_cast<double>(i);
+            double counts = speed * 1000 / dpi;
+            double beyond_offset = counts - profile.offset;
+            double curve_value = model.accelMode == AccelMode_Current ? 1.0
+                                 : beyond_offset > 0 ? function.EvalFuncAt(static_cast<float>(beyond_offset))
+                                                     : function.EvalFuncAt(0.01f);
+            double sensitivity = curve_value * profile.sens;
+            if (profile.outCap > 0)
+                sensitivity = std::min(sensitivity, static_cast<double>(profile.outCap));
+            double point = speed * LibinputFlatTouchpadSlowdown * 1000 / dpi * sensitivity;
+            if (!std::isfinite(point) || point < 0 || point > LibinputCurveLimit)
+                throw Refused("the curve leaves the range libinput takes at " + DriverHelper::FormatDriverNumber(counts) +
+                              " counts/ms");
+            curve.points.push_back(point);
+        }
+        return curve;
+    }
+
+    std::string TouchpadCurveText(const TouchpadCurve &curve) {
+        std::string text = DriverHelper::FormatDriverNumber(curve.step) + ":";
+        for (std::size_t i = 0; i < curve.points.size(); i++)
+            text += (i ? "," : "") + DriverHelper::FormatDriverNumber(curve.points[i]);
+        return text;
+    }
+
+    std::map<std::string, double> ReadTouchpadResolutions(std::istream &stream) {
+        std::map<std::string, double> resolutions;
+        std::string id, value;
+        while (stream >> id >> value) {
+            uint16_t vendor = 0, product = 0;
+            ParseDeviceId(id, vendor, product);
+            resolutions[DeviceId(vendor, product)] = Number(value, std::string(TouchpadResolutionsPath));
+        }
+        return resolutions;
+    }
+
+    std::optional<double> TouchpadResolution(uint16_t vendor, uint16_t product) {
+        std::ifstream stream(TouchpadResolutionsPath);
+        if (!stream.is_open())
+            return std::nullopt;
+        std::map<std::string, double> resolutions = ReadTouchpadResolutions(stream);
+        auto found = resolutions.find(DeviceId(vendor, product));
+        if (found == resolutions.end())
+            return std::nullopt;
+        return found->second;
+    }
+
+    void RecordTouchpadResolutions() {
+        std::string text;
+        for (const ConnectedMouse &mouse : ConnectedMice()) {
+            if (!mouse.touchpad || mouse.event.empty())
+                continue;
+            std::string node = "/dev/input/" + mouse.event;
+            int fd = open(node.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+            if (fd < 0)
+                throw Refused("cannot open " + node + ": " + std::strerror(errno), errno);
+            input_absinfo axis{};
+            bool read = ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), &axis) == 0 && axis.resolution > 0;
+            if (!read)
+                read = ioctl(fd, EVIOCGABS(ABS_X), &axis) == 0 && axis.resolution > 0;
+            close(fd);
+            if (read)
+                text += DeviceId(mouse.vendor, mouse.product) + " " + std::to_string(axis.resolution) + "\n";
+        }
+        std::error_code error;
+        std::filesystem::create_directories(std::filesystem::path(TouchpadResolutionsPath).parent_path(), error);
+        if (error)
+            throw Refused("cannot create the directory of " + std::string(TouchpadResolutionsPath) + ": " + error.message());
+        SaveFile(TouchpadResolutionsPath, text);
+    }
+
+    bool KWinTakesTouchpadCurves(const std::string &event) {
+        return !event.empty() && DriverHelper::RunProgram({"busctl", "--user", "get-property", "org.kde.KWin",
+                                                           "/org/kde/KWin/InputDevice/" + event,
+                                                           "org.kde.KWin.InputDevice", KWinCustomPoints}) == 0;
+    }
+
+    void SetTouchpadCurve(const std::string &event, const TouchpadCurve &curve) {
+        if (!KWinTakesTouchpadCurves(event))
+            throw Refused("this KWin cannot take touchpad curves yet; it needs custom acceleration profiles "
+                          "(KWin merge request 6937)");
+        std::string path = "/org/kde/KWin/InputDevice/" + event;
+        if (DriverHelper::RunProgram({"busctl", "--user", "set-property", "org.kde.KWin", path, "org.kde.KWin.InputDevice",
+                                      KWinCustomPoints, "s", TouchpadCurveText(curve)}) != 0 ||
+            DriverHelper::RunProgram({"busctl", "--user", "set-property", "org.kde.KWin", path, "org.kde.KWin.InputDevice",
+                                      KWinCustomProfile, "b", "true"}) != 0)
+            throw Refused("KWin did not take the touchpad curve");
     }
 }

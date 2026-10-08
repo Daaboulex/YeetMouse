@@ -2652,6 +2652,52 @@ bool Tests::TestProfileFiles() {
         supervisor.Validate(Profiles::ForgetDevice(root, 0x046d, 0xc539).size() == 1 &&
                             edit_refused([&] { Profiles::ForgetDevice(root, 0x046d, 0xc539); }, "does not list"));
         std::filesystem::remove_all(root);
+
+        supervisor.NextTest();
+        const double resolution = 40, dpi = resolution * 25.4;
+        Parameters flat;
+        flat.accelMode = AccelMode_Current;
+        flat.sens = 1;
+        Profiles::TouchpadCurve unaccelerated = Profiles::SampleTouchpadCurve(flat, resolution);
+        bool proportional = unaccelerated.points.size() == Profiles::TouchpadCurvePoints && unaccelerated.step > 0;
+        for (std::size_t i = 0; proportional && i < unaccelerated.points.size(); i++) {
+            double speed = unaccelerated.step * static_cast<double>(i);
+            proportional &= std::fabs(unaccelerated.points[i] - speed * 296.8 / dpi) <= 1e-9 * std::max(speed, 1.0);
+        }
+        supervisor.Validate(proportional);
+        supervisor.Validate(std::fabs(unaccelerated.step * 63 * 1000 / dpi - Profiles::TouchpadCurveTopSpeed) < 1e-9);
+        Parameters rising;
+        rising.accelMode = AccelMode_Linear;
+        rising.accel = 0.05f;
+        rising.useSmoothing = false;
+        rising.sens = 1;
+        Profiles::TouchpadCurve accelerated = Profiles::SampleTouchpadCurve(rising, resolution);
+        bool gains = accelerated.points[0] == 0;
+        for (std::size_t i = 2; gains && i < accelerated.points.size(); i++)
+            gains &= accelerated.points[i] / static_cast<double>(i) > accelerated.points[i - 1] / static_cast<double>(i - 1);
+        supervisor.Validate(gains);
+        double counts = accelerated.step * 10 * 1000 / dpi;
+        supervisor.Validate(std::fabs(accelerated.points[10] / (accelerated.step * 10 * 296.8 / dpi) - (1 + 0.05 * counts)) <
+                            1e-5);
+        Parameters capped = rising;
+        capped.sens = 2;
+        capped.outCap = 1.5f;
+        Profiles::TouchpadCurve held = Profiles::SampleTouchpadCurve(capped, resolution);
+        supervisor.Validate(std::fabs(held.points[63] / (held.step * 63 * 296.8 / dpi) - 1.5) < 1e-6);
+        std::string text = Profiles::TouchpadCurveText(unaccelerated);
+        supervisor.Validate(text.rfind(DriverHelper::FormatDriverNumber(unaccelerated.step) + ":0,", 0) == 0 &&
+                            std::count(text.begin(), text.end(), ',') == 63);
+        Parameters directional = rising;
+        directional.byComponent = true;
+        directional.axisSnap = 10;
+        supervisor.Validate(edit_refused([&] { Profiles::SampleTouchpadCurve(directional, resolution); },
+                                         "by-component curves, angle snapping"));
+        supervisor.Validate(edit_refused([&] { Profiles::SampleTouchpadCurve(rising, 0); }, "resolution is unknown"));
+        std::istringstream recorded("05ac:0343 39\n046D:C539 12.5\n");
+        std::map<std::string, double> resolutions = Profiles::ReadTouchpadResolutions(recorded);
+        supervisor.Validate(resolutions.size() == 2 && resolutions.at("05ac:0343") == 39 && resolutions.at("046d:c539") == 12.5);
+        std::istringstream broken("05ac 39\n");
+        supervisor.Validate(edit_refused([&] { Profiles::ReadTouchpadResolutions(broken); }, "vendor:product"));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during profile files\n", ex.what());
         supervisor.result = false;

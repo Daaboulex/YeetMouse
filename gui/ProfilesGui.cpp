@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <optional>
 
 #include <ImGui/imgui.h>
@@ -243,6 +244,41 @@ namespace ProfilesGui {
         ImGui::SetItemTooltip("Writes /etc/yeetmouse.conf, every profile and devices.conf as one Raw Accel file");
     }
 
+    namespace {
+        void TouchpadMenu(const Profiles::ConnectedMouse &mouse, const std::string &id,
+                          const std::vector<std::string> &names) {
+            static std::map<std::string, std::pair<bool, std::optional<double>>> known;
+            if (!ImGui::BeginMenu((mouse.name + " (" + id + "): touchpad").c_str()))
+                return;
+            if (ImGui::IsWindowAppearing() || !known.count(mouse.event))
+                known[mouse.event] = {Profiles::KWinTakesTouchpadCurves(mouse.event),
+                                      Profiles::TouchpadResolution(mouse.vendor, mouse.product)};
+            const auto &[kwin, resolution] = known[mouse.event];
+            if (!kwin) {
+                ImGui::TextDisabled("KWin cannot take touchpad curves yet");
+                ImGui::SetItemTooltip("A touchpad sends finger positions; KWin's libinput turns them into motion, "
+                                      "so its curve has to be set there, which needs KWin merge request 6937");
+            } else if (!resolution) {
+                if (ImGui::MenuItem("Record its resolution..."))
+                    if (DriverHelper::RunProgram({"pkexec", DriverHelper::SiblingProgram("yeetmousectl"), "touchpads",
+                                                  "--record"}) != 0)
+                        Message("Recording the touchpad's resolution failed");
+            } else {
+                for (const std::string &name : names)
+                    if (ImGui::MenuItem((name + " curve").c_str())) {
+                        try {
+                            Profiles::SetTouchpadCurve(mouse.event,
+                                                       Profiles::SampleTouchpadCurve(
+                                                           Profiles::LoadProfileFile(Profiles::Root, name), *resolution));
+                        } catch (const Profiles::Refused &refused) {
+                            Message(refused.what());
+                        }
+                    }
+            }
+            ImGui::EndMenu();
+        }
+    }
+
     void DevicesMenu() {
         if (!ImGui::BeginMenu("Devices"))
             return;
@@ -263,11 +299,7 @@ namespace ProfilesGui {
                 const Profiles::DeviceLine *line = line_of(mouse.vendor, mouse.product);
                 std::string id = Profiles::DeviceId(mouse.vendor, mouse.product);
                 if (mouse.touchpad) {
-                    ImGui::BeginDisabled();
-                    ImGui::MenuItem((mouse.name + " (" + id + "): touchpad").c_str());
-                    ImGui::EndDisabled();
-                    ImGui::SetItemTooltip("A touchpad sends finger positions, which KWin turns into motion after the "
-                                          "YeetMouse driver, so KDE's touchpad settings set its speed");
+                    TouchpadMenu(mouse, id, names);
                     continue;
                 }
                 std::string current = line ? line->profile : "";

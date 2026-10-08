@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <istream>
+#include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -40,6 +42,7 @@ namespace Profiles {
         uint16_t product = 0;
         std::string name;
         bool touchpad = false;
+        std::string event;
     };
 
     std::string DeviceId(uint16_t vendor, uint16_t product);
@@ -109,6 +112,33 @@ namespace Profiles {
     void MergeSetup(const std::filesystem::path &root, const Setup &setup);
 
     std::vector<std::string> CheckSetup(const std::filesystem::path &etc);
+
+    inline const char *const TouchpadResolutionsPath = "/run/yeetmouse/touchpads";
+    inline const char *const KWinCustomPoints = "pointerAccelerationCustomPointsMotion";
+    inline const char *const KWinCustomProfile = "pointerAccelerationProfileCustom";
+    inline constexpr std::size_t TouchpadCurvePoints = 64;
+    inline constexpr double TouchpadCurveTopSpeed = 100;
+    inline constexpr double LibinputFlatTouchpadSlowdown = 0.2968;
+    inline constexpr double LibinputCurveLimit = 10000;
+
+    struct TouchpadCurve {
+        double step = 0;
+        std::vector<double> points;
+    };
+
+    TouchpadCurve SampleTouchpadCurve(const Parameters &profile, double resolution);
+
+    std::string TouchpadCurveText(const TouchpadCurve &curve);
+
+    std::map<std::string, double> ReadTouchpadResolutions(std::istream &stream);
+
+    std::optional<double> TouchpadResolution(uint16_t vendor, uint16_t product);
+
+    void RecordTouchpadResolutions();
+
+    bool KWinTakesTouchpadCurves(const std::string &event);
+
+    void SetTouchpadCurve(const std::string &event, const TouchpadCurve &curve);
 
     class GameClaim {
     public:

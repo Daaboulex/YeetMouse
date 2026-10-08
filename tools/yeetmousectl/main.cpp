@@ -180,7 +180,7 @@ static int DeviceList() {
         for (const Profiles::ConnectedMouse &mouse : mice) {
             const Profiles::DeviceLine *line = line_of(mouse.vendor, mouse.product);
             std::cout << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name << "\" "
-                      << (mouse.touchpad ? std::string("touchpad, set by the desktop's touchpad settings")
+                      << (mouse.touchpad ? std::string("touchpad, curved through KWin with yeetmousectl touchpad")
                                          : line ? line->profile : std::string("default"))
                       << "\n";
         }
@@ -348,6 +348,48 @@ static int CheckSetup(const std::string &etc) {
     return 0;
 }
 
+static int Touchpads(bool record) {
+    try {
+        if (record)
+            Profiles::RecordTouchpadResolutions();
+        for (const Profiles::ConnectedMouse &mouse : Profiles::ConnectedMice()) {
+            if (!mouse.touchpad)
+                continue;
+            std::optional<double> resolution = Profiles::TouchpadResolution(mouse.vendor, mouse.product);
+            std::cout << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name << "\" "
+                      << (resolution ? DriverHelper::FormatDriverNumber(*resolution) + " units/mm"
+                                     : std::string("resolution unknown"))
+                      << "\n";
+        }
+    } catch (const Profiles::Refused &refused) {
+        return Failed(refused);
+    }
+    return 0;
+}
+
+static int TouchpadCurve(const std::string &id, const std::string &profile) {
+    try {
+        uint16_t vendor = 0, product = 0;
+        Profiles::ParseDeviceId(id, vendor, product);
+        std::vector<Profiles::ConnectedMouse> mice = Profiles::ConnectedMice();
+        auto touchpad = std::find_if(mice.begin(), mice.end(), [&](const Profiles::ConnectedMouse &mouse) {
+            return mouse.touchpad && mouse.vendor == vendor && mouse.product == product;
+        });
+        if (touchpad == mice.end())
+            throw Profiles::Refused(id + " is not a connected touchpad");
+        std::optional<double> resolution = Profiles::TouchpadResolution(vendor, product);
+        if (!resolution)
+            throw Profiles::Refused(id + "'s resolution is not recorded yet: run pkexec yeetmousectl touchpads --record");
+        Profiles::SetTouchpadCurve(touchpad->event,
+                                   Profiles::SampleTouchpadCurve(Profiles::LoadProfileFile(Profiles::Root, profile),
+                                                                 *resolution));
+    } catch (const Profiles::Refused &refused) {
+        return Failed(refused);
+    }
+    std::cout << id << " now follows " << profile << "'s curve through KWin." << std::endl;
+    return 0;
+}
+
 static std::string DumpDriver() {
     Parameters params{};
 
@@ -371,6 +413,8 @@ int main(int argc, char **argv) {
                 "  yeetmousectl check [<etc dir>]\n"
                 "  yeetmousectl profile list | save <name> <config> | remove <name>\n"
                 "  yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | remove <vendor:product>\n"
+                "  yeetmousectl touchpads [--record]\n"
+                "  yeetmousectl touchpad <vendor:product> <profile>\n"
                 "  yeetmousectl run <profile> -- <command> [args...]\n";
 
         return 0;
@@ -441,6 +485,12 @@ int main(int argc, char **argv) {
 
     if (cmd == "check" && argc <= 3)
         return CheckSetup(argc == 3 ? argv[2] : "/etc");
+
+    if (cmd == "touchpads" && (argc == 2 || (argc == 3 && std::string(argv[2]) == "--record")))
+        return Touchpads(argc == 3);
+
+    if (cmd == "touchpad" && argc == 4)
+        return TouchpadCurve(argv[2], argv[3]);
 
     if (cmd == "profile") {
         const std::string sub = argc >= 3 ? argv[2] : "";

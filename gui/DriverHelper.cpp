@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <set>
+#include <fcntl.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -177,8 +178,15 @@ namespace DriverHelper {
         for (std::string &arg : owned)
             argv.push_back(arg.data());
         argv.push_back(nullptr);
+        if (argv.size() < 2)
+            return -1;
+        posix_spawn_file_actions_t actions;
+        posix_spawn_file_actions_init(&actions);
+        posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
         pid_t child = 0;
-        if (argv.size() < 2 || posix_spawnp(&child, argv[0], nullptr, nullptr, argv.data(), environ) != 0)
+        int spawned = posix_spawnp(&child, argv[0], &actions, nullptr, argv.data(), environ);
+        posix_spawn_file_actions_destroy(&actions);
+        if (spawned != 0)
             return -1;
         int status = 0;
         while (waitpid(child, &status, 0) < 0)
