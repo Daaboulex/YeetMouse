@@ -339,7 +339,7 @@ namespace RawAccel {
             };
 
             out.accelMode = AccelMode_Power;
-            out.accel = static_cast<float>(scale * SpeedScale);
+            out.accel = static_cast<float>(scale);
             out.exponent = static_cast<float>(n);
             out.midpoint = static_cast<float>(offset);
             out.useSmoothing = false;
@@ -424,9 +424,9 @@ namespace RawAccel {
             }
 
             out.accelMode = AccelMode_Classic;
-            out.accel = static_cast<float>(a * SpeedScale);
+            out.accel = static_cast<float>(a);
             out.exponent = static_cast<float>(e);
-            out.inputOffset = static_cast<float>(offset / SpeedScale);
+            out.inputOffset = static_cast<float>(offset);
             out.useSmoothing = smoothing;
             out.midpoint = static_cast<float>(capY);
             out.legacyCap = static_cast<float>(legacyCap);
@@ -439,11 +439,13 @@ namespace RawAccel {
             if (!(args.cap.x > 0) || !(args.cap.y > 0) || !(args.smooth >= 0 && args.smooth <= 1))
                 throw Refused("jump needs a positive step point and a smoothness from 0 to 1");
             double smoothSpan = args.smooth * args.cap.x;
-            if (smoothSpan >= 1 && smoothSpan < SpeedScale * (1 + 1e-5))
-                throw Refused("a jump whose smoothness times step speed lies in [1, 1.25), smooth in Raw Accel but sharp "
-                              "in YeetMouse's 800 DPI units");
+            bool exactBoundary = smoothSpan == 1 && args.smooth >= 0x1p-9 &&
+                                 std::exp2(std::round(std::log2(args.smooth))) == args.smooth;
+            if (std::fabs(smoothSpan - 1) < 1e-6 && !exactBoundary)
+                throw Refused("a jump whose smoothness times step speed is within 1e-6 of 1, where Raw Accel switches "
+                              "between a sharp and a smooth step and decimal rounding can tip YeetMouse the other way");
             out.accelMode = AccelMode_Jump;
-            out.midpoint = static_cast<float>(args.cap.x / SpeedScale);
+            out.midpoint = static_cast<float>(args.cap.x);
             out.accel = static_cast<float>(args.cap.y);
             out.exponent = static_cast<float>(args.smooth);
             out.useSmoothing = args.gain;
@@ -453,11 +455,8 @@ namespace RawAccel {
             if (!(args.gamma > 0) || !(args.motivity > 1) || !(args.syncSpeed > 0) || !(args.smooth >= 0 && args.smooth <= 1))
                 throw Refused("synchronous needs a positive gamma and sync speed, a motivity above 1 and a smoothness "
                               "from 0 to 1");
-            if (args.gain)
-                throw Refused("synchronous with gain: its integration table is laid out in Raw Accel's 1000 DPI speed "
-                              "units, so YeetMouse's 800 DPI convention moves it by up to 0.25 percent");
             out.accelMode = AccelMode_Synchronous;
-            out.accel = static_cast<float>(args.syncSpeed / SpeedScale);
+            out.accel = static_cast<float>(args.syncSpeed);
             out.exponent = static_cast<float>(args.gamma);
             out.motivity = static_cast<float>(args.motivity);
             out.midpoint = static_cast<float>(args.smooth);
@@ -476,7 +475,7 @@ namespace RawAccel {
                 double x = args.data[2 * i], y = args.data[2 * i + 1];
                 if (!std::isfinite(x) || !std::isfinite(y) || (i > 0 && !(x > args.data[2 * i - 2])))
                     throw Refused("a lookup table whose speeds are not finite and strictly increasing");
-                out.lutDataX[i] = x / SpeedScale;
+                out.lutDataX[i] = x;
                 out.lutDataY[i] = y;
             }
             out.accelMode = AccelMode_Lut;
@@ -491,9 +490,9 @@ namespace RawAccel {
                 return;
             }
             out.accelMode = AccelMode_Natural;
-            out.accel = static_cast<float>(args.decayRate * SpeedScale);
+            out.accel = static_cast<float>(args.decayRate);
             out.exponent = static_cast<float>(args.limit);
-            out.midpoint = static_cast<float>(args.inputOffset / SpeedScale);
+            out.midpoint = static_cast<float>(args.inputOffset);
             out.useSmoothing = args.gain;
         }
     }
@@ -516,8 +515,8 @@ namespace RawAccel {
 
         Parameters out;
         double dpi = device.dpi > 0 ? device.dpi : 1000;
-        out.preScale = static_cast<float>(YeetMouseDpi / dpi);
-        out.sens = static_cast<float>(profile.outputDpi / YeetMouseDpi);
+        out.preScale = static_cast<float>(RawAccelDpi / dpi);
+        out.sens = static_cast<float>(profile.outputDpi / RawAccelDpi);
         out.ratioYX = static_cast<float>(profile.ratioYX);
         out.useAnisotropy = profile.ratioYX != 1;
         out.outCap = 0;

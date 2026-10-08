@@ -99,8 +99,7 @@ namespace RawAccel {
 
     std::string Write(const Settings &settings);
 
-    inline constexpr double YeetMouseDpi = 800;
-    inline constexpr double SpeedScale = 1000 / YeetMouseDpi;
+    inline constexpr double RawAccelDpi = 1000;
 
     Parameters ToParameters(const Profile &profile, const DeviceConfig &device);
 }

@@ -1617,7 +1617,15 @@ bool Tests::TestRawAccelParity() {
                 }
             }
         }
-        supervisor.Validate(jump_converted == 66 && jump_refused == 6);
+        supervisor.Validate(jump_converted == 72 && jump_refused == 0);
+        RawAccel::Profile jump_boundary = owner;
+        jump_boundary.x.mode = RawAccel::Mode::Jump;
+        jump_boundary.x.smooth = 0.5;
+        jump_boundary.x.cap = {2, 1.5};
+        supervisor.Validate(!refused(jump_boundary, device) && vectors_match(jump_boundary, device));
+        jump_boundary.x.smooth = 0.3;
+        jump_boundary.x.cap = {1 / 0.3, 1.5};
+        supervisor.Validate(refused(jump_boundary, device));
         RawAccel::Profile jump_owner = owner;
         jump_owner.x.mode = RawAccel::Mode::Jump;
         jump_owner.x.gain = true;
@@ -1626,17 +1634,19 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(counts_match(jump_owner, device, 7));
 
         supervisor.NextTest();
-        for (double smooth : {0.0, 0.25, 0.5, 1.0}) {
-            for (double sync : {2.0, 5.0, 30.0}) {
-                for (double gamma : {0.5, 1.0, 3.0}) {
-                    RawAccel::Profile profile = owner;
-                    profile.x.mode = RawAccel::Mode::Synchronous;
-                    profile.x.gain = false;
-                    profile.x.smooth = smooth;
-                    profile.x.syncSpeed = sync;
-                    profile.x.gamma = gamma;
-                    profile.x.motivity = 1.5;
-                    supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+        for (bool gain : {false, true}) {
+            for (double smooth : {0.0, 0.25, 0.5, 1.0}) {
+                for (double sync : {2.0, 5.0, 30.0}) {
+                    for (double gamma : {0.5, 1.0, 3.0}) {
+                        RawAccel::Profile profile = owner;
+                        profile.x.mode = RawAccel::Mode::Synchronous;
+                        profile.x.gain = gain;
+                        profile.x.smooth = smooth;
+                        profile.x.syncSpeed = sync;
+                        profile.x.gamma = gamma;
+                        profile.x.motivity = 1.5;
+                        supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+                    }
                 }
             }
         }
@@ -1649,7 +1659,7 @@ bool Tests::TestRawAccelParity() {
         synchronous_owner.x.motivity = 2;
         supervisor.Validate(counts_match(synchronous_owner, device, 8));
         synchronous_owner.x.gain = true;
-        supervisor.Validate(refused(synchronous_owner, device));
+        supervisor.Validate(counts_match(synchronous_owner, device, 10));
 
         supervisor.NextTest();
         std::mt19937 table_rng(20261008);
