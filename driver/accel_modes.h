@@ -85,6 +85,7 @@ struct accel_profile {
     FP_LONG min_time, max_time;
     char fixed_time;
     char truncate_carry;
+    char clock_on_any_report;
 
     bool is_init;
 };
@@ -125,6 +126,8 @@ unsigned long accel_lut_parse(const char *first, const char *second, unsigned lo
 #define MAX_ELAPSED_NS ((long long) INT_MAX * NS_PER_MS)
 
 void accel_report(struct accel_state *s, long long now_ns);
+
+void accel_idle_report(const struct accel_profile *p, struct accel_state *s, long long now_ns);
 
 FP_LONG accel_elapsed(struct accel_state *s, long long now_ns);
 

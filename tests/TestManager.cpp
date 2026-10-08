@@ -232,6 +232,7 @@ void TestManager::ApplyParameters(const Parameters &params) {
     profile.max_time = FP64_FromFloat(params.maxTime);
     profile.fixed_time = params.fixedTime;
     profile.truncate_carry = params.truncateCarry;
+    profile.clock_on_any_report = params.clockOnAnyReport;
     profile.x.mode = params.accelMode;
     profile.x.use_smoothing = params.useSmoothing;
     profile.x.acceleration = FP64_FromFloat(params.accel);

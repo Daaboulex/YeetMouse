@@ -59,7 +59,7 @@ static void driver_events(struct input_handle *handle, const struct input_value 
                 v_syn = v;
                 break;
             }
-            accel_report(&state->accel, ktime_get());
+            accelerate_idle(&state->accel);
         }
     }
 

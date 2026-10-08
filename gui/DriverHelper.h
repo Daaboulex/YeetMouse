@@ -244,6 +244,7 @@ struct Parameters {
     float maxTime = 100;
     bool fixedTime = false;
     bool truncateCarry = false;
+    bool clockOnAnyReport = false;
     float inputOffset = 0;
     float legacyCap = 0;
     bool lutVelocity = false;

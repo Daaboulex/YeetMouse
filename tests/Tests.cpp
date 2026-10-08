@@ -1311,6 +1311,16 @@ bool Tests::TestTimingAndRounding() {
         accel_elapsed(&state, 1000000);
         accel_report(&state, 7000000);
         supervisor.Validate(accel_elapsed(&state, 7250000) == FP64_FromDouble(0.25));
+        accel_profile clock_profile{};
+        state = {};
+        accel_elapsed(&state, 1000000);
+        accel_idle_report(&clock_profile, &state, 7000000);
+        supervisor.Validate(accel_elapsed(&state, 7250000) == FP64_FromDouble(6.25));
+        clock_profile.clock_on_any_report = 1;
+        state = {};
+        accel_elapsed(&state, 1000000);
+        accel_idle_report(&clock_profile, &state, 7000000);
+        supervisor.Validate(accel_elapsed(&state, 7250000) == FP64_FromDouble(0.25));
         state = {};
         supervisor.Validate(accel_elapsed(&state, LLONG_MAX) == FP64_FromInt(INT_MAX));
 
@@ -1485,6 +1495,7 @@ bool Tests::TestRawAccelParity() {
 
         supervisor.NextTest();
         supervisor.Validate(vectors_match(owner, device));
+        supervisor.Validate(RawAccel::ToParameters(owner, device).clockOnAnyReport);
 
         supervisor.NextTest();
         RawAccel::DeviceConfig locked = device;

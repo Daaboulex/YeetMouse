@@ -537,6 +537,7 @@ namespace RawAccel {
         }
         out.maxTime = static_cast<float>(device.maximumTime);
         out.truncateCarry = true;
+        out.clockOnAnyReport = true;
 
         switch (profile.x.mode) {
             case Mode::NoAccel:

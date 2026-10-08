@@ -336,6 +336,7 @@ namespace DriverHelper {
         res &= GetParameterF("MaxTime", params.maxTime);
         res &= GetParameterB("FixedTime", params.fixedTime);
         res &= GetParameterB("TruncateCarry", params.truncateCarry);
+        res &= GetParameterB("ClockOnAnyReport", params.clockOnAnyReport);
         res &= GetParameterF("InputOffset", params.inputOffset);
         res &= GetParameterF("LegacyCap", params.legacyCap);
         res &= GetParameterB("LutVelocity", params.lutVelocity);
@@ -408,6 +409,7 @@ bool Parameters::SaveAll(bool auto_update) {
     res &= SetParameterTy("MaxTime", maxTime);
     res &= SetParameterTy("FixedTime", fixedTime ? 1 : 0);
     res &= SetParameterTy("TruncateCarry", truncateCarry ? 1 : 0);
+    res &= SetParameterTy("ClockOnAnyReport", clockOnAnyReport ? 1 : 0);
     res &= SetParameterTy("InputOffset", inputOffset);
     res &= SetParameterTy("LegacyCap", legacyCap);
     res &= SetParameterTy("LutVelocity", lutVelocity ? 1 : 0);

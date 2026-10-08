@@ -5,4 +5,6 @@
 
 int accelerate(struct accel_state *state, int *x, int *y);
 
+void accelerate_idle(struct accel_state *state);
+
 #endif /* _ACCEL_H */

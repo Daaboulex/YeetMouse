@@ -86,6 +86,7 @@ PARAM_F(MinTime,        MIN_TIME,           "Shortest time in ms one packet is t
 PARAM_F(MaxTime,        MAX_TIME,           "Longest time in ms one packet is taken to span");
 PARAM_BYTE(FixedTime,   FIXED_TIME,         "Take every packet to span exactly MinTime instead of the measured time");
 PARAM_BYTE(TruncateCarry, TRUNCATE_CARRY,   "Truncate toward zero when carrying fractions of counts, as Raw Accel does, instead of rounding");
+PARAM_BYTE(ClockOnAnyReport, CLOCK_ON_ANY_REPORT, "Restart a device's packet clock on every report, a click included, as Raw Accel does, instead of on motion only");
 PARAM_F(InputOffset,    INPUT_OFFSET,       "Classic only: speed at or below which the sensitivity is 1, inside the curve as in Raw Accel");
 PARAM_BYTE(LutVelocity, LUT_VELOCITY,       "LUT values are velocities divided by the speed, as Raw Accel's gain lookup tables");
 PARAM_F(LegacyCap,      LEGACY_CAP,         "Classic and Power without smoothing: sensitivity cap of the curve, below 1 the classic curve falls toward it; 0 is none");
@@ -130,6 +131,7 @@ static struct accel_profile g_profile = {
     .max_time = C0NST_FP64_FromDouble(MAX_TIME),
     .fixed_time = FIXED_TIME,
     .truncate_carry = TRUNCATE_CARRY,
+    .clock_on_any_report = CLOCK_ON_ANY_REPORT,
 };
 
 static ktime_t g_next_update = 0;
@@ -161,6 +163,7 @@ INLINE void update_params(ktime_t now)
     PARAM_UPDATE(LegacyCap);
     g_FixedTime = PARAM_UPDATE_UL(FixedTime) != 0;
     g_TruncateCarry = PARAM_UPDATE_UL(TruncateCarry) != 0;
+    g_ClockOnAnyReport = PARAM_UPDATE_UL(ClockOnAnyReport) != 0;
     g_LutVelocity = PARAM_UPDATE_UL(LutVelocity) != 0;
     g_LutSize = PARAM_UPDATE_UL(LutSize);
     g_AccelerationMode = PARAM_UPDATE_UL(AccelerationMode);
@@ -210,6 +213,7 @@ INLINE void update_params(ktime_t now)
     g_profile.max_time = g_MaxTime;
     g_profile.fixed_time = g_FixedTime;
     g_profile.truncate_carry = g_TruncateCarry;
+    g_profile.clock_on_any_report = g_ClockOnAnyReport;
 
     update_profile_constants(&g_profile);
 
@@ -218,6 +222,11 @@ INLINE void update_params(ktime_t now)
 }
 
 // Acceleration happens here
+void accelerate_idle(struct accel_state *state)
+{
+    accel_idle_report(&g_profile, state, ktime_get());
+}
+
 int accelerate(struct accel_state *state, int *x, int *y)
 {
     FP_LONG delta_x, delta_y, ms;

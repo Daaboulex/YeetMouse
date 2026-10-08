@@ -27,6 +27,7 @@
 #define MAX_TIME 100
 #define FIXED_TIME 0
 #define TRUNCATE_CARRY 0
+#define CLOCK_ON_ANY_REPORT 0
 #define INPUT_OFFSET 0
 #define LEGACY_CAP 0
 #define LUT_VELOCITY 0

@@ -773,6 +773,11 @@ void accel_report(struct accel_state *s, long long now_ns) {
     s->last_report_ns = now_ns;
 }
 
+void accel_idle_report(const struct accel_profile *p, struct accel_state *s, long long now_ns) {
+    if (p->clock_on_any_report)
+        accel_report(s, now_ns);
+}
+
 FP_LONG accel_elapsed(struct accel_state *s, long long now_ns) {
     long long elapsed = now_ns - s->last_report_ns;
     accel_report(s, now_ns);

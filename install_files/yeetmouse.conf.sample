@@ -17,6 +17,7 @@ minTime=0
 maxTime=100
 fixedTime=0
 truncateCarry=0
+clockOnAnyReport=0
 inputOffset=0
 legacyCap=0
 lutVelocity=0
