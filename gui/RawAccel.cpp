@@ -234,21 +234,22 @@ namespace RawAccel {
         if (!root.contains("version"))
             throw Refused("a Raw Accel settings file from before 1.6; only the Raw Accel 1.7 format is read");
 
+        const std::string file = "the file";
         Settings settings;
-        settings.version = Text(root, "version", "the file");
+        settings.version = Text(root, "version", file);
         if (settings.version.rfind("1.7", 0) != 0)
             throw Refused("a Raw Accel " + settings.version + " settings file; only the Raw Accel 1.7 format is read");
 
-        settings.defaultDeviceConfig = ReadDeviceConfig(Field(root, "defaultDeviceConfig", "the file"),
+        settings.defaultDeviceConfig = ReadDeviceConfig(Field(root, "defaultDeviceConfig", file),
                                                         "\"defaultDeviceConfig\"");
 
-        const json &profiles = Field(root, "profiles", "the file");
+        const json &profiles = Field(root, "profiles", file);
         if (!profiles.is_array() || profiles.empty())
             throw Refused("\"profiles\" is not a list of at least one profile");
         for (std::size_t i = 0; i < profiles.size(); i++)
             settings.profiles.push_back(ReadProfile(profiles[i], i));
 
-        const json &devices = Field(root, "devices", "the file");
+        const json &devices = Field(root, "devices", file);
         if (!devices.is_array())
             throw Refused("\"devices\" is not a list");
         for (std::size_t i = 0; i < devices.size(); i++) {
