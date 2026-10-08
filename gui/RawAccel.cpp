@@ -315,6 +315,55 @@ namespace RawAccel {
                 throw Refused(what + " has no exact YeetMouse equivalent yet");
         }
 
+        void Valid(bool valid, const std::string &where, const char *message) {
+            if (!valid)
+                throw Refused(where + ": Raw Accel refuses it: " + message);
+        }
+
+        void CheckArgs(const AccelArgs &args, const std::string &where) {
+            bool jumpOrInOut = args.mode == Mode::Jump ||
+                               ((args.mode == Mode::Classic || args.mode == Mode::Power) && args.capMode == CapMode::InOut);
+            Valid(args.mode != Mode::Lut || args.data.size() >= 4, where, "lookup mode requires at least 2 points");
+            Valid(args.data.size() <= 2 * MaxLutPoints, where, "too many data points (max=257)");
+            Valid(args.inputOffset >= 0 && args.outputOffset >= 0, where, "offset can not be negative");
+            Valid(args.cap.x >= 0 && !(args.cap.x == 0 && jumpOrInOut), where, "cap (input) can not be negative, or 0 here");
+            Valid(args.cap.y >= 0 && !(args.cap.y == 0 && jumpOrInOut), where, "cap (output) can not be negative, or 0 here");
+            Valid(!(args.mode == Mode::Classic && args.cap.x > 0 && args.cap.x < args.inputOffset &&
+                    args.capMode != CapMode::Output) &&
+                  !(args.mode == Mode::Power && args.cap.y > 0 && args.cap.y < args.outputOffset &&
+                    args.capMode != CapMode::Input), where, "cap < offset");
+            Valid(args.acceleration > 0, where, "acceleration must be positive");
+            Valid(args.scale > 0, where, "scale must be positive");
+            Valid(args.gamma > 0, where, "gamma must be positive");
+            Valid(args.decayRate > 0, where, "decay rate must be positive");
+            Valid(args.motivity > 1, where, "motivity must be greater than 1");
+            Valid(args.exponentClassic > 1, where, "exponent must be greater than 1");
+            Valid(args.exponentPower > 0, where, "exponent must be positive");
+            Valid(args.limit > 0, where, "limit must be positive");
+            Valid(args.syncSpeed > 0, where, "synchronous speed must be positive");
+            Valid(args.smooth >= 0 && args.smooth <= 1, where, "smooth must be between 0 and 1");
+        }
+
+        void CheckProfile(const Profile &profile, const DeviceConfig &device) {
+            std::string where = "profile \"" + profile.name + "\"";
+            CheckArgs(profile.x, where + " horizontal or whole curve");
+            if (!profile.speed.whole)
+                CheckArgs(profile.y, where + " vertical curve");
+            Valid(!profile.name.empty(), where, "profile name can not be empty");
+            Valid(profile.speedMax >= 0, where, "speed cap is negative");
+            Valid(profile.snap >= 0 && profile.snap <= 45, where, "snap angle must be between 0 and 45 degrees");
+            Valid(profile.outputDpi != 0, where, "output DPI is 0");
+            Valid(profile.ratioYX != 0, where, "Y/X output DPI ratio is 0");
+            Valid(profile.domain.x > 0 && profile.domain.y > 0, where, "domain weights must be positive");
+            Valid(profile.ratioLR > 0 && profile.ratioUD > 0, where, "output DPI ratio must be positive");
+            Valid(profile.speed.lpNorm > 0, where, "Lp norm must be positive (default=2)");
+            Valid(profile.range.x >= 0 && profile.range.y >= 0, where, "range weights must be positive");
+            Valid(device.dpi >= 0, "the device", "dpi can not be negative");
+            Valid(device.pollingRate >= 0, "the device", "polling rate can not be negative");
+            Valid(device.minimumTime > 0, "the device", "minimum time must be positive");
+            Valid(device.maximumTime >= device.minimumTime, "the device", "max time is less than min time");
+        }
+
         double PowerScale(const AccelArgs &args) {
             double n = args.exponentPower;
             if (args.capMode != CapMode::InOut)
@@ -326,11 +375,6 @@ namespace RawAccel {
 
         void MapPower(const AccelArgs &args, const Profile &profile, Parameters &out) {
             double n = args.exponentPower;
-            if (!(n > 0) || !(args.scale > 0) || args.outputOffset < 0)
-                throw Refused("power needs a positive exponent and scale and a non-negative output offset");
-            if (args.capMode == CapMode::InOut && (!(args.cap.x > 0) || !(args.cap.y > 0)))
-                throw Refused("power with cap mode in_out needs a positive cap point");
-
             double scale = PowerScale(args);
             bool legacyInOut = !args.gain && args.capMode == CapMode::InOut;
             double offset = legacyInOut ? 0 : args.outputOffset;
@@ -384,14 +428,12 @@ namespace RawAccel {
     namespace {
         void MapClassic(const AccelArgs &args, Parameters &out) {
             double e = args.exponentClassic, a = args.acceleration, offset = args.inputOffset;
-            if (!(e > 1) || !(a > 0) || !(offset >= 0) || args.cap.x < 0 || args.cap.y < 0)
-                throw Refused("classic needs an exponent above 1, a positive acceleration and no negative offset or cap");
 
             bool smoothing = false;
             double capY = 1, legacyCap = 0;
             switch (args.capMode) {
                 case CapMode::InOut: {
-                    if (!(args.cap.x > offset) || !(args.cap.y > 0))
+                    if (!(args.cap.x > offset))
                         throw Refused("classic with cap mode in_out needs a cap point beyond the input offset");
                     double y = std::fabs(args.cap.y - 1);
                     a = args.gain ? std::pow(y / e, 1 / (e - 1)) / (args.cap.x - offset)
@@ -405,8 +447,6 @@ namespace RawAccel {
                 }
                 case CapMode::Input:
                     if (args.cap.x > 0) {
-                        if (args.cap.x < offset)
-                            throw Refused("a classic input cap below the input offset");
                         smoothing = args.gain;
                         if (args.gain)
                             capY = 1 + e * std::pow(a * (args.cap.x - offset), e - 1);
@@ -438,8 +478,6 @@ namespace RawAccel {
         }
 
         void MapJump(const AccelArgs &args, Parameters &out) {
-            if (!(args.cap.x > 0) || !(args.cap.y > 0) || !(args.smooth >= 0 && args.smooth <= 1))
-                throw Refused("jump needs a positive step point and a smoothness from 0 to 1");
             double smoothSpan = args.smooth * args.cap.x;
             bool exactBoundary = smoothSpan == 1 && args.smooth >= 0x1p-9 &&
                                  std::exp2(std::round(std::log2(args.smooth))) == args.smooth;
@@ -454,9 +492,6 @@ namespace RawAccel {
         }
 
         void MapSynchronous(const AccelArgs &args, Parameters &out) {
-            if (!(args.gamma > 0) || !(args.motivity > 1) || !(args.syncSpeed > 0) || !(args.smooth >= 0 && args.smooth <= 1))
-                throw Refused("synchronous needs a positive gamma and sync speed, a motivity above 1 and a smoothness "
-                              "from 0 to 1");
             out.accelMode = AccelMode_Synchronous;
             out.accel = static_cast<float>(args.syncSpeed);
             out.exponent = static_cast<float>(args.gamma);
@@ -466,8 +501,8 @@ namespace RawAccel {
         }
 
         void MapLut(const AccelArgs &args, Parameters &out) {
-            if (args.data.size() % 2 != 0 || args.data.size() < 4)
-                throw Refused("a lookup table needs at least 2 whole points");
+            if (args.data.size() % 2 != 0)
+                throw Refused("a lookup table needs whole x,y points");
             size_t points = args.data.size() / 2;
             if (points > MAX_LUT_ARRAY_SIZE)
                 throw Refused("a lookup table longer than YeetMouse's " + std::to_string(MAX_LUT_ARRAY_SIZE) + " points");
@@ -486,8 +521,6 @@ namespace RawAccel {
         }
 
         void MapNatural(const AccelArgs &args, Parameters &out) {
-            if (!(args.decayRate > 0) || !(args.limit > 0) || !(args.inputOffset >= 0))
-                throw Refused("natural needs a positive decay rate and limit and no negative offset");
             if (args.limit == 1) {
                 out.accelMode = AccelMode_Current;
                 return;
@@ -548,21 +581,14 @@ namespace RawAccel {
     }
 
     Parameters ToParameters(const Profile &profile, const DeviceConfig &device) {
+        CheckProfile(profile, device);
         Require(!device.disable, "a disabled device");
-        if (!(profile.domain.x > 0) || !(profile.domain.y > 0) || !(profile.range.x >= 0) || !(profile.range.y >= 0))
-            throw Refused("domain weights that are not positive or range weights that are negative");
         if (profile.speed.whole && !(profile.speed.lpNorm >= 1))
             throw Refused("an lp norm below 1, which YeetMouse cannot compute within its fixed-point range");
         if (!(profile.speed.inputHalfLife >= 0) || !(profile.speed.scaleHalfLife >= 0) || !(profile.speed.outputHalfLife >= 0))
             throw Refused("a negative smoothing half-life");
-        if (!(profile.ratioLR > 0) || !(profile.ratioUD > 0))
-            throw Refused("an L/R or U/D ratio that is not positive");
-        if (!(profile.snap >= 0 && profile.snap <= 45) || !(profile.speedMax >= 0))
-            throw Refused("a snap angle outside 0 to 45 degrees or a negative speed cap");
         if (!(profile.outputDpi > 0))
             throw Refused("an output DPI that is not positive");
-        if (device.dpi < 0 || device.pollingRate < 0 || !(device.maximumTime > 0) || !(device.minimumTime > 0))
-            throw Refused("device timing or DPI out of range");
 
         Parameters out;
         double dpi = device.dpi > 0 ? device.dpi : 1000;

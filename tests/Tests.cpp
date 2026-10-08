@@ -1574,6 +1574,21 @@ bool Tests::TestRawAccelParity() {
         disabled.disable = true;
         supervisor.Validate(refused(owner, disabled));
         supervisor.Validate(!refused(owner, device));
+        RawAccel::DeviceConfig inverted_times = device;
+        inverted_times.maximumTime = inverted_times.minimumTime / 2;
+        supervisor.Validate(refused(owner, inverted_times));
+        RawAccel::Profile invalid_y = owner;
+        invalid_y.y.cap = {-1, 0};
+        supervisor.Validate(!refused(invalid_y, device));
+        invalid_y.speed.whole = false;
+        supervisor.Validate(refused(invalid_y, device));
+        RawAccel::Profile cap_below_offset = owner;
+        cap_below_offset.x.outputOffset = 2;
+        cap_below_offset.x.cap = {0, 1.5};
+        supervisor.Validate(refused(cap_below_offset, device));
+        RawAccel::Profile zero_ratio = owner;
+        zero_ratio.ratioYX = 0;
+        supervisor.Validate(refused(zero_ratio, device));
 
         supervisor.NextTest();
         RawAccel::Profile large_offset = owner;
