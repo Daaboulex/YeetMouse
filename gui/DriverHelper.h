@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
 #include "CustomCurve.h"
 #include "../shared_definitions.h"
@@ -34,6 +35,10 @@ namespace DriverHelper {
     bool SaveParameters();
 
     bool SavePersistentParameters();
+
+    std::string SiblingProgram(const std::string &name);
+
+    int RunProgram(const std::vector<std::string> &args);
 
     bool ValidateDirectory();
 

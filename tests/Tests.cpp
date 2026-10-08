@@ -2896,6 +2896,15 @@ bool Tests::TestConfigFiles() {
         supervisor.Validate(!ConfigHelper::ChooseFile("Pick", false));
         setenv("PATH", original_path.c_str(), 1);
         std::filesystem::remove_all(SCRATCH_DIR);
+
+        supervisor.NextTest();
+        std::filesystem::path sibling = DriverHelper::SiblingProgram("yeetmousectl");
+        supervisor.Validate(sibling.filename() == "yeetmousectl" &&
+                            std::filesystem::exists(sibling.parent_path() / "YeetMouseTests"));
+        supervisor.Validate(DriverHelper::RunProgram({"sh", "-c", "exit 3"}) == 3);
+        supervisor.Validate(DriverHelper::RunProgram({"true"}) == 0);
+        supervisor.Validate(DriverHelper::RunProgram({"/nonexistent/program"}) != 0);
+        supervisor.Validate(DriverHelper::RunProgram({}) == -1);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during config files\n", ex.what());
         supervisor.result = false;
