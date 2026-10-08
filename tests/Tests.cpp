@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <climits>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <random>
 #include <sstream>
@@ -13,6 +16,7 @@
 #include "config.h"
 #include "TestManager.h"
 #include "RawAccelOracle.h"
+#include "driver/profile_table.h"
 #include "gui/ConfigHelper.h"
 #include "gui/FunctionHelper.h"
 #include "gui/RawAccel.h"
@@ -2226,6 +2230,210 @@ bool Tests::TestRawAccelExport() {
         supervisor.Validate(!refused(unreadable));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel export\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
+bool Tests::TestProfileTable() {
+    TestSupervisor supervisor{"Profile Table"};
+
+    static accel_profile profiles[YEETMOUSE_MAX_PROFILES + 1];
+    static yeetmouse_profile_args args;
+
+    auto same_packets = [](const accel_profile &a, const accel_profile &b, const accel_device &device) {
+        bool same = true;
+        accel_state state_a{}, state_b{};
+        for (int dx = -150; dx <= 150; dx += 13) {
+            for (int dy = -150; dy <= 150; dy += 17) {
+                FP_LONG ax = FP64_FromInt(dx), ay = FP64_FromInt(dy), bx = ax, by = ay;
+                accel_packet(&a, &device, &state_a, &ax, &ay, FP64_1);
+                accel_packet(&b, &device, &state_b, &bx, &by, FP64_1);
+                auto exact = [](FP_LONG value) { return static_cast<double>(value) / 4294967296.0; };
+                double scale = std::max(std::fabs(exact(bx)) + std::fabs(exact(by)), 1.0);
+                same &= std::fabs(exact(ax) - exact(bx)) <= 1e-8 * scale && std::fabs(exact(ay) - exact(by)) <= 1e-8 * scale;
+            }
+        }
+        return same;
+    };
+
+    auto loaded = [&](const Parameters &params, accel_profile &profile) {
+        return DriverHelper::ProfileArgs(params, "probe", args) && profile_from_args(&profile, &args) == 0;
+    };
+
+    try {
+        supervisor.NextTest();
+        for (const char *name : {"power", "jump.v2", "a-b_c", "0"})
+            supervisor.Validate(yeetmouse_name_valid(name));
+        for (const char *name : {"", ".hidden", "-x", "a/b", "a b", "\xc3\xa9"})
+            supervisor.Validate(!yeetmouse_name_valid(name));
+        std::string longest(YEETMOUSE_NAME_LEN - 1, 'p'), overlong(YEETMOUSE_NAME_LEN, 'p');
+        supervisor.Validate(yeetmouse_name_valid(longest.c_str()) && !yeetmouse_name_valid(overlong.c_str()));
+
+        supervisor.NextTest();
+        std::ifstream file(FIXTURES_DIR "/rawaccel/power-velocity-output-cap.json");
+        RawAccel::Settings settings = RawAccel::Read(file);
+        Parameters owner = RawAccel::ToParameters(settings.profiles.at(0), settings.devices.at(0).config);
+        Parameters linear;
+        linear.accelMode = AccelMode_Linear;
+        linear.accel = 0.05f;
+        linear.useSmoothing = false;
+        Parameters motivity;
+        motivity.accelMode = AccelMode_Motivity;
+        Parameters synchronous;
+        synchronous.accelMode = AccelMode_Synchronous;
+        synchronous.accel = 8;
+        synchronous.exponent = 1;
+        synchronous.motivity = 2;
+        synchronous.midpoint = 0.5f;
+        Parameters component = owner;
+        component.byComponent = true;
+        component.yCurve.accelMode = AccelMode_Classic;
+        component.yCurve.accel = 0.02f;
+        component.yCurve.exponent = 2.5f;
+        component.yCurve.midpoint = 3;
+        component.inputSmoothHalfLife = 0.5f;
+        component.axisSnap = 20;
+        component.rotation = 8;
+        component.useAnisotropy = true;
+        component.ratioYX = 1.3f;
+        component.domainY = 1.5f;
+        Parameters table = owner;
+        table.accelMode = AccelMode_Lut;
+        table.lutVelocity = true;
+        table.lutSize = 4;
+        const double speeds[] = {2, 10, 30, 80}, scales[] = {1, 1.4, 2.2, 2.6};
+        for (int i = 0; i < 4; i++) {
+            table.lutDataX[i] = speeds[i];
+            table.lutDataY[i] = speeds[i] * scales[i];
+        }
+        for (const Parameters &params : {owner, linear, motivity, synchronous, component, table}) {
+            TestManager::ApplyParameters(params);
+            supervisor.Validate(loaded(params, profiles[0]) &&
+                                same_packets(profiles[0], TestManager::GetProfile(), TestManager::GetDevice()));
+        }
+
+        supervisor.NextTest();
+        supervisor.Validate(DriverHelper::ProfileArgs(owner, "probe", args));
+        yeetmouse_profile_args good = args;
+        auto refused = [&](const std::function<void(yeetmouse_profile_args &)> &spoil) {
+            args = good;
+            spoil(args);
+            return profile_from_args(&profiles[0], &args) == -EINVAL;
+        };
+        supervisor.Validate(profile_from_args(&profiles[0], &good) == 0);
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.name[0] = '.'; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.x.mode = AccelMode_Count; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.y.lut_size = YEETMOUSE_LUT_POINTS + 1; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.x.use_smoothing = 2; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.reserved[4] = 1; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.lp_norm = FP64_FromDouble(0.5); }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.ratio_lr = 0; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.axis_snap = FP64_1; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.input_half_life = -FP64_1; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) {
+            a.x.mode = AccelMode_Synchronous;
+            a.x.motivity = FP64_1;
+        }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) {
+            a.by_component = 1;
+            a.y.mode = AccelMode_Lut;
+            a.y.lut_size = 1;
+        }));
+        Parameters unreadable = owner;
+        unreadable.sens = NAN;
+        supervisor.Validate(!DriverHelper::ProfileArgs(unreadable, "probe", args));
+        supervisor.Validate(!DriverHelper::ProfileArgs(owner, std::string(YEETMOUSE_NAME_LEN, 'p'), args));
+
+        supervisor.NextTest();
+        static profile_table state;
+        state = {};
+        accel_profile *replaced = nullptr;
+        for (int i = 0; i < YEETMOUSE_MAX_PROFILES; i++)
+            supervisor.Validate(table_load(&state, ("p" + std::to_string(i)).c_str(), &profiles[i], &replaced) == 0 &&
+                                replaced == nullptr);
+        supervisor.Validate(table_load(&state, "extra", &profiles[YEETMOUSE_MAX_PROFILES], &replaced) == -ENOSPC);
+        supervisor.Validate(table_load(&state, "p3", &profiles[YEETMOUSE_MAX_PROFILES], &replaced) == 0 &&
+                            replaced == &profiles[3]);
+        supervisor.Validate(table_find(&state, "p3") == 3 && table_find(&state, "missing") == -1);
+        supervisor.Validate(table_load(&state, "bad/name", &profiles[0], &replaced) == -EINVAL);
+
+        supervisor.NextTest();
+        static yeetmouse_devices_args devices;
+        auto line = [](yeetmouse_device_args &device, __u16 vendor, __u16 product, const char *profile) {
+            device = {};
+            std::strncpy(device.profile, profile, YEETMOUSE_NAME_LEN - 1);
+            device.vendor = vendor;
+            device.product = product;
+            device.pre_scale = FP64_FromDouble(0.625);
+            device.min_time = FP64_1;
+            device.max_time = FP64_100;
+        };
+        devices = {};
+        devices.count = 3;
+        line(devices.devices[0], 0x046d, 0xc539, "p1");
+        line(devices.devices[1], 0x1532, 0x0084, "p2");
+        line(devices.devices[2], 0x045e, 0x0040, "");
+        devices.devices[2].disabled = 1;
+        supervisor.Validate(table_set_devices(&state, &devices) == 0);
+        table_choice unlisted = table_resolve(&state, 0x1234, 0x5678);
+        supervisor.Validate(!unlisted.disabled && unlisted.profile == nullptr && unlisted.device == nullptr);
+        table_choice g502 = table_resolve(&state, 0x046d, 0xc539);
+        supervisor.Validate(!g502.disabled && g502.profile == &profiles[1] && g502.device &&
+                            g502.device->pre_scale == FP64_FromDouble(0.625) && g502.device->min_time == FP64_1);
+        table_choice raw = table_resolve(&state, 0x045e, 0x0040);
+        supervisor.Validate(raw.disabled && raw.profile == nullptr && raw.device == nullptr);
+
+        auto set_refused = [&](int error, const std::function<void(yeetmouse_devices_args &)> &spoil) {
+            yeetmouse_devices_args spoiled = devices;
+            spoil(spoiled);
+            bool result = table_set_devices(&state, &spoiled) == error;
+            return result && table_resolve(&state, 0x046d, 0xc539).profile == &profiles[1] && state.device_count == 3;
+        };
+        supervisor.Validate(set_refused(-EINVAL, [](yeetmouse_devices_args &d) { d.devices[1].vendor = 0x046d; d.devices[1].product = 0xc539; }));
+        supervisor.Validate(set_refused(-ENOENT, [](yeetmouse_devices_args &d) { std::strcpy(d.devices[0].profile, "missing"); }));
+        supervisor.Validate(set_refused(-EINVAL, [](yeetmouse_devices_args &d) { std::strcpy(d.devices[2].profile, "p1"); }));
+        supervisor.Validate(set_refused(-EINVAL, [](yeetmouse_devices_args &d) { d.devices[0].min_time = -FP64_1; }));
+        supervisor.Validate(set_refused(-EINVAL, [](yeetmouse_devices_args &d) { d.devices[0].pre_scale = 0; }));
+        supervisor.Validate(set_refused(-EINVAL, [](yeetmouse_devices_args &d) { d.devices[0].fixed_time = 1; d.devices[0].min_time = 0; }));
+        supervisor.Validate(set_refused(-EINVAL, [](yeetmouse_devices_args &d) { d.count = YEETMOUSE_MAX_DEVICES + 1; }));
+        supervisor.Validate(set_refused(-EINVAL, [](yeetmouse_devices_args &d) { d.devices[0].reserved[1] = 1; }));
+
+        supervisor.NextTest();
+        supervisor.Validate(table_claim(&state, 1, "p5") == 0);
+        supervisor.Validate(table_resolve(&state, 0x046d, 0xc539).profile == &profiles[5] &&
+                            table_resolve(&state, 0x046d, 0xc539).device->pre_scale == FP64_FromDouble(0.625));
+        supervisor.Validate(table_resolve(&state, 0x1234, 0x5678).profile == &profiles[5] &&
+                            table_resolve(&state, 0x1234, 0x5678).device == nullptr);
+        supervisor.Validate(table_resolve(&state, 0x045e, 0x0040).disabled);
+        supervisor.Validate(table_claim(&state, 2, "p6") == 0 && table_resolve(&state, 0x1532, 0x0084).profile == &profiles[6]);
+        table_release(&state, 2);
+        supervisor.Validate(table_resolve(&state, 0x1532, 0x0084).profile == &profiles[5]);
+        supervisor.Validate(table_claim(&state, 2, "p6") == 0);
+        table_release(&state, 1);
+        supervisor.Validate(table_resolve(&state, 0x1532, 0x0084).profile == &profiles[6]);
+        table_release(&state, 2);
+        supervisor.Validate(table_resolve(&state, 0x1532, 0x0084).profile == &profiles[2] && state.claim_count == 0);
+        supervisor.Validate(table_claim(&state, 3, "missing") == -ENOENT && table_claim(&state, 3, "") == -EINVAL);
+        for (int i = 0; i < YEETMOUSE_MAX_CLAIMS; i++)
+            supervisor.Validate(table_claim(&state, 100 + i, "p7") == 0);
+        supervisor.Validate(table_claim(&state, 999, "p7") == -ENOSPC);
+        supervisor.Validate(table_claim(&state, 100, "p8") == 0 && table_resolve(&state, 0, 0).profile == &profiles[8]);
+        for (int i = 0; i < YEETMOUSE_MAX_CLAIMS; i++)
+            table_release(&state, 100 + i);
+
+        supervisor.NextTest();
+        accel_profile *dropped = nullptr;
+        supervisor.Validate(table_drop(&state, "p1", &dropped) == -EBUSY && dropped == nullptr);
+        supervisor.Validate(table_claim(&state, 4, "p9") == 0 && table_drop(&state, "p9", &dropped) == -EBUSY);
+        table_release(&state, 4);
+        supervisor.Validate(table_drop(&state, "p9", &dropped) == 0 && dropped == &profiles[9] &&
+                            table_find(&state, "p9") == -1);
+        supervisor.Validate(table_drop(&state, "p9", &dropped) == -ENOENT);
+        supervisor.Validate(table_load(&state, "fresh", &profiles[9], &replaced) == 0 && table_find(&state, "fresh") == 9);
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during profile table\n", ex.what());
         supervisor.result = false;
     }
 

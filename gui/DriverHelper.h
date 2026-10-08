@@ -295,4 +295,12 @@ struct Parameters {
     bool SaveAll(bool auto_update = true);
 };
 
+namespace DriverHelper {
+    CurveParameters HorizontalCurve(const Parameters &params);
+
+    bool FixedPoint(double value, __s64 &out);
+
+    bool ProfileArgs(const Parameters &params, const std::string &name, yeetmouse_profile_args &args);
+}
+
 #endif //YEETMOUSE_DRIVERHELPER_H

@@ -8,6 +8,7 @@
 #include <cstring>
 #include <sstream>
 #include <algorithm>
+#include <iterator>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <set>
@@ -401,6 +402,75 @@ namespace DriverHelper {
     }
 
 } // DriverHelper
+
+namespace DriverHelper {
+    CurveParameters HorizontalCurve(const Parameters &params) {
+        CurveParameters curve;
+        curve.accelMode = params.accelMode;
+        curve.accel = params.accel;
+        curve.exponent = params.exponent;
+        curve.midpoint = params.midpoint;
+        curve.motivity = params.motivity;
+        curve.useSmoothing = params.useSmoothing;
+        curve.inputOffset = params.inputOffset;
+        curve.legacyCap = params.legacyCap;
+        curve.lutVelocity = params.lutVelocity;
+        curve.lutSize = params.lutSize;
+        std::copy(std::begin(params.lutDataX), std::end(params.lutDataX), curve.lutDataX);
+        std::copy(std::begin(params.lutDataY), std::end(params.lutDataY), curve.lutDataY);
+        return curve;
+    }
+
+    bool FixedPoint(double value, __s64 &out) {
+        FP_LONG parsed = 0;
+        if (FP64_FromString(FormatDriverNumber(value).c_str(), &parsed) <= 0)
+            return false;
+        out = parsed;
+        return true;
+    }
+
+    static bool CurveArgs(const CurveParameters &curve, yeetmouse_curve_args &args) {
+        if (curve.accelMode < 0 || curve.accelMode >= AccelMode_Count || curve.lutSize < 0 ||
+            curve.lutSize > YEETMOUSE_LUT_POINTS)
+            return false;
+        args.mode = static_cast<__u8>(curve.accelMode);
+        args.use_smoothing = curve.useSmoothing;
+        args.lut_velocity = curve.lutVelocity;
+        args.lut_size = static_cast<__u32>(curve.lutSize);
+        bool ok = FixedPoint(curve.accel, args.acceleration) && FixedPoint(curve.exponent, args.exponent) &&
+                  FixedPoint(curve.midpoint, args.midpoint) && FixedPoint(curve.motivity, args.motivity) &&
+                  FixedPoint(curve.inputOffset, args.input_offset) && FixedPoint(curve.legacyCap, args.legacy_cap);
+        for (int i = 0; ok && i < curve.lutSize; i++)
+            ok = FixedPoint(curve.lutDataX[i], args.lut_x[i]) && FixedPoint(curve.lutDataY[i], args.lut_y[i]);
+        return ok;
+    }
+
+    bool ProfileArgs(const Parameters &params, const std::string &name, yeetmouse_profile_args &args) {
+        args = {};
+        if (name.size() >= YEETMOUSE_NAME_LEN)
+            return false;
+        std::copy(name.begin(), name.end(), args.name);
+        args.by_component = params.byComponent;
+        args.truncate_carry = params.truncateCarry;
+        args.clock_on_any_report = params.clockOnAnyReport;
+        return CurveArgs(HorizontalCurve(params), args.x) && CurveArgs(params.yCurve, args.y) &&
+               FixedPoint(params.sens, args.sensitivity) &&
+               FixedPoint(params.useAnisotropy ? params.ratioYX : 1, args.ratio_yx) &&
+               FixedPoint(params.outCap, args.output_cap) && FixedPoint(params.inCap, args.input_cap) &&
+               FixedPoint(params.offset, args.offset) && FixedPoint(params.rotation * DEG2RAD, args.rotation_angle) &&
+               FixedPoint(params.asAngle * DEG2RAD, args.angle_snap_angle) &&
+               FixedPoint(params.asThreshold * DEG2RAD, args.angle_snap_threshold) &&
+               FixedPoint(params.lpNorm, args.lp_norm) && FixedPoint(params.domainX, args.domain_x) &&
+               FixedPoint(params.domainY, args.domain_y) && FixedPoint(params.rangeX, args.range_x) &&
+               FixedPoint(params.rangeY, args.range_y) &&
+               FixedPoint(params.inputSmoothHalfLife, args.input_half_life) &&
+               FixedPoint(params.scaleSmoothHalfLife, args.scale_half_life) &&
+               FixedPoint(params.outputSmoothHalfLife, args.output_half_life) &&
+               FixedPoint(params.axisSnap * DEG2RAD, args.axis_snap) &&
+               FixedPoint(params.speedClamp, args.speed_clamp) && FixedPoint(params.ratioLR, args.ratio_lr) &&
+               FixedPoint(params.ratioUD, args.ratio_ud);
+    }
+}
 
 //Parameters::Parameters(float sens, float sensCap, float speedCap, float offset, float accel, float exponent,
 //                       float midpoint, float scrollAccel, int accelMode) : sens(sens), outCap(sensCap),

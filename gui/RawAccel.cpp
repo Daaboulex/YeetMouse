@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
-#include <iterator>
 #include <limits>
 #include <nlohmann/json.hpp>
 
@@ -564,23 +563,6 @@ namespace RawAccel {
                     Require(false, std::string("the ") + ModeNames[static_cast<int>(args.mode)] + " mode");
             }
         }
-
-        CurveParameters CurveOf(const Parameters &mapped) {
-            CurveParameters curve;
-            curve.accelMode = mapped.accelMode;
-            curve.accel = mapped.accel;
-            curve.exponent = mapped.exponent;
-            curve.midpoint = mapped.midpoint;
-            curve.motivity = mapped.motivity;
-            curve.useSmoothing = mapped.useSmoothing;
-            curve.inputOffset = mapped.inputOffset;
-            curve.legacyCap = mapped.legacyCap;
-            curve.lutVelocity = mapped.lutVelocity;
-            curve.lutSize = mapped.lutSize;
-            std::copy(std::begin(mapped.lutDataX), std::end(mapped.lutDataX), curve.lutDataX);
-            std::copy(std::begin(mapped.lutDataY), std::end(mapped.lutDataY), curve.lutDataY);
-            return curve;
-        }
     }
 
     Parameters ToParameters(const Profile &profile, const DeviceConfig &device) {
@@ -635,7 +617,7 @@ namespace RawAccel {
             Parameters vertical = out;
             MapCurve(profile.y, profile, vertical);
             out.byComponent = true;
-            out.yCurve = CurveOf(vertical);
+            out.yCurve = DriverHelper::HorizontalCurve(vertical);
         }
         return out;
     }
@@ -783,7 +765,7 @@ namespace RawAccel {
         profile.speed.inputHalfLife = out.Decimal(params.inputSmoothHalfLife, "a half-life (inputSmoothHalfLife)");
         profile.speed.scaleHalfLife = out.Decimal(params.scaleSmoothHalfLife, "a half-life (scaleSmoothHalfLife)");
         profile.speed.outputHalfLife = out.Decimal(params.outputSmoothHalfLife, "a half-life (outputSmoothHalfLife)");
-        profile.x = out.Curve(CurveOf(params), params.byComponent ? "the horizontal curve's" : "the curve's");
+        profile.x = out.Curve(DriverHelper::HorizontalCurve(params), params.byComponent ? "the horizontal curve's" : "the curve's");
         if (params.byComponent)
             profile.y = out.Curve(params.yCurve, "the vertical curve's");
 

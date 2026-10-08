@@ -47,6 +47,11 @@ int main() {
         bad_sum++;
     }
 
+    if (!Tests::TestProfileTable()) {
+        fprintf(stderr, "Test failed for the profile table\n");
+        bad_sum++;
+    }
+
     if (bad_sum == 0) {
         printf(GREEN"All tests passed!\n\n" RESET);
     } else {

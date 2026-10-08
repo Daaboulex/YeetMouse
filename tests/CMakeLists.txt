@@ -57,6 +57,7 @@ add_executable(YeetMouseTests main.cpp
         ../gui/ConfigHelper.cpp
         ../gui/DriverHelper.cpp
         ../gui/CustomCurve.cpp
+        ../driver/profile_table.c
         ../gui/ImGuiStubs.cpp
         ../driver/accel_modes.c)
 

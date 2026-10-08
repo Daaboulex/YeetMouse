@@ -238,7 +238,7 @@ INLINE void update_params(ktime_t now)
         g_AccelerationMode = AccelMode_Current;
 
     // Angle snap threshold should be in range [0, PI)
-    if(g_AngleSnap_Threshold >= FP64_PI || g_AngleSnap_Threshold < 0) {
+    if(!accel_angle_snap_valid(g_AngleSnap_Threshold)) {
         g_AngleSnap_Threshold = 0;
     }
 
@@ -263,13 +263,13 @@ INLINE void update_params(ktime_t now)
     g_profile.angle_snap_angle = g_AngleSnap_Angle;
     g_profile.angle_snap_threshold = g_AngleSnap_Threshold;
 
-    if (g_MaxTime <= 0 || g_MinTime < 0 || (g_FixedTime && g_MinTime <= 0)) {
+    if (!accel_times_valid(g_MinTime, g_MaxTime, g_FixedTime)) {
         printk("YeetMouse: Error: MaxTime must be above 0, MinTime not below 0, and above 0 when FixedTime is set.\n");
         g_MinTime = 0;
         g_MaxTime = FP64_100;
         g_FixedTime = 0;
     }
-    if (g_LpNorm < FP64_1 || g_DomainX <= 0 || g_DomainY <= 0 || g_RangeX < 0 || g_RangeY < 0) {
+    if (!accel_weights_valid(g_LpNorm, g_DomainX, g_DomainY, g_RangeX, g_RangeY)) {
         printk("YeetMouse: Error: LpNorm must be at least 1, the domain weights above 0 and the range weights not below 0.\n");
         g_LpNorm = FP64_FromInt(2);
         g_DomainX = FP64_1;
@@ -290,13 +290,13 @@ INLINE void update_params(ktime_t now)
     g_profile.y.lut_velocity = PARAM_UPDATE_UL(LutVelocityY) != 0;
     g_profile.y.lut_size = accel_lut_parse(g_param_LutDataBufY, g_param_LutDataBufY2, PARAM_UPDATE_UL(LutSizeY),
                                            g_profile.y.lut_x, g_profile.y.lut_y);
-    if (g_InputSmoothHalfLife < 0 || g_ScaleSmoothHalfLife < 0 || g_OutputSmoothHalfLife < 0) {
+    if (!accel_half_lives_valid(g_InputSmoothHalfLife, g_ScaleSmoothHalfLife, g_OutputSmoothHalfLife)) {
         printk("YeetMouse: Error: smoothing half-lives must not be negative.\n");
         g_InputSmoothHalfLife = 0;
         g_ScaleSmoothHalfLife = 0;
         g_OutputSmoothHalfLife = 0;
     }
-    if (g_AxisSnap < 0 || g_AxisSnap > FP64_Add(PiHalf >> 1, C0NST_FP64_FromDouble(1e-6)) || g_SpeedClamp < 0 || g_RatioLR <= 0 || g_RatioUD <= 0) {
+    if (!accel_snap_valid(g_AxisSnap, g_SpeedClamp, g_RatioLR, g_RatioUD)) {
         printk("YeetMouse: Error: AxisSnap must lie in [0, pi/4], SpeedClamp not below 0 and RatioLR and RatioUD above 0.\n");
         g_AxisSnap = 0;
         g_SpeedClamp = 0;
