@@ -17,7 +17,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake libglfw3-dev linux-headers-$(uname -r)
+          sudo apt-get install -y cmake libglfw3-dev "linux-headers-$(uname -r)"
 
       - name: Build driver
         run: make driver
@@ -36,7 +36,6 @@ jobs:
 
       - name: Build tests
         run: |
-          # TODO: Use UBSan as well
           cmake -DYEETMOUSETESTS_ASAN=ON -DYEETMOUSETESTS_UBSAN=ON -DYEETMOUSETESTS_NO_SANITIZE_RECOVER=ON -S tests -B tests/build
           cmake --build tests/build
         if: ${{ !cancelled() }}
