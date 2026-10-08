@@ -479,3 +479,20 @@ yeetmousectl run power -- %command%
 
 While the game runs every mouse that is not disabled uses that profile's curve. The driver drops it
 when the game exits or the wrapper is killed, and the saved curves return.
+
+### Saving Without a Password
+
+The GUI saves the default config with `pkexec yeetmousectl save /etc/yeetmouse.conf` and records a
+touchpad's resolution with `pkexec yeetmousectl touchpads --record`, so both ask for a password.
+`passwordlessSave = true` adds a polkit rule that lets members of the `yeetmouse` group run exactly
+those two commands without one; any other `pkexec` call still asks. It needs
+`security.polkit.enable`.
+
+```nix
+{
+  hardware.yeetmouse = {
+    enable = true;
+    passwordlessSave = true;
+  };
+}
+```

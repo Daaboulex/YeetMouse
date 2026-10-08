@@ -640,6 +640,17 @@ in
         A setting YeetMouse cannot reproduce exactly fails the build.
       '';
     };
+
+    passwordlessSave = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Let members of the yeetmouse group save the default config from the GUI and record touchpad
+        resolutions without a password: a polkit rule allows exactly
+        `yeetmousectl save /etc/yeetmouse.conf` and `yeetmousectl touchpads --record` through
+        pkexec, and every other pkexec call still asks. Off, both ask for a password, as upstream.
+      '';
+    };
   };
 
   config = mkIf cfg.enable (
@@ -759,7 +770,22 @@ in
           ) (attrNames cfg.profiles);
           message = "hardware.yeetmouse.profiles: a name uses letters, digits, '.', '_' or '-', starts with a letter or digit, has at most 31 characters and is not \"disabled\"";
         }
+        {
+          assertion = cfg.passwordlessSave -> config.security.polkit.enable;
+          message = "hardware.yeetmouse.passwordlessSave is a polkit rule, so it needs security.polkit.enable";
+        }
       ];
+      security.polkit.extraConfig = mkIf cfg.passwordlessSave ''
+        polkit.addRule(function (action, subject) {
+          if (action.id == "org.freedesktop.policykit.exec" && subject.isInGroup("yeetmouse")) {
+            var command = action.lookup("command_line");
+            if (command == "${yeetmouse}/bin/yeetmousectl save /etc/yeetmouse.conf" ||
+                command == "${yeetmouse}/bin/yeetmousectl touchpads --record") {
+              return polkit.Result.YES;
+            }
+          }
+        });
+      '';
       boot.extraModulePackages = [ yeetmouse ];
       boot.kernelModules = [ "yeetmouse" ];
       environment.systemPackages = [ yeetmouse ];
