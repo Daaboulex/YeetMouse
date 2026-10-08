@@ -1,6 +1,6 @@
 # Define the compiler and flags
 CXX ?= g++
-CXXFLAGS = -std=c++17 -I . -isystem External
+CXXFLAGS = -std=c++17 -I . -isystem External -MMD -MP
 
 # ImPlot has few of these
 IMGUIFLAGS = -Wformat=0 -Wno-format-security
@@ -64,13 +64,15 @@ External/ImGui/%.o: External/ImGui/%.cpp
 .PHONY: all check_deps clean clean-all debug
 
 clean-all: clean
-	rm -rf External/ImGui/*.o
+	rm -rf External/ImGui/*.o External/ImGui/*.d
 
 # Removing the imgui object files is kinda pointless for most cases and it takes a lot of time to rebuild
 clean:
-	rm -rf *.o
+	rm -rf *.o *.d
 	rm -f $(TARGET)
 
 debug:
 	@echo "Building GUI for debugging..."
 	$(MAKE) all OPTIMIZATION_FLAGS="$(DEBUG_FLAGS)"
+
+-include $(OBJECTS:.o=.d)

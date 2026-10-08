@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -O2 -Wall -Wno-sign-compare -std=c++17 -isystem ../../gui/External
+CXXFLAGS = -O2 -Wall -Wno-sign-compare -std=c++17 -isystem ../../gui/External -MMD -MP
 
 SRC = main.cpp  \
       ../../gui/ConfigHelper.cpp \
@@ -17,4 +17,6 @@ all: yeetmousectl
 .PHONY: clean
 
 clean:
-	rm -f $(OBJ) yeetmousectl
+	rm -f $(OBJ) $(OBJ:.o=.d) yeetmousectl
+
+-include $(OBJ:.o=.d)
