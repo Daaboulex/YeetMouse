@@ -15,6 +15,7 @@ DESKTOP_FILE="/usr/share/applications/yeetmouse.desktop"
 ICON_FILE="/usr/share/icons/hicolor/256x256/apps/yeetmouse.png"
 SYSTEMD_UNIT="/usr/lib/systemd/system/${SERVICE_NAME}"
 TMPFILES_CONF="/usr/lib/tmpfiles.d/yeetmouse.conf"
+SYSUSERS_CONF="/usr/lib/sysusers.d/yeetmouse.conf"
 
 KEEP_CONFIG=""
 PURGE_CONFIG=""
@@ -87,6 +88,7 @@ rm -f "$DESKTOP_FILE"
 rm -f "$ICON_FILE"
 rm -f "$SYSTEMD_UNIT"
 rm -f "$TMPFILES_CONF"
+rm -f "$SYSUSERS_CONF"
 
 if [[ -z "$KEEP_CONFIG" && -z "$PURGE_CONFIG" ]]; then
 	if [[ -f "$CONFIG_FILE" || -d "$CONFIG_DIR" ]]; then
