@@ -435,6 +435,20 @@ namespace RawAccel {
                 throw Refused("a classic cap whose constants leave YeetMouse's fixed-point range");
         }
 
+        void MapJump(const AccelArgs &args, Parameters &out) {
+            if (!(args.cap.x > 0) || !(args.cap.y > 0) || !(args.smooth >= 0 && args.smooth <= 1))
+                throw Refused("jump needs a positive step point and a smoothness from 0 to 1");
+            double smoothSpan = args.smooth * args.cap.x;
+            if (smoothSpan >= 1 && smoothSpan < SpeedScale * (1 + 1e-5))
+                throw Refused("a jump whose smoothness times step speed lies in [1, 1.25), smooth in Raw Accel but sharp "
+                              "in YeetMouse's 800 DPI units");
+            out.accelMode = AccelMode_Jump;
+            out.midpoint = static_cast<float>(args.cap.x / SpeedScale);
+            out.accel = static_cast<float>(args.cap.y);
+            out.exponent = static_cast<float>(args.smooth);
+            out.useSmoothing = args.gain;
+        }
+
         void MapNatural(const AccelArgs &args, Parameters &out) {
             if (!(args.decayRate > 0) || !(args.limit > 0) || !(args.inputOffset >= 0))
                 throw Refused("natural needs a positive decay rate and limit and no negative offset");
@@ -502,6 +516,9 @@ namespace RawAccel {
                 break;
             case Mode::Natural:
                 MapNatural(profile.x, out);
+                break;
+            case Mode::Jump:
+                MapJump(profile.x, out);
                 break;
             default:
                 Require(false, std::string("the ") + ModeNames[static_cast<int>(profile.x.mode)] + " mode");

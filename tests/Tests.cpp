@@ -1472,9 +1472,9 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(converted > 60);
 
         supervisor.NextTest();
-        RawAccel::Profile jump = owner;
-        jump.x.mode = RawAccel::Mode::Jump;
-        supervisor.Validate(refused(jump, device));
+        RawAccel::Profile synchronous = owner;
+        synchronous.x.mode = RawAccel::Mode::Synchronous;
+        supervisor.Validate(refused(synchronous, device));
         RawAccel::Profile stretched = owner;
         stretched.domain = {1, 2};
         supervisor.Validate(refused(stretched, device));
@@ -1566,6 +1566,35 @@ bool Tests::TestRawAccelParity() {
         natural_owner.x.limit = 2;
         natural_owner.x.decayRate = 0.1;
         supervisor.Validate(counts_match(natural_owner, device, 6));
+
+        supervisor.NextTest();
+        int jump_converted = 0, jump_refused = 0;
+        for (bool gain : {false, true}) {
+            for (double smooth : {0.0, 0.3, 0.5, 1.0}) {
+                for (double step_x : {4.0, 20.0, 60.0}) {
+                    for (double step_y : {0.5, 1.5, 3.0}) {
+                        RawAccel::Profile profile = owner;
+                        profile.x.mode = RawAccel::Mode::Jump;
+                        profile.x.gain = gain;
+                        profile.x.smooth = smooth;
+                        profile.x.cap = {step_x, step_y};
+                        if (refused(profile, device)) {
+                            jump_refused++;
+                            continue;
+                        }
+                        jump_converted++;
+                        supervisor.Validate(vectors_match(profile, device));
+                    }
+                }
+            }
+        }
+        supervisor.Validate(jump_converted == 66 && jump_refused == 6);
+        RawAccel::Profile jump_owner = owner;
+        jump_owner.x.mode = RawAccel::Mode::Jump;
+        jump_owner.x.gain = true;
+        jump_owner.x.smooth = 0.5;
+        jump_owner.x.cap = {12, 2};
+        supervisor.Validate(counts_match(jump_owner, device, 7));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
         supervisor.result = false;
