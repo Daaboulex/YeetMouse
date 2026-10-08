@@ -2587,6 +2587,48 @@ bool Tests::TestProfileFiles() {
         std::vector<Profiles::ConnectedMouse> mice = Profiles::ReadConnectedMice(proc);
         supervisor.Validate(mice.size() == 2 && mice[0].vendor == 0x046d && mice[0].product == 0xc539 &&
                             mice[0].name == "Logitech G502" && mice[1].vendor == 0x05ac && mice[1].name == "Magic Mouse");
+
+        supervisor.NextTest();
+        std::filesystem::remove_all(root);
+        auto edit_refused = [](const std::function<void()> &edit, const std::string &reason) {
+            try {
+                edit();
+            } catch (const Profiles::Refused &refusal) {
+                return std::string(refusal.what()).find(reason) != std::string::npos;
+            }
+            return false;
+        };
+        Parameters defaults;
+        defaults.preScale = 0.75f;
+        defaults.minTime = 0.5f;
+        Profiles::SaveProfile(root, "power", curve);
+        Profiles::SaveProfile(root, "jump", curve);
+        auto mode = std::filesystem::status(root / "profiles" / "power.conf").permissions();
+        supervisor.Validate((mode & std::filesystem::perms::group_write) != std::filesystem::perms::none);
+        supervisor.Validate(edit_refused([&] { Profiles::SaveProfile(root, "disabled", curve); }, "not a valid"));
+        std::vector<Profiles::DeviceLine> assigned = Profiles::AssignDevice(root, defaults, 0x046d, 0xc539, "power", {});
+        supervisor.Validate(assigned.size() == 1 && assigned[0].preScale == 0.75 && assigned[0].minTime == 0.5 &&
+                            Profiles::LoadDevicesFile(root).size() == 1);
+        assigned = Profiles::AssignDevice(root, defaults, 0x046d, 0xc539, "jump", {"preScale=0.625"});
+        supervisor.Validate(assigned.size() == 1 && assigned[0].profile == "jump" && assigned[0].preScale == 0.625 &&
+                            assigned[0].minTime == 0.5);
+        assigned = Profiles::AssignDevice(root, defaults, 0x1532, 0x0084, Profiles::Disabled, {});
+        supervisor.Validate(assigned.size() == 2 && assigned[1].disabled());
+        supervisor.Validate(edit_refused([&] { Profiles::AssignDevice(root, defaults, 0x1234, 1, "missing", {}); },
+                                         "cannot open"));
+        supervisor.Validate(edit_refused([&] { Profiles::AssignDevice(root, defaults, 0x1234, 1, "power", {"dpi=800"}); },
+                                         "not a device setting"));
+        supervisor.Validate(edit_refused([&] { Profiles::AssignDevice(root, defaults, 0x1234, 1, "power", {"preScale=0"}); },
+                                         "preScale is not above 0"));
+        supervisor.Validate(Profiles::LoadDevicesFile(root).size() == 2);
+        supervisor.Validate(Profiles::ProfileUsers(Profiles::LoadDevicesFile(root), "jump") ==
+                            std::vector<std::string>{"046d:c539"});
+        supervisor.Validate(edit_refused([&] { Profiles::RemoveProfileFile(root, "jump"); }, "046d:c539 uses jump"));
+        Profiles::RemoveProfileFile(root, "power");
+        supervisor.Validate(Profiles::ProfileNames(root) == std::vector<std::string>{"jump"});
+        supervisor.Validate(Profiles::ForgetDevice(root, 0x046d, 0xc539).size() == 1 &&
+                            edit_refused([&] { Profiles::ForgetDevice(root, 0x046d, 0xc539); }, "does not list"));
+        std::filesystem::remove_all(root);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during profile files\n", ex.what());
         supervisor.result = false;

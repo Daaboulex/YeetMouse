@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <set>
 #include <sstream>
 #include <sys/ioctl.h>
@@ -245,6 +246,13 @@ namespace Profiles {
                 throw Refused("cannot write " + temporary.string());
         }
         std::error_code error;
+        std::filesystem::permissions(temporary,
+                                     std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
+                                         std::filesystem::perms::group_read | std::filesystem::perms::group_write |
+                                         std::filesystem::perms::others_read,
+                                     error);
+        if (error)
+            throw Refused("cannot open " + temporary.string() + " to the group: " + error.message());
         std::filesystem::rename(temporary, path, error);
         if (error)
             throw Refused("cannot replace " + path.string() + ": " + error.message());
@@ -605,5 +613,96 @@ namespace Profiles {
         for (const auto &[name, params] : setup.profiles)
             SaveFile(root / "profiles" / (name + ".conf"), WriteProfile(params));
         SaveFile(root / "devices.conf", WriteDevices(setup.devices));
+    }
+}
+
+namespace Profiles {
+    std::vector<DeviceLine> AssignDevice(const std::filesystem::path &root, const Parameters &defaults, uint16_t vendor,
+                                         uint16_t product, const std::string &profile,
+                                         const std::vector<std::string> &settings) {
+        std::vector<DeviceLine> lines = LoadDevicesFile(root);
+        auto line = std::find_if(lines.begin(), lines.end(), [&](const DeviceLine &listed) {
+            return listed.vendor == vendor && listed.product == product;
+        });
+
+        std::map<std::string, std::string> values;
+        bool own = line != lines.end() && !line->disabled();
+        values["preScale"] = DriverHelper::FormatDriverNumber(own ? line->preScale : defaults.preScale);
+        values["minTime"] = DriverHelper::FormatDriverNumber(own ? line->minTime : defaults.minTime);
+        values["maxTime"] = DriverHelper::FormatDriverNumber(own ? line->maxTime : defaults.maxTime);
+        values["fixedTime"] = (own ? line->fixedTime : defaults.fixedTime) ? "1" : "0";
+        if (line != lines.end() && !line->windowsId.empty())
+            values["windowsId"] = line->windowsId;
+        for (const std::string &setting : settings) {
+            std::size_t equals = setting.find('=');
+            if (equals == std::string::npos)
+                throw Refused("\"" + setting + "\" is not key=value");
+            values[setting.substr(0, equals)] = setting.substr(equals + 1);
+        }
+
+        std::string text = DeviceId(vendor, product) + " " + profile;
+        for (const auto &[key, value] : values)
+            text += " " + key + "=" + value;
+        std::istringstream stream(text);
+        DeviceLine updated = ReadDevices(stream).at(0);
+        if (!updated.disabled())
+            LoadProfileFile(root, profile);
+        if (line != lines.end())
+            *line = updated;
+        else
+            lines.push_back(updated);
+        DevicesArgs(lines);
+        SaveFile(root / "devices.conf", WriteDevices(lines));
+        return lines;
+    }
+
+    std::vector<DeviceLine> ForgetDevice(const std::filesystem::path &root, uint16_t vendor, uint16_t product) {
+        std::vector<DeviceLine> lines = LoadDevicesFile(root);
+        auto kept = std::remove_if(lines.begin(), lines.end(), [&](const DeviceLine &line) {
+            return line.vendor == vendor && line.product == product;
+        });
+        if (kept == lines.end())
+            throw Refused("devices.conf does not list " + DeviceId(vendor, product));
+        lines.erase(kept, lines.end());
+        SaveFile(root / "devices.conf", WriteDevices(lines));
+        return lines;
+    }
+
+    void SaveProfile(const std::filesystem::path &root, const std::string &name, const Parameters &params) {
+        if (!yeetmouse_name_valid(name.c_str()) || name == Disabled)
+            throw Refused("\"" + name + "\" is not a valid profile name: letters, digits, '.', '_' or '-', starting "
+                          "with a letter or digit, at most " + std::to_string(YEETMOUSE_NAME_LEN - 1) + " characters");
+        std::error_code error;
+        std::filesystem::create_directories(root / "profiles", error);
+        if (error)
+            throw Refused("cannot create " + (root / "profiles").string() + ": " + error.message());
+        SaveFile(root / "profiles" / (name + ".conf"), WriteProfile(params));
+    }
+
+    std::vector<std::string> ProfileUsers(const std::vector<DeviceLine> &lines, const std::string &name) {
+        std::vector<std::string> users;
+        for (const DeviceLine &line : lines)
+            if (line.profile == name)
+                users.push_back(DeviceId(line.vendor, line.product));
+        return users;
+    }
+
+    void RemoveProfileFile(const std::filesystem::path &root, const std::string &name) {
+        LoadProfileFile(root, name);
+        std::vector<std::string> users = ProfileUsers(LoadDevicesFile(root), name);
+        if (!users.empty())
+            throw Refused(users.front() + " uses " + name + "; give it another profile first");
+        std::error_code error;
+        std::filesystem::remove(root / "profiles" / (name + ".conf"), error);
+        if (error)
+            throw Refused("cannot remove profile " + name + ": " + error.message());
+    }
+
+    void DriverApplyDevices(const std::filesystem::path &root, const std::vector<DeviceLine> &lines) {
+        std::set<std::string> loaded;
+        for (const DeviceLine &line : lines)
+            if (!line.disabled() && loaded.insert(line.profile).second)
+                DriverLoad(line.profile, LoadProfileFile(root, line.profile));
+        DriverSetDevices(lines);
     }
 }

@@ -61,6 +61,18 @@ namespace Profiles {
 
     void SaveFile(const std::filesystem::path &path, const std::string &text);
 
+    std::vector<DeviceLine> AssignDevice(const std::filesystem::path &root, const Parameters &defaults, uint16_t vendor,
+                                         uint16_t product, const std::string &profile,
+                                         const std::vector<std::string> &settings);
+
+    std::vector<DeviceLine> ForgetDevice(const std::filesystem::path &root, uint16_t vendor, uint16_t product);
+
+    void SaveProfile(const std::filesystem::path &root, const std::string &name, const Parameters &params);
+
+    std::vector<std::string> ProfileUsers(const std::vector<DeviceLine> &lines, const std::string &name);
+
+    void RemoveProfileFile(const std::filesystem::path &root, const std::string &name);
+
     yeetmouse_devices_args DevicesArgs(const std::vector<DeviceLine> &lines);
 
     void DriverLoad(const std::string &name, const Parameters &params);
@@ -70,6 +82,8 @@ namespace Profiles {
     void DriverSetDevices(const std::vector<DeviceLine> &lines);
 
     void DriverLoadAll(const std::filesystem::path &root);
+
+    void DriverApplyDevices(const std::filesystem::path &root, const std::vector<DeviceLine> &lines);
 
     std::vector<ConnectedMouse> ReadConnectedMice(std::istream &devices);
 
