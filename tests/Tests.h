@@ -54,6 +54,8 @@ public:
 
     static bool TestRawAccelExport();
 
+    static bool TestConfigFiles();
+
 private:
     //static CachedFunction functions[AccelMode_Count];
 

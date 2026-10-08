@@ -176,8 +176,8 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
         else if (name == "lut_data_y") {
             if (val_str.size() >= MAX_LUT_TEXT_LEN)
                 return std::nullopt;
-            std::vector<char> text(val_str.begin(), val_str.end());
-            text.push_back('\0');
+            std::vector<char> text(MAX_LUT_TEXT_LEN, '\0');
+            std::copy(val_str.begin(), val_str.end(), text.begin());
             params.yCurve.lutSize = DriverHelper::ParseUserLutData(text.data(), params.yCurve.lutDataX,
                                                                    params.yCurve.lutDataY, params.yCurve.lutSize);
         }

@@ -54,6 +54,10 @@ add_executable(YeetMouseTests main.cpp
         RawAccelOracle.cpp
         ../gui/FunctionHelper.cpp
         ../gui/RawAccel.cpp
+        ../gui/ConfigHelper.cpp
+        ../gui/DriverHelper.cpp
+        ../gui/CustomCurve.cpp
+        ImGuiStubs.cpp
         ../driver/accel_modes.c)
 
 target_compile_definitions(YeetMouseTests PRIVATE TEST_ENV FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

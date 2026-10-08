@@ -13,6 +13,7 @@
 #include "config.h"
 #include "TestManager.h"
 #include "RawAccelOracle.h"
+#include "gui/ConfigHelper.h"
 #include "gui/FunctionHelper.h"
 #include "gui/RawAccel.h"
 
@@ -2224,6 +2225,60 @@ bool Tests::TestRawAccelExport() {
         supervisor.Validate(!refused(unreadable));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel export\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
+bool Tests::TestConfigFiles() {
+    TestSupervisor supervisor{"Config Files"};
+
+    auto import = [](std::istream &stream) {
+        static char lut_data[MAX_LUT_TEXT_LEN];
+        bool is_config_h = false;
+        return ConfigHelper::ImportAny(stream, lut_data, is_config_h);
+    };
+
+    try {
+        supervisor.NextTest();
+        std::ifstream sample(FIXTURES_DIR "/../../install_files/yeetmouse.conf.sample");
+        auto shipped = import(sample);
+        supervisor.Validate(shipped && shipped->accelMode == AccelMode_Linear && shipped->accel == 0.1f &&
+                            shipped->maxTime == 100 && shipped->yCurve.lutSize == 0 && shipped->lutSize == 0);
+
+        supervisor.NextTest();
+        Parameters written;
+        written.accelMode = AccelMode_Lut;
+        written.lutVelocity = true;
+        written.lutSize = 3;
+        written.byComponent = true;
+        written.yCurve.accelMode = AccelMode_Lut;
+        written.yCurve.lutSize = 3;
+        const double speeds[] = {1, 5, 20}, scales[] = {1, 1.5, 2.5};
+        for (int i = 0; i < 3; i++) {
+            written.lutDataX[i] = written.yCurve.lutDataX[i] = speeds[i];
+            written.lutDataY[i] = speeds[i] * scales[i];
+            written.yCurve.lutDataY[i] = scales[i];
+        }
+        written.axisSnap = 15;
+        written.inputSmoothHalfLife = 0.5f;
+        written.ratioLR = 0.8f;
+        written.minTime = 0.125f;
+        written.clockOnAnyReport = true;
+        std::istringstream text(ConfigHelper::ExportPlainText(written, false));
+        auto read = import(text);
+        bool tables = read && read->lutSize == 3 && read->yCurve.lutSize == 3;
+        for (int i = 0; tables && i < 3; i++) {
+            tables &= read->lutDataX[i] == speeds[i] && read->lutDataY[i] == speeds[i] * scales[i];
+            tables &= read->yCurve.lutDataX[i] == speeds[i] && read->yCurve.lutDataY[i] == scales[i];
+        }
+        supervisor.Validate(tables);
+        supervisor.Validate(read && read->byComponent && read->lutVelocity && read->yCurve.accelMode == AccelMode_Lut &&
+                            read->axisSnap == 15 && read->inputSmoothHalfLife == 0.5f && read->ratioLR == 0.8f &&
+                            read->minTime == 0.125f && read->clockOnAnyReport && !read->truncateCarry);
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during config files\n", ex.what());
         supervisor.result = false;
     }
 
