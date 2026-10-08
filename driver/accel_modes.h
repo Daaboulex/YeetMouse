@@ -82,7 +82,7 @@ struct accel_smoothing {
 struct accel_profile {
     struct accel_curve x, y;
     char by_component;
-    FP_LONG pre_scale, sensitivity, ratio_yx, output_cap, input_cap, offset, rotation_angle, angle_snap_angle,
+    FP_LONG sensitivity, ratio_yx, output_cap, input_cap, offset, rotation_angle, angle_snap_angle,
             angle_snap_threshold;
 
     // Rotation
@@ -92,18 +92,20 @@ struct accel_profile {
     FP_LONG as_sin, as_cos;
     FP_LONG as_half_threshold;
 
-    FP_LONG min_time, max_time;
-
     FP_LONG lp_norm, lp_inverse, domain_x, domain_y, range_x, range_y;
     FP_LONG input_half_life, scale_half_life, output_half_life;
     FP_LONG axis_snap, speed_clamp, ratio_lr, ratio_ud;
     struct accel_smoothing input_k, scale_k, output_k;
     char lp_mode;
-    char fixed_time;
     char truncate_carry;
     char clock_on_any_report;
 
     bool is_init;
+};
+
+struct accel_device {
+    FP_LONG pre_scale, min_time, max_time;
+    char fixed_time;
 };
 
 struct accel_smoother {
@@ -152,9 +154,9 @@ void accel_idle_report(const struct accel_profile *p, struct accel_state *s, lon
 
 FP_LONG accel_elapsed(struct accel_state *s, long long now_ns);
 
-FP_LONG accel_time(const struct accel_profile *p, FP_LONG ms);
+FP_LONG accel_time(const struct accel_device *d, FP_LONG ms);
 
-void accel_packet(const struct accel_profile *p, struct accel_state *s, FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms);
+void accel_packet(const struct accel_profile *p, const struct accel_device *d, struct accel_state *s, FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms);
 
 void accel_round(const struct accel_profile *p, struct accel_state *s, FP_LONG delta_x, FP_LONG delta_y,
                  int *out_x, int *out_y);

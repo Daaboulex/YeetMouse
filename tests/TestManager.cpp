@@ -5,7 +5,6 @@
 
 static accel_profile profile = [] {
     accel_profile initial{};
-    initial.pre_scale = FP64_1;
     initial.sensitivity = FP64_1;
     initial.ratio_yx = FP64_1;
     initial.lp_norm = FP64_FromInt(2);
@@ -17,6 +16,7 @@ static accel_profile profile = [] {
     initial.ratio_ud = FP64_1;
     return initial;
 }();
+static accel_device device{FP64_1, 0, 0, 0};
 static CachedFunction function;
 
 // Ignores speedY (for now?)
@@ -44,7 +44,7 @@ FP_LONG ApplyGlobalPostParameters(FP_LONG speed) {
 }
 
 FP_LONG ApplyGlobalPreParameters(FP_LONG speed) {
-    return FP64_Mul(speed, profile.pre_scale);
+    return FP64_Mul(speed, device.pre_scale);
 }
 
 // TestManager & TestManager::GetInstance() {
@@ -57,7 +57,7 @@ void TestManager::Initialize() {
     function.params->sens = FP64_ToFloat(profile.sensitivity);
     function.params->ratioYX = FP64_ToFloat(profile.ratio_yx);
     function.params->accelMode = static_cast<AccelMode>(profile.x.mode);
-    function.params->preScale = FP64_ToFloat(profile.pre_scale);
+    function.params->preScale = FP64_ToFloat(device.pre_scale);
     function.params->accel = FP64_ToFloat(profile.x.acceleration);
     function.params->exponent = FP64_ToFloat(profile.x.exponent);
     function.params->midpoint = FP64_ToFloat(profile.x.midpoint);
@@ -223,10 +223,14 @@ const accel_profile &TestManager::GetProfile() {
     return profile;
 }
 
+const accel_device &TestManager::GetDevice() {
+    return device;
+}
+
 static accel_state state{};
 
 void TestManager::ApplyParameters(const Parameters &params) {
-    profile.pre_scale = FP64_FromFloat(params.preScale);
+    device.pre_scale = FP64_FromFloat(params.preScale);
     profile.sensitivity = FP64_FromFloat(params.sens);
     profile.ratio_yx = FP64_FromFloat(params.useAnisotropy ? params.ratioYX : 1);
     profile.output_cap = FP64_FromFloat(params.outCap);
@@ -235,9 +239,9 @@ void TestManager::ApplyParameters(const Parameters &params) {
     profile.rotation_angle = FP64_FromDouble(params.rotation * DEG2RAD);
     profile.angle_snap_angle = FP64_FromDouble(params.asAngle * DEG2RAD);
     profile.angle_snap_threshold = FP64_FromDouble(params.asThreshold * DEG2RAD);
-    profile.min_time = FP64_FromFloat(params.minTime);
-    profile.max_time = FP64_FromFloat(params.maxTime);
-    profile.fixed_time = params.fixedTime;
+    device.min_time = FP64_FromFloat(params.minTime);
+    device.max_time = FP64_FromFloat(params.maxTime);
+    device.fixed_time = params.fixedTime;
     profile.truncate_carry = params.truncateCarry;
     profile.clock_on_any_report = params.clockOnAnyReport;
     profile.lp_norm = FP64_FromFloat(params.lpNorm);
@@ -291,10 +295,10 @@ void TestManager::SetCarry(double x, double y) {
 }
 
 void TestManager::Step(int dx, int dy, double measuredMs, int &outX, int &outY) {
-    FP_LONG ms = accel_time(&profile, FP64_FromDouble(measuredMs));
+    FP_LONG ms = accel_time(&device, FP64_FromDouble(measuredMs));
     FP_LONG x = FP64_FromInt(dx);
     FP_LONG y = FP64_FromInt(dy);
-    accel_packet(&profile, &state, &x, &y, ms);
+    accel_packet(&profile, &device, &state, &x, &y, ms);
     accel_round(&profile, &state, x, y, &outX, &outY);
 }
 
@@ -385,7 +389,7 @@ void TestManager::SetOffset(FP_LONG offset) {
 }
 
 void TestManager::SetPreScale(FP_LONG preScale) {
-    profile.pre_scale = preScale;
+    device.pre_scale = preScale;
     function.params->preScale = FP64_ToFloat(preScale);
 }
 

@@ -148,7 +148,6 @@ static struct accel_profile g_profile = {
         .lut_velocity = LUT_VELOCITY,
         .k = { .current_func_at_0 = 1ll << FP64_Shift },
     },
-    .pre_scale = C0NST_FP64_FromDouble(PRESCALE),
     .sensitivity = C0NST_FP64_FromDouble(SENSITIVITY),
     .ratio_yx = C0NST_FP64_FromDouble(RATIO_YX),
     .output_cap = C0NST_FP64_FromDouble(OUTPUT_CAP),
@@ -157,9 +156,6 @@ static struct accel_profile g_profile = {
     .rotation_angle = C0NST_FP64_FromDouble(ROTATION_ANGLE),
     .angle_snap_angle = C0NST_FP64_FromDouble(ANGLE_SNAPPING_ANGLE),
     .angle_snap_threshold = C0NST_FP64_FromDouble(ANGLE_SNAPPING_THRESHOLD),
-    .min_time = C0NST_FP64_FromDouble(MIN_TIME),
-    .max_time = C0NST_FP64_FromDouble(MAX_TIME),
-    .fixed_time = FIXED_TIME,
     .truncate_carry = TRUNCATE_CARRY,
     .lp_norm = C0NST_FP64_FromDouble(LP_NORM),
     .domain_x = C0NST_FP64_FromDouble(DOMAIN_X),
@@ -171,6 +167,13 @@ static struct accel_profile g_profile = {
     .ratio_lr = C0NST_FP64_FromDouble(RATIO_LR),
     .ratio_ud = C0NST_FP64_FromDouble(RATIO_UD),
     .clock_on_any_report = CLOCK_ON_ANY_REPORT,
+};
+
+static struct accel_device g_device = {
+    .pre_scale = C0NST_FP64_FromDouble(PRESCALE),
+    .min_time = C0NST_FP64_FromDouble(MIN_TIME),
+    .max_time = C0NST_FP64_FromDouble(MAX_TIME),
+    .fixed_time = FIXED_TIME,
 };
 
 static ktime_t g_next_update = 0;
@@ -250,7 +253,7 @@ INLINE void update_params(ktime_t now)
     g_profile.x.lut_velocity = g_LutVelocity;
     memcpy(g_profile.x.lut_x, g_LutData_x, sizeof(g_profile.x.lut_x));
     memcpy(g_profile.x.lut_y, g_LutData_y, sizeof(g_profile.x.lut_y));
-    g_profile.pre_scale = g_PreScale;
+    g_device.pre_scale = g_PreScale;
     g_profile.sensitivity = g_Sensitivity;
     g_profile.ratio_yx = g_RatioYX;
     g_profile.output_cap = g_OutputCap;
@@ -312,9 +315,9 @@ INLINE void update_params(ktime_t now)
     g_profile.domain_y = g_DomainY;
     g_profile.range_x = g_RangeX;
     g_profile.range_y = g_RangeY;
-    g_profile.min_time = g_MinTime;
-    g_profile.max_time = g_MaxTime;
-    g_profile.fixed_time = g_FixedTime;
+    g_device.min_time = g_MinTime;
+    g_device.max_time = g_MaxTime;
+    g_device.fixed_time = g_FixedTime;
     g_profile.truncate_carry = g_TruncateCarry;
     g_profile.clock_on_any_report = g_ClockOnAnyReport;
 
@@ -349,9 +352,9 @@ int accelerate(struct accel_state *state, int *x, int *y)
     // Update acceleration parameters periodically
     update_params(now);
 
-    ms = accel_time(&g_profile, ms);
+    ms = accel_time(&g_device, ms);
 
-    accel_packet(&g_profile, state, &delta_x, &delta_y, ms);
+    accel_packet(&g_profile, &g_device, state, &delta_x, &delta_y, ms);
 
     accel_round(&g_profile, state, delta_x, delta_y, x, y);
 

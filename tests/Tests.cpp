@@ -1262,18 +1262,19 @@ bool Tests::TestTimingAndRounding() {
     try {
         supervisor.NextTest();
 
+        accel_device device{};
+        device.min_time = FP64_1;
+        device.max_time = FP64_100;
+        supervisor.Validate(accel_time(&device, FP64_FromDouble(0.25)) == FP64_1);
+        supervisor.Validate(accel_time(&device, FP64_FromDouble(2.5)) == FP64_FromDouble(2.5));
+        supervisor.Validate(accel_time(&device, FP64_FromInt(150)) == FP64_100);
+        device.fixed_time = 1;
+        supervisor.Validate(accel_time(&device, FP64_FromInt(7)) == FP64_1);
+        device.fixed_time = 0;
+        device.min_time = FP64_FromInt(5);
+        device.max_time = FP64_FromInt(3);
+        supervisor.Validate(accel_time(&device, FP64_FromInt(4)) == FP64_FromInt(3));
         accel_profile profile{};
-        profile.min_time = FP64_1;
-        profile.max_time = FP64_100;
-        supervisor.Validate(accel_time(&profile, FP64_FromDouble(0.25)) == FP64_1);
-        supervisor.Validate(accel_time(&profile, FP64_FromDouble(2.5)) == FP64_FromDouble(2.5));
-        supervisor.Validate(accel_time(&profile, FP64_FromInt(150)) == FP64_100);
-        profile.fixed_time = 1;
-        supervisor.Validate(accel_time(&profile, FP64_FromInt(7)) == FP64_1);
-        profile.fixed_time = 0;
-        profile.min_time = FP64_FromInt(5);
-        profile.max_time = FP64_FromInt(3);
-        supervisor.Validate(accel_time(&profile, FP64_FromInt(4)) == FP64_FromInt(3));
 
         supervisor.NextTest();
 
@@ -1297,7 +1298,6 @@ bool Tests::TestTimingAndRounding() {
         accel_profile linear{};
         linear.x.mode = AccelMode_Linear;
         linear.x.acceleration = FP64_FromInt(1000);
-        linear.pre_scale = FP64_1;
         linear.sensitivity = FP64_1;
         linear.ratio_yx = FP64_1;
         linear.lp_norm = FP64_FromInt(2);
@@ -1308,13 +1308,14 @@ bool Tests::TestTimingAndRounding() {
         linear.ratio_lr = FP64_1;
         linear.ratio_ud = FP64_1;
         update_profile_constants(&linear);
+        accel_device unscaled{FP64_1, 0, 0, 0};
         for (int dx = -300; dx <= 300; dx += 7) {
             for (int dy = -300; dy <= 300; dy += 11) {
                 if (dx == 0 && dy == 0)
                     continue;
                 FP_LONG out_x = FP64_FromInt(dx), out_y = FP64_FromInt(dy);
                 accel_state linear_state{};
-                accel_packet(&linear, &linear_state, &out_x, &out_y, FP64_1);
+                accel_packet(&linear, &unscaled, &linear_state, &out_x, &out_y, FP64_1);
                 double factor = 1 + 1000 * std::hypot(dx, dy);
                 supervisor.Validate(std::fabs(static_cast<double>(out_x) / 4294967296.0 - dx * factor) <= 1e-8 * std::fabs(dx * factor) + 1e-6);
             }
@@ -1488,7 +1489,7 @@ static bool VectorsMatch(const Parameters &params, const RawAccel::Profile &prof
             RawAccelOracle::Output expected = oracle.Packet(dx, dy, 1.0);
             FP_LONG x = FP64_FromInt(dx);
             FP_LONG y = FP64_FromInt(dy);
-            accel_packet(&TestManager::GetProfile(), &smoothing_state, &x, &y, FP64_1);
+            accel_packet(&TestManager::GetProfile(), &TestManager::GetDevice(), &smoothing_state, &x, &y, FP64_1);
             good &= Close(x, expected.x, tolerance) && Close(y, expected.y, tolerance);
         }
     }

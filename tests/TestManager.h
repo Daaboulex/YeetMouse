@@ -45,6 +45,7 @@ public:
 
     static accel_curve_constants &GetModesConstants();
     static const accel_profile &GetProfile();
+    static const accel_device &GetDevice();
 
     static void ApplyParameters(const Parameters &params);
 

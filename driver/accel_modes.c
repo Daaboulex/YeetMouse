@@ -863,15 +863,15 @@ static void accel_snap_and_clamp(const struct accel_profile *p, FP_LONG *x, FP_L
     }
 }
 
-void accel_packet(const struct accel_profile *p, struct accel_state *s, FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
+void accel_packet(const struct accel_profile *p, const struct accel_device *d, struct accel_state *s, FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
     FP_LONG delta_x = *delta_x_out;
     FP_LONG delta_y = *delta_y_out;
     FP_LONG speed, rotated_x, rotated_y, output_factor = FP64_1;
 
     // Apply Pre-Scale
-    if (p->pre_scale != FP64_1) {
-        delta_x = FP64_Mul(delta_x, p->pre_scale);
-        delta_y = FP64_Mul(delta_y, p->pre_scale);
+    if (d->pre_scale != FP64_1) {
+        delta_x = FP64_Mul(delta_x, d->pre_scale);
+        delta_y = FP64_Mul(delta_y, d->pre_scale);
     }
 
     rotated_x = delta_x;
@@ -1011,13 +1011,13 @@ FP_LONG accel_elapsed(struct accel_state *s, long long now_ns) {
     return ((FP_LONG) (elapsed / NS_PER_MS) << FP64_Shift) + ((elapsed % NS_PER_MS) << FP64_Shift) / NS_PER_MS;
 }
 
-FP_LONG accel_time(const struct accel_profile *p, FP_LONG ms) {
-    if (p->fixed_time)
-        return p->min_time;
-    if (ms < p->min_time)
-        ms = p->min_time;
-    if (ms > p->max_time)
-        ms = p->max_time;
+FP_LONG accel_time(const struct accel_device *d, FP_LONG ms) {
+    if (d->fixed_time)
+        return d->min_time;
+    if (ms < d->min_time)
+        ms = d->min_time;
+    if (ms > d->max_time)
+        ms = d->max_time;
     return ms;
 }
 
