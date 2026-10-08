@@ -63,10 +63,10 @@ static_assert(sizeof(FP_LONG) == 8, "Wrong bytesize for FP_LONG");
 static_assert(sizeof(FP_ULONG) == 8, "Wrong bytesize for FP_ULONG");
 
 
-static const FP_INT FP64_Shift = 32;
+enum { FP64_Shift = 32 };
 static const FP_LONG FractionMask =
         (1ll << FP64_Shift) - 1; // Space before INT64_C(1) needed because of hacky C++ code generator
-static const FP_LONG IntegerMask = ~FractionMask;
+static const FP_LONG IntegerMask = ~((1ll << FP64_Shift) - 1);
 
 // Constants
 static const FP_LONG Zero = 0ll;
@@ -75,7 +75,7 @@ static const FP_LONG One = 1ll << FP64_Shift;
 static const FP_LONG Two = 2ll << FP64_Shift;
 static const FP_LONG Three = 3ll << FP64_Shift;
 static const FP_LONG Four = 4ll << FP64_Shift;
-static const FP_LONG Half = One >> 1;
+static const FP_LONG Half = 1ll << (FP64_Shift - 1);
 static const FP_LONG Pi = 13493037705ll; //(FP_LONG)(Math.PI * 65536.0) << 16;
 static const FP_LONG Pi2 = 26986075409ll;
 static const FP_LONG PiHalf = 6746518852ll;

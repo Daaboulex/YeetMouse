@@ -112,7 +112,7 @@ static struct accel_profile g_profile = {
         .input_offset = C0NST_FP64_FromDouble(INPUT_OFFSET),
         .legacy_cap = C0NST_FP64_FromDouble(LEGACY_CAP),
         .lut_size = LUT_SIZE,
-        .k = { .current_func_at_0 = FP64_1 },
+        .k = { .current_func_at_0 = 1ll << FP64_Shift },
     },
     .pre_scale = C0NST_FP64_FromDouble(PRESCALE),
     .sensitivity = C0NST_FP64_FromDouble(SENSITIVITY),
