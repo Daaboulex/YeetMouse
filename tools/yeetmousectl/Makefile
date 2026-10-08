@@ -4,7 +4,9 @@ CXXFLAGS = -O2 -Wall -Wno-sign-compare -std=c++17 -isystem ../../gui/External -M
 SRC = main.cpp  \
       ../../gui/ConfigHelper.cpp \
       ../../gui/DriverHelper.cpp \
-      ../../gui/CustomCurve.cpp
+      ../../gui/CustomCurve.cpp \
+      ../../gui/FunctionHelper.cpp \
+      ../../gui/RawAccel.cpp
 
 OBJ = $(SRC:.cpp=.o)
 

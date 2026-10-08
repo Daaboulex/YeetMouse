@@ -1424,6 +1424,42 @@ bool Tests::TestRawAccelSettings() {
         supervisor.Validate(refused(replaced("\"data\": []", "\"data\": [1.0, 2.0, 3.0]")));
         supervisor.Validate(refused(replaced("\"Polling rate Hz (keep at 0 for automatic adjustment)\": 1000",
                                              "\"Polling rate Hz (keep at 0 for automatic adjustment)\": 1000.5")));
+
+        supervisor.NextTest();
+
+        RawAccel::Settings mapped = settings;
+        RawAccel::Profile second = settings.profiles.at(0);
+        second.name = "second";
+        second.outputDpi = 2000;
+        mapped.profiles.push_back(second);
+        mapped.defaultDeviceConfig.dpi = 500;
+        RawAccel::Device named = settings.devices.at(0);
+        named.id = "named";
+        named.profile = "second";
+        named.config.dpi = 1600;
+        RawAccel::Device unnamed = named;
+        unnamed.id = "unnamed";
+        unnamed.profile = "";
+        unnamed.config.dpi = 400;
+        RawAccel::Device dangling = named;
+        dangling.id = "dangling";
+        dangling.profile = "missing";
+        mapped.devices = {named, unnamed, dangling};
+        auto selection_refused = [&](const std::string &id) {
+            try {
+                RawAccel::ToParameters(mapped, id);
+            } catch (const RawAccel::Refused &) {
+                return true;
+            }
+            return false;
+        };
+        Parameters unlisted = RawAccel::ToParameters(mapped, "");
+        supervisor.Validate(unlisted.sens == 0.5f && unlisted.preScale == 2.0f);
+        Parameters chosen = RawAccel::ToParameters(mapped, "named");
+        supervisor.Validate(chosen.sens == 2.0f && chosen.preScale == 0.625f);
+        Parameters first = RawAccel::ToParameters(mapped, "unnamed");
+        supervisor.Validate(first.sens == 0.5f && first.preScale == 2.5f);
+        supervisor.Validate(selection_refused("dangling") && selection_refused("absent"));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel settings\n", ex.what());
         supervisor.result = false;

@@ -801,3 +801,26 @@ namespace RawAccel {
         return settings;
     }
 }
+
+namespace RawAccel {
+    Parameters ToParameters(const Settings &settings, const std::string &deviceId) {
+        if (settings.profiles.empty())
+            throw Refused("a settings file without a profile");
+        if (deviceId.empty())
+            return ToParameters(settings.profiles.front(), settings.defaultDeviceConfig);
+
+        auto device = std::find_if(settings.devices.begin(), settings.devices.end(),
+                                   [&](const Device &listed) { return listed.id == deviceId; });
+        if (device == settings.devices.end())
+            throw Refused("the file lists no device with the id \"" + deviceId + "\"");
+        if (device->profile.empty())
+            return ToParameters(settings.profiles.front(), device->config);
+
+        auto profile = std::find_if(settings.profiles.begin(), settings.profiles.end(),
+                                    [&](const Profile &named) { return named.name == device->profile; });
+        if (profile == settings.profiles.end())
+            throw Refused("device \"" + deviceId + "\" names the profile \"" + device->profile +
+                          "\", which the file does not hold");
+        return ToParameters(*profile, device->config);
+    }
+}

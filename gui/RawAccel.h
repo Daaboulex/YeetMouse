@@ -103,6 +103,8 @@ namespace RawAccel {
 
     Parameters ToParameters(const Profile &profile, const DeviceConfig &device);
 
+    Parameters ToParameters(const Settings &settings, const std::string &deviceId);
+
     Settings FromParameters(const Parameters &params);
 }
 
