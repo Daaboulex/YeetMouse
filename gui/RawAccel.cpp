@@ -464,6 +464,25 @@ namespace RawAccel {
             out.useSmoothing = args.gain;
         }
 
+        void MapLut(const AccelArgs &args, Parameters &out) {
+            if (args.gain)
+                throw Refused("a velocity lookup table (Raw Accel's gain switch) has no exact YeetMouse equivalent yet");
+            if (args.data.size() % 2 != 0 || args.data.size() < 4)
+                throw Refused("a lookup table needs at least 2 whole points");
+            size_t points = args.data.size() / 2;
+            if (points > MAX_LUT_ARRAY_SIZE)
+                throw Refused("a lookup table longer than YeetMouse's " + std::to_string(MAX_LUT_ARRAY_SIZE) + " points");
+            for (size_t i = 0; i < points; i++) {
+                double x = args.data[2 * i], y = args.data[2 * i + 1];
+                if (!std::isfinite(x) || !std::isfinite(y) || (i > 0 && !(x > args.data[2 * i - 2])))
+                    throw Refused("a lookup table whose speeds are not finite and strictly increasing");
+                out.lutDataX[i] = x / SpeedScale;
+                out.lutDataY[i] = y;
+            }
+            out.accelMode = AccelMode_Lut;
+            out.lutSize = static_cast<int>(points);
+        }
+
         void MapNatural(const AccelArgs &args, Parameters &out) {
             if (!(args.decayRate > 0) || !(args.limit > 0) || !(args.inputOffset >= 0))
                 throw Refused("natural needs a positive decay rate and limit and no negative offset");
@@ -537,6 +556,9 @@ namespace RawAccel {
                 break;
             case Mode::Synchronous:
                 MapSynchronous(profile.x, out);
+                break;
+            case Mode::Lut:
+                MapLut(profile.x, out);
                 break;
             default:
                 Require(false, std::string("the ") + ModeNames[static_cast<int>(profile.x.mode)] + " mode");

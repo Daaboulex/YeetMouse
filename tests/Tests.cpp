@@ -1501,6 +1501,8 @@ bool Tests::TestRawAccelParity() {
         supervisor.NextTest();
         RawAccel::Profile lookup = owner;
         lookup.x.mode = RawAccel::Mode::Lut;
+        lookup.x.gain = true;
+        lookup.x.data = {1, 1, 10, 2};
         supervisor.Validate(refused(lookup, device));
         RawAccel::Profile stretched = owner;
         stretched.domain = {1, 2};
@@ -1648,6 +1650,39 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(counts_match(synchronous_owner, device, 8));
         synchronous_owner.x.gain = true;
         supervisor.Validate(refused(synchronous_owner, device));
+
+        supervisor.NextTest();
+        std::mt19937 table_rng(20261008);
+        for (int points : {2, 3, 8, 50, 128}) {
+            for (int round = 0; round < 3; round++) {
+                RawAccel::Profile profile = owner;
+                profile.x.mode = RawAccel::Mode::Lut;
+                profile.x.gain = false;
+                float x = 0.5f + static_cast<float>(table_rng() % 100) / 50;
+                for (int i = 0; i < points; i++) {
+                    profile.x.data.push_back(x);
+                    profile.x.data.push_back(0.5f + static_cast<float>(table_rng() % 1000) / 250);
+                    x += 0.25f + static_cast<float>(table_rng() % 1000) / 100;
+                }
+                supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+            }
+        }
+        RawAccel::Profile table_owner = owner;
+        table_owner.x.mode = RawAccel::Mode::Lut;
+        table_owner.x.gain = false;
+        table_owner.x.data = {2, 1, 10, 1.4f, 30, 2.2f, 80, 2.6f};
+        supervisor.Validate(counts_match(table_owner, device, 9));
+        RawAccel::Profile bad_table = table_owner;
+        bad_table.x.data = {2, 1, 10, 1.4f, 10, 2.2f};
+        supervisor.Validate(refused(bad_table, device));
+        bad_table.x.data = {2, 1, 10};
+        supervisor.Validate(refused(bad_table, device));
+        bad_table.x.data.clear();
+        for (int i = 0; i < 129; i++) {
+            bad_table.x.data.push_back(static_cast<float>(i + 1));
+            bad_table.x.data.push_back(1);
+        }
+        supervisor.Validate(refused(bad_table, device));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
         supervisor.result = false;
