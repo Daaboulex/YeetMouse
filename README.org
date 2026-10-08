@@ -21,8 +21,8 @@
    ./install.sh
    #+end_src
 
-   The installer always installs the driver, =yeetmousectl=, config file, service, and uninstaller.
-   The GUI is built and installed *optionally* - if its dependencies are present.
+   The installer always installs the driver, =yeetmousectl=, config file, profile directory =/etc/yeetmouse=, service, and uninstaller.
+   The GUI is built and installed *optionally*, if its dependencies are present.
 
    If your user is added to the =yeetmouse= group during installation (should be by default), you must start a new login session before the GUI can access the driver.
    Logging out and back in is usually enough; on some systems a reboot may be required.
@@ -40,19 +40,20 @@
    #+end_src
 
 ** Configuration model
-   YeetMouse uses a persistent configuration file:
-   #+begin_src sh
-   /etc/yeetmouse.conf
-   #+end_src
+   YeetMouse keeps its settings in plain files:
+   + =/etc/yeetmouse.conf=, the default config, used by every mouse that =devices.conf= does not list,
+   + =/etc/yeetmouse/profiles/<name>.conf=, named profiles, each a curve in the same format,
+   + =/etc/yeetmouse/devices.conf=, one line per mouse naming its profile, DPI pre-scale and timing.
 
    Runtime configuration is handled by =yeetmousectl=:
    #+begin_src sh
    yeetmousectl apply /etc/yeetmouse.conf
+   yeetmousectl load
    yeetmousectl dump
    yeetmousectl save my-config.conf
    #+end_src
 
-   On systemd-based systems, the installed =yeetmouse.service= automatically applies =/etc/yeetmouse.conf= during boot.
+   On systemd-based systems, the installed =yeetmouse.service= applies =/etc/yeetmouse.conf=, loads the profiles and =devices.conf= into the driver, and records touchpad resolutions during boot.
 
 ** Uninstallation
    If YeetMouse was installed system-wide, use:
@@ -97,6 +98,12 @@
    #+end_src
 
    The GUI should not need =sudo=, provided your user session already has the =yeetmouse= group.
+
+*** Profiles and devices
+   + The =Profile= picker at the top of the parameters panel switches the editor between the default config and a named profile. With a profile selected, =Apply= and =Apply + Save= save that profile and load it into the driver. =Save as profile=, =Delete profile= and =Use as default config= sit below it.
+   + The =Devices= menu lists each mouse the driver handles. For each one, pick =Default config=, a profile or =Disabled (raw input)=, or set its =DPI and timing=. Mice in =devices.conf= that are not connected appear under =Not connected=, where =Forget= removes their line. Touchpads are listed too, as described under Touchpads below.
+   + The =File= menu adds =Import Raw Accel profile=, =Add Raw Accel profiles and devices=, =Export as Raw Accel profile= and =Export all as Raw Accel=.
+   + The =Raw Accel features= section holds the timing switches, lp norm, domain and range weights, smoothing, axis snap, speed cap, directional ratios and a separate vertical curve.
 
 ** Arch
    For Arch based systems, a =PKGBUILD= has been written for seamless integration into pacman.
@@ -147,12 +154,14 @@
    + the kernel module through DKMS,
    + =yeetmousectl=,
    + the persistent config file in =/etc/yeetmouse.conf=,
+   + the profile directories =/etc/yeetmouse= and =/etc/yeetmouse/profiles=, writable by the =yeetmouse= group,
    + the systemd service (if systemd is present),
    + and the GUI files if built/installed through the project Makefile.
 
-   If systemd is not present, you can still apply the config manually at boot using your init system:
+   If systemd is not present, you can still apply the config and load the profiles and =devices.conf= at boot using your init system:
    #+begin_src sh
    /usr/bin/yeetmousectl apply /etc/yeetmouse.conf
+   /usr/bin/yeetmousectl load
    #+end_src
 
    *Uninstallation*
@@ -161,7 +170,7 @@
    sudo yeetmouse-uninstall
    #+end_src
 
-   The uninstaller disables the service, removes installed files, removes the DKMS module, and can optionally remove =/etc/yeetmouse.conf=.
+   The uninstaller disables the service, removes installed files, removes the DKMS module, and asks whether to remove =/etc/yeetmouse.conf= and the profiles in =/etc/yeetmouse=. =--keep-config= or =--purge-config= answers that question in advance.
 
 * Manual compile & insmod
    If you want to compile this module only for testing purposes or development, you do not need to install the whole package to your system.
@@ -192,17 +201,107 @@
    yeetmousectl save my-config.conf
    #+end_src
 
+** Profiles
+   A profile is a curve saved as =/etc/yeetmouse/profiles/<name>.conf=, in the format of =/etc/yeetmouse.conf= but without =preScale=, =minTime=, =maxTime= and =fixedTime=, which belong to a mouse's line in =devices.conf=.
+   A name uses letters, digits, =.=, =_= or =-=, starts with a letter or digit, has at most 31 characters and is not =disabled=.
+   #+begin_src sh
+   yeetmousectl profile list
+   yeetmousectl profile save power my-config.conf
+   yeetmousectl profile remove power
+   #+end_src
+
+   =profile list= prints each profile with the devices that use it.
+   =profile save= stores the curve of a config file, leaving out its DPI and timing, and loads it into the driver.
+   =profile remove= is refused while a device line or a running game uses the profile.
+
+** Devices
+   =/etc/yeetmouse/devices.conf= holds one line per mouse, named by its vendor and product id.
+   The driver looks each mouse up by that id, so a listed mouse gets its line as soon as it connects, with no udev rule and no daemon.
+   Unlisted mice use =/etc/yeetmouse.conf=.
+   #+begin_example
+   046d:c539 power preScale=1 minTime=0 maxTime=100 fixedTime=0
+   #+end_example
+
+   =preScale= is the mouse's DPI pre-scale (1000 / DPI matches Raw Accel's DPI setting), and =minTime=, =maxTime= and =fixedTime= set its packet timing.
+   A line =<vendor:product> disabled= passes that mouse's movement through unchanged.
+
+   =yeetmousectl= writes these lines and loads them into the driver:
+   #+begin_src sh
+   yeetmousectl device list
+   yeetmousectl device set 046d:c539 power
+   yeetmousectl device set 046d:c539 power preScale=1.25
+   yeetmousectl device set 046d:c539 disabled
+   yeetmousectl device remove 046d:c539
+   #+end_src
+
+   =device list= shows each connected mouse with its profile, or =default=, and the listed mice that are not connected.
+   A new line takes its DPI and timing from =/etc/yeetmouse.conf=, and =key=value= arguments override them.
+   =device remove= returns the mouse to the default config.
+
+** Loading and checking
+   #+begin_src sh
+   yeetmousectl load
+   yeetmousectl check
+   #+end_src
+
+   =load= loads every profile and =devices.conf= into the driver, as the boot service does.
+   =check= validates =/etc/yeetmouse.conf=, the profiles and =devices.conf= with the driver's own checks, without touching the driver, and lists every problem.
+   =yeetmousectl check <dir>= checks =<dir>/yeetmouse.conf= and =<dir>/yeetmouse/= instead.
+
+** Running a game on its own profile
+   #+begin_src sh
+   yeetmousectl run power -- %command%
+   #+end_src
+
+   Put this in a game's launch options, where Steam's =%command%= stands for the game.
+   While the game runs, every mouse that is not disabled, including one plugged in mid-game, uses the profile's curve with its usual DPI and timing.
+   =yeetmousectl= holds =/dev/yeetmouse= open and the driver drops the game's profile when that handle closes, so the saved curves return when the game exits or the wrapper is killed.
+   With two games running, the newer one wins until it exits.
+   If the profile is missing or broken, the game still starts on the saved curve and =notify-send= shows why.
+
+** Importing and exporting Raw Accel settings
+   =yeetmousectl= reads and writes Raw Accel 1.7 =settings.json= files.
+   A conversion is exact or refused. A setting YeetMouse cannot reproduce stops it with a message that names the setting, and files older than Raw Accel 1.7 are refused.
+   #+begin_src sh
+   yeetmousectl import-rawaccel settings.json > my-config.conf
+   yeetmousectl import-rawaccel settings.json --merge
+   yeetmousectl import-rawaccel settings.json --into ./converted
+   yeetmousectl export-rawaccel > settings.json
+   yeetmousectl export-rawaccel my-config.conf > settings.json
+   yeetmousectl export-rawaccel --from /etc > settings.json
+   #+end_src
+
+   + =import-rawaccel <file>= prints Raw Accel's first profile, with its default device settings, as a YeetMouse config. A device id from the file as a second argument prints that device's profile and settings instead.
+   + =--merge= adds every Raw Accel profile to =/etc/yeetmouse/profiles= and every device to =devices.conf=, then loads them. It refuses a profile name or a device that already exists and leaves =/etc/yeetmouse.conf= unchanged.
+   + =--into <dir>= writes =<dir>/yeetmouse.conf=, =<dir>/yeetmouse/profiles/= and =<dir>/yeetmouse/devices.conf=, and refuses if any of those files exists already.
+   + =export-rawaccel= converts the live driver settings, or the config file given, to one Raw Accel profile. =--from <dir>= exports =<dir>/yeetmouse.conf=, every profile and =devices.conf=. A device line keeps the Windows id it was imported with as =windowsId==, and a line without one is left out and named on stderr.
+   + An export needs Raw Accel's timing, which is =truncateCarry=1=, =clockOnAnyReport=1= and a =minTime= above 0. The GUI's =Match Raw Accel timing= button sets them.
+
+** Touchpads
+   Touchpads are listed with the mice, but the driver does not curve them, because libinput in the compositor turns finger positions into motion.
+   YeetMouse can hand a profile's curve to KWin as a libinput custom acceleration curve once KWin takes one (KWin merge request 6937). Until then the GUI's touchpad entry says KWin cannot take touchpad curves yet, and =yeetmousectl touchpad= is refused.
+   #+begin_src sh
+   yeetmousectl touchpads
+   pkexec yeetmousectl touchpads --record
+   yeetmousectl touchpad <vendor:product> power
+   #+end_src
+
+   =touchpads= lists the connected touchpads with their resolution.
+   =--record= stores each touchpad's resolution in =/run/yeetmouse/touchpads=. It needs root, and the boot service runs it.
+   =touchpad= samples a profile into KWin's curve for that touchpad. A profile that needs more than a single speed curve, such as one with smoothing, rotation, angle snapping or a separate vertical curve, is refused.
+
 * FAQ
 ** How to set custom parameter value?
 - Ctrl + Left Click on the parameter box to start inputting the values manually.
 
 ** How are settings preserved between reboots?
-- Settings are stored in =/etc/yeetmouse.conf=.
+- Settings are stored in =/etc/yeetmouse.conf=, with named profiles in =/etc/yeetmouse/profiles= and per-mouse lines in =/etc/yeetmouse/devices.conf=.
 - To apply them immediately:
   #+begin_src sh
   yeetmousectl apply /etc/yeetmouse.conf
+  yeetmousectl load
   #+end_src
-- On systemd systems, the installed =yeetmouse.service= automatically applies them on boot.
+- On systemd systems, the installed =yeetmouse.service= does both on boot.
 - To export the currently active settings:
   #+begin_src sh
   yeetmousectl save my-config.conf
@@ -222,15 +321,13 @@
   #+end_src
 
 ** How do I convert my RawAccel settings?
-- For the simple modes like /Linear, Classic, Power/ just use the RawAccel's values (same for /Jump/).
-- For /Motivity/ and /Natural/, you're out of luck for now. Motivity is implemented, but it does not support =Gain=. Natural on the other hand is not implemented, and not planned as of for now.
-- LuT (Look up Table) is just what you put in it, there is no difference between YeetMouse and RawAccel.
-- Keep in mind that the names are not 1:1 for every parameter.
-- To check how your new curve compares to RawAccel's, just take a screenshot of RawAccel with your curve and compare the two.
+- Run =yeetmousectl import-rawaccel settings.json= on a Raw Accel 1.7 file. It converts exactly, or refuses and names the setting it cannot reproduce. See Importing and exporting Raw Accel settings above.
+- In the GUI, =File=, =Import Raw Accel profile= loads one profile into the editor, and =Add Raw Accel profiles and devices= adds all of them to =/etc/yeetmouse=.
+- Files from Raw Accel versions before 1.7 are refused.
+- YeetMouse's own /Motivity/ mode has no Raw Accel equivalent, so a curve that uses it cannot be exported.
 
 ** How to apply LUT curves as velocity (and use the EPP (Windows default acceleration) curve)?
-- YeetMouse currently doesn't support applying the LUT as velocity.
-- To convert a velocity LUT into a sensitivity (normal) LUT, use the Python script from this comment: https://github.com/AndyFilter/YeetMouse/issues/67#issuecomment-3620653542.
+- Tick =Values are velocities= in the LUT or custom curve mode, or set =lutVelocity=1= in the config. Each y value is then an output speed, divided by the input speed, as Raw Accel does for a lookup table with =Gain / Velocity= on.
 - For the EPP (Enhance Pointer Precision) curve specifically, use the config from this comment: https://github.com/AndyFilter/YeetMouse/issues/67#issuecomment-3620653542.
 
 ** More questions
