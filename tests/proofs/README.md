@@ -90,3 +90,32 @@ computes the same truncated quotient for every input the guard lets through.
 `TestFixedPointArithmetic` compares both paths against exact 128-bit division: random operands,
 every divisor magnitude from 0 to 63 leading zeros, operands next to the saturation boundary with
 both signs, and the edge values. `YEETMOUSE_STRESS=1` scales it to about two billion cases.
+
+## power_constants.c, pow_guard.c, mul_guard.c: the power constants never overflow
+
+The constants are computed by `power_constants` in `driver/accel_modes.c`, every step through
+`mul_checked`, `div_checked`, `pow_checked` or the compiler's add and subtract overflow
+builtins; a step that would not fit refuses the setting. Proving the whole function at once with
+the polynomial power and the portable division inlined did not finish in four hours, so the proof
+is split, each part for every 64-bit input:
+
+- `mul_guard.c` (flags as for div_defined.c without the bounds options): `FP64_MulOverflows`
+  flags exactly the products whose Q32.32 value does not fit, and a product it lets through is
+  exact. 0 of 16 properties fail, 143 s on the M1.
+- `pow_guard.c` (`--unwind 70 --unwinding-assertions` plus every check of div_defined.c and
+  `--pointer-check`): when `FP64_PowOverflows` lets a power through, `FP64_Pow` performs no
+  signed overflow, undefined shift or out-of-range conversion inside its log and exp2 polynomials
+  and returns a value that is not negative. It refuses from 2^31, where `FP64_Exp2` would shift
+  a value in [1, 2) into the sign bit. 0 of 75 fail, 78 s.
+- The division: div_defined.c above.
+- `power_constants.c`, built with `goto-cc`, the three helpers' bodies removed with
+  `goto-instrument --remove-function-body` and replaced by `--generate-function-body
+  'mul_checked|div_checked|pow_checked' --generate-function-body-options 'havoc,params:.*'`,
+  so each may return either answer and write any value, then `cbmc` with the pow_guard.c flags:
+  whatever the helpers return, `power_constants` itself overflows nothing. 0 of 2404 fail; with
+  one of its additions unguarded it fails on that addition.
+
+The GUI and the Raw Accel converter judge the same steps in double precision with
+`PowerConstantsFit`, against 2^30, one bit inside the driver's range, so a setting they pass is
+one the driver accepts. The power mode tests check that over 2080 settings and compare the
+driver's constants with the double-precision formulas.
