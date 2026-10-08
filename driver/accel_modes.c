@@ -646,7 +646,7 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
     }
 
     // Calculate velocity
-    speed = FP64_Sqrt(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));
+    speed = FP64_SqrtPrecise(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));
     speed = FP64_DivPrecise(speed, ms);
 
     // Apply speedcap

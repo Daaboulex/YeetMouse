@@ -1255,6 +1255,26 @@ bool Tests::TestTimingAndRounding() {
 
         supervisor.NextTest();
 
+        accel_profile linear{};
+        linear.x.mode = AccelMode_Linear;
+        linear.x.acceleration = FP64_FromInt(1000);
+        linear.pre_scale = FP64_1;
+        linear.sensitivity = FP64_1;
+        linear.ratio_yx = FP64_1;
+        update_profile_constants(&linear);
+        for (int dx = -300; dx <= 300; dx += 7) {
+            for (int dy = -300; dy <= 300; dy += 11) {
+                if (dx == 0 && dy == 0)
+                    continue;
+                FP_LONG out_x = FP64_FromInt(dx), out_y = FP64_FromInt(dy);
+                accel_packet(&linear, &out_x, &out_y, FP64_1);
+                double factor = 1 + 1000 * std::hypot(dx, dy);
+                supervisor.Validate(std::fabs(static_cast<double>(out_x) / 4294967296.0 - dx * factor) <= 1e-8 * std::fabs(dx * factor) + 1e-6);
+            }
+        }
+
+        supervisor.NextTest();
+
         state = {};
         accel_elapsed(&state, 5000000);
         supervisor.Validate(accel_elapsed(&state, 6000000) == FP64_1);
