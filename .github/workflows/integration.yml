@@ -7,7 +7,11 @@ on:
 
 jobs:
   integration:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, ubuntu-24.04-arm ]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -31,6 +35,24 @@ jobs:
           test -f /etc/yeetmouse.conf
           test -f /usr/lib/systemd/system/yeetmouse.service
           yeetmousectl dump | grep -q "accelMode"
+
+      - name: Check profiles, devices and a killed game's claim on the live driver
+        run: |
+          test -c /dev/yeetmouse
+          test -d /etc/yeetmouse/profiles
+          sudo yeetmousectl profile save probe /etc/yeetmouse.conf
+          sudo yeetmousectl device set 1234:5678 probe
+          sudo yeetmousectl load
+          sudo yeetmousectl device remove 1234:5678
+          sudo yeetmousectl run probe -- sleep 120 &
+          sleep 2
+          if sudo yeetmousectl profile remove probe; then
+            echo "a profile a running game claims was removed"
+            exit 1
+          fi
+          sudo pkill -KILL -f "yeetmousectl run probe"
+          sleep 1
+          sudo yeetmousectl profile remove probe
 
       - name: Run uninstall script
         env:
