@@ -78,8 +78,6 @@ static void driver_events(struct input_handle *handle, const struct input_value 
     /* Reset state */
     state->x = NONE_EVENT_VALUE;
     state->y = NONE_EVENT_VALUE;
-    state->accel.vendor = dev->id.vendor;
-    state->accel.product = dev->id.product;
     /* Deal with leftover EV_REL events we should take into account for the next run */
     for (v = v_syn; v != vals + count; v++) {
         if (v->type == EV_REL) {
@@ -202,6 +200,23 @@ static int input_register_handle_head(struct input_handle *handle) {
     return 0;
 }
 
+static void trace_device_path(struct input_dev *dev, struct device_path *path) {
+    struct device *parent;
+
+    path->vendor = dev->id.vendor;
+    path->product = dev->id.product;
+    path->through_receiver = false;
+    for (parent = dev->dev.parent; parent && parent->bus == &hid_bus_type; parent = parent->parent) {
+        struct hid_device *hdev = to_hid_device(parent);
+
+        if (hdev->vendor != path->vendor || hdev->product != path->product) {
+            path->through_receiver = true;
+            path->receiver_vendor = (__u16) hdev->vendor;
+            path->receiver_product = (__u16) hdev->product;
+        }
+    }
+}
+
 static int driver_connect(struct input_handler *handler, struct input_dev *dev, const struct input_device_id *id) {
     struct input_handle *handle;
     struct mouse_state *state;
@@ -219,6 +234,7 @@ static int driver_connect(struct input_handler *handler, struct input_dev *dev, 
 
     state->x = NONE_EVENT_VALUE;
     state->y = NONE_EVENT_VALUE;
+    trace_device_path(dev, &state->accel.path);
 
     handle->private = state;
     handle->dev = input_get_device(dev);
@@ -238,6 +254,10 @@ static int driver_connect(struct input_handler *handler, struct input_dev *dev, 
 
     pr_info("connecting to device: %s (%s at %s)", dev_name(&dev->dev), dev->name ?: "unknown",
            dev->phys ?: "unknown");
+    if (state->accel.path.through_receiver)
+        pr_info("%04x:%04x is paired through receiver %04x:%04x, whose devices.conf line applies when it has none",
+                state->accel.path.vendor, state->accel.path.product, state->accel.path.receiver_vendor,
+                state->accel.path.receiver_product);
 
     return 0;
 

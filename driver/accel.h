@@ -2,10 +2,11 @@
 #define _ACCEL_H
 
 #include "accel_modes.h"
+#include "profile_table.h"
 
 struct accel_mouse {
     struct accel_state state;
-    __u16 vendor, product;
+    struct device_path path;
     __u64 generation;
 };
 

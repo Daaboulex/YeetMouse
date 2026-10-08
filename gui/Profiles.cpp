@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <charconv>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
@@ -357,10 +358,23 @@ namespace Profiles {
         std::vector<ConnectedMouse> mice;
         ConnectedMouse mouse;
         bool handled = false;
-        std::string line, properties, keys;
+        std::string line, properties, keys, sysfs;
         auto finish = [&] {
             mouse.touchpad = !handled && BitSet(properties, PropPointer) &&
                              BitSet(keys, ToolFinger) && !BitSet(keys, ToolPen);
+            std::istringstream parts(sysfs);
+            std::string part;
+            while (!mouse.throughReceiver && std::getline(parts, part, '/')) {
+                unsigned bus = 0, vendor = 0, product = 0, index = 0;
+                char rest = 0;
+                if (part.size() == 19 &&
+                    std::sscanf(part.c_str(), "%4x:%4x:%4x.%4x%c", &bus, &vendor, &product, &index, &rest) == 4 &&
+                    (vendor != mouse.vendor || product != mouse.product)) {
+                    mouse.throughReceiver = true;
+                    mouse.receiverVendor = static_cast<uint16_t>(vendor);
+                    mouse.receiverProduct = static_cast<uint16_t>(product);
+                }
+            }
             if ((handled || mouse.touchpad) && std::none_of(mice.begin(), mice.end(), [&](const ConnectedMouse &seen) {
                     return seen.vendor == mouse.vendor && seen.product == mouse.product && seen.name == mouse.name;
                 }))
@@ -369,6 +383,7 @@ namespace Profiles {
             handled = false;
             properties.clear();
             keys.clear();
+            sysfs.clear();
         };
         while (std::getline(devices, line)) {
             if (line.empty()) {
@@ -381,6 +396,8 @@ namespace Profiles {
                 }
             } else if (line.rfind("N: Name=\"", 0) == 0) {
                 mouse.name = line.substr(9, line.size() > 10 ? line.size() - 10 : 0);
+            } else if (line.rfind("S: Sysfs=", 0) == 0) {
+                sysfs = line.substr(9);
             } else if (line.rfind("B: PROP=", 0) == 0) {
                 properties = line.substr(8);
             } else if (line.rfind("B: KEY=", 0) == 0) {
@@ -404,6 +421,17 @@ namespace Profiles {
         if (!devices.is_open())
             throw Refused("cannot read /proc/bus/input/devices");
         return ReadConnectedMice(devices);
+    }
+
+    AppliedLine LineFor(const std::vector<DeviceLine> &lines, const ConnectedMouse &mouse) {
+        for (const DeviceLine &line : lines)
+            if (line.vendor == mouse.vendor && line.product == mouse.product)
+                return {&line, false};
+        if (mouse.throughReceiver)
+            for (const DeviceLine &line : lines)
+                if (line.vendor == mouse.receiverVendor && line.product == mouse.receiverProduct)
+                    return {&line, true};
+        return {};
     }
 }
 

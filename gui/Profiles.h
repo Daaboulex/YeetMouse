@@ -43,7 +43,22 @@ namespace Profiles {
         std::string name;
         bool touchpad = false;
         std::string event;
+        bool throughReceiver = false;
+        uint16_t receiverVendor = 0;
+        uint16_t receiverProduct = 0;
+
+        bool covers(const DeviceLine &line) const {
+            return (line.vendor == vendor && line.product == product) ||
+                   (throughReceiver && line.vendor == receiverVendor && line.product == receiverProduct);
+        }
     };
+
+    struct AppliedLine {
+        const DeviceLine *line = nullptr;
+        bool throughReceiver = false;
+    };
+
+    AppliedLine LineFor(const std::vector<DeviceLine> &lines, const ConnectedMouse &mouse);
 
     std::string DeviceId(uint16_t vendor, uint16_t product);
 

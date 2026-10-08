@@ -91,14 +91,21 @@ int table_find(const struct profile_table *table, const char *name) {
     return -1;
 }
 
-struct table_choice table_resolve(const struct profile_table *table, __u16 vendor, __u16 product) {
-    struct table_choice choice = {false, NULL, NULL};
-    const struct device_line *line = NULL;
+static const struct device_line *table_line(const struct profile_table *table, __u16 vendor, __u16 product) {
     int i;
 
-    for (i = 0; i < table->device_count && !line; i++)
+    for (i = 0; i < table->device_count; i++)
         if (table->devices[i].vendor == vendor && table->devices[i].product == product)
-            line = &table->devices[i];
+            return &table->devices[i];
+    return NULL;
+}
+
+struct table_choice table_resolve(const struct profile_table *table, const struct device_path *path) {
+    struct table_choice choice = {false, NULL, NULL};
+    const struct device_line *line = table_line(table, path->vendor, path->product);
+
+    if (!line && path->through_receiver)
+        line = table_line(table, path->receiver_vendor, path->receiver_product);
 
     if (line && line->disabled) {
         choice.disabled = true;

@@ -2389,19 +2389,33 @@ bool Tests::TestProfileTable() {
         line(devices.devices[2], 0x045e, 0x0040, "");
         devices.devices[2].disabled = 1;
         supervisor.Validate(table_set_devices(&state, &devices) == 0);
-        table_choice unlisted = table_resolve(&state, 0x1234, 0x5678);
+        auto through = [&](__u16 vendor, __u16 product, bool paired, __u16 receiver_vendor, __u16 receiver_product) {
+            device_path path = {vendor, product, paired, receiver_vendor, receiver_product};
+            return table_resolve(&state, &path);
+        };
+        auto resolve = [&](__u16 vendor, __u16 product) { return through(vendor, product, false, 0, 0); };
+        table_choice unlisted = resolve(0x1234, 0x5678);
         supervisor.Validate(!unlisted.disabled && unlisted.profile == nullptr && unlisted.device == nullptr);
-        table_choice g502 = table_resolve(&state, 0x046d, 0xc539);
+        table_choice g502 = resolve(0x046d, 0xc539);
         supervisor.Validate(!g502.disabled && g502.profile == &profiles[1] && g502.device &&
                             g502.device->pre_scale == FP64_FromDouble(0.625) && g502.device->min_time == FP64_1);
-        table_choice raw = table_resolve(&state, 0x045e, 0x0040);
+        table_choice raw = resolve(0x045e, 0x0040);
         supervisor.Validate(raw.disabled && raw.profile == nullptr && raw.device == nullptr);
+        table_choice paired = through(0x046d, 0x407f, true, 0x046d, 0xc539);
+        supervisor.Validate(!paired.disabled && paired.profile == &profiles[1] && paired.device &&
+                            paired.device->pre_scale == FP64_FromDouble(0.625));
+        supervisor.Validate(through(0x1532, 0x0084, true, 0x046d, 0xc539).profile == &profiles[2]);
+        supervisor.Validate(through(0x1234, 0x5678, true, 0x045e, 0x0040).disabled);
+        table_choice stray = through(0x1234, 0x5678, true, 0x1050, 0x0407);
+        supervisor.Validate(!stray.disabled && stray.profile == nullptr && stray.device == nullptr);
+        table_choice unpaired = through(0x046d, 0x407f, false, 0x046d, 0xc539);
+        supervisor.Validate(unpaired.profile == nullptr && unpaired.device == nullptr);
 
         auto set_refused = [&](int error, const std::function<void(yeetmouse_devices_args &)> &spoil) {
             yeetmouse_devices_args spoiled = devices;
             spoil(spoiled);
             bool result = table_set_devices(&state, &spoiled) == error;
-            return result && table_resolve(&state, 0x046d, 0xc539).profile == &profiles[1] && state.device_count == 3;
+            return result && resolve(0x046d, 0xc539).profile == &profiles[1] && state.device_count == 3;
         };
         supervisor.Validate(set_refused(-EINVAL, [](yeetmouse_devices_args &d) { d.devices[1].vendor = 0x046d; d.devices[1].product = 0xc539; }));
         supervisor.Validate(set_refused(-ENOENT, [](yeetmouse_devices_args &d) { std::strcpy(d.devices[0].profile, "missing"); }));
@@ -2414,24 +2428,24 @@ bool Tests::TestProfileTable() {
 
         supervisor.NextTest();
         supervisor.Validate(table_claim(&state, 1, "p5") == 0);
-        supervisor.Validate(table_resolve(&state, 0x046d, 0xc539).profile == &profiles[5] &&
-                            table_resolve(&state, 0x046d, 0xc539).device->pre_scale == FP64_FromDouble(0.625));
-        supervisor.Validate(table_resolve(&state, 0x1234, 0x5678).profile == &profiles[5] &&
-                            table_resolve(&state, 0x1234, 0x5678).device == nullptr);
-        supervisor.Validate(table_resolve(&state, 0x045e, 0x0040).disabled);
-        supervisor.Validate(table_claim(&state, 2, "p6") == 0 && table_resolve(&state, 0x1532, 0x0084).profile == &profiles[6]);
+        supervisor.Validate(resolve(0x046d, 0xc539).profile == &profiles[5] &&
+                            resolve(0x046d, 0xc539).device->pre_scale == FP64_FromDouble(0.625));
+        supervisor.Validate(resolve(0x1234, 0x5678).profile == &profiles[5] &&
+                            resolve(0x1234, 0x5678).device == nullptr);
+        supervisor.Validate(resolve(0x045e, 0x0040).disabled);
+        supervisor.Validate(table_claim(&state, 2, "p6") == 0 && resolve(0x1532, 0x0084).profile == &profiles[6]);
         table_release(&state, 2);
-        supervisor.Validate(table_resolve(&state, 0x1532, 0x0084).profile == &profiles[5]);
+        supervisor.Validate(resolve(0x1532, 0x0084).profile == &profiles[5]);
         supervisor.Validate(table_claim(&state, 2, "p6") == 0);
         table_release(&state, 1);
-        supervisor.Validate(table_resolve(&state, 0x1532, 0x0084).profile == &profiles[6]);
+        supervisor.Validate(resolve(0x1532, 0x0084).profile == &profiles[6]);
         table_release(&state, 2);
-        supervisor.Validate(table_resolve(&state, 0x1532, 0x0084).profile == &profiles[2] && state.claim_count == 0);
+        supervisor.Validate(resolve(0x1532, 0x0084).profile == &profiles[2] && state.claim_count == 0);
         supervisor.Validate(table_claim(&state, 3, "missing") == -ENOENT && table_claim(&state, 3, "") == -EINVAL);
         for (int i = 0; i < YEETMOUSE_MAX_CLAIMS; i++)
             supervisor.Validate(table_claim(&state, 100 + i, "p7") == 0);
         supervisor.Validate(table_claim(&state, 999, "p7") == -ENOSPC);
-        supervisor.Validate(table_claim(&state, 100, "p8") == 0 && table_resolve(&state, 0, 0).profile == &profiles[8]);
+        supervisor.Validate(table_claim(&state, 100, "p8") == 0 && resolve(0, 0).profile == &profiles[8]);
         for (int i = 0; i < YEETMOUSE_MAX_CLAIMS; i++)
             table_release(&state, 100 + i);
 
@@ -2610,6 +2624,40 @@ bool Tests::TestProfileFiles() {
                             mice[1].name == "Magic Mouse" && !mice[1].touchpad);
         supervisor.Validate(mice.size() == 3 && mice[2].name == "Apple SPI Trackpad" && mice[2].product == 0x0343 &&
                             mice[2].touchpad);
+        supervisor.Validate(!mice[0].throughReceiver && !mice[1].throughReceiver);
+
+        std::istringstream paired_proc(
+            "I: Bus=0003 Vendor=046d Product=407f Version=0111\n"
+            "N: Name=\"Logitech G502\"\n"
+            "P: Phys=usb-0000:7c:00.4-2/input2:1\n"
+            "S: Sysfs=/devices/pci0000:00/0000:00:08.1/0000:7c:00.4/usb7/7-2/7-2:1.2/0003:046D:C539.0007/"
+            "0003:046D:407F.000A/input/input15\n"
+            "H: Handlers=sysrq yeetmouse kbd leds event5 \n"
+            "\n"
+            "I: Bus=0003 Vendor=046d Product=c08d Version=0111\n"
+            "N: Name=\"Logitech G502 HERO Gaming Mouse\"\n"
+            "S: Sysfs=/devices/pci0000:00/0000:00:08.1/0000:7c:00.4/usb7/7-1/7-1:1.0/0003:046D:C08D.0003/input/input9\n"
+            "H: Handlers=mouse2 event9 yeetmouse \n");
+        std::vector<Profiles::ConnectedMouse> paired = Profiles::ReadConnectedMice(paired_proc);
+        supervisor.Validate(paired.size() == 2 && paired[0].product == 0x407f && paired[0].throughReceiver &&
+                            paired[0].receiverVendor == 0x046d && paired[0].receiverProduct == 0xc539 &&
+                            !paired[1].throughReceiver);
+        std::vector<Profiles::DeviceLine> receiver_lines(2);
+        receiver_lines[0].vendor = 0x046d;
+        receiver_lines[0].product = 0xc539;
+        receiver_lines[0].profile = "power";
+        receiver_lines[1].vendor = 0x046d;
+        receiver_lines[1].product = 0xc08d;
+        receiver_lines[1].profile = "jump";
+        Profiles::AppliedLine through_receiver = Profiles::LineFor(receiver_lines, paired[0]);
+        Profiles::AppliedLine wired = Profiles::LineFor(receiver_lines, paired[1]);
+        supervisor.Validate(through_receiver.line == &receiver_lines[0] && through_receiver.throughReceiver &&
+                            wired.line == &receiver_lines[1] && !wired.throughReceiver);
+        receiver_lines.push_back(receiver_lines[1]);
+        receiver_lines[2].product = 0x407f;
+        Profiles::AppliedLine own = Profiles::LineFor(receiver_lines, paired[0]);
+        supervisor.Validate(own.line == &receiver_lines[2] && !own.throughReceiver &&
+                            paired[0].covers(receiver_lines[0]) && !paired[1].covers(receiver_lines[0]));
 
         supervisor.NextTest();
         std::filesystem::remove_all(root);

@@ -33,6 +33,12 @@ struct profile_table {
     int device_count, claim_count;
 };
 
+struct device_path {
+    __u16 vendor, product;
+    bool through_receiver;
+    __u16 receiver_vendor, receiver_product;
+};
+
 struct table_choice {
     bool disabled;
     const struct accel_profile *profile;
@@ -43,7 +49,7 @@ int profile_from_args(struct accel_profile *profile, const struct yeetmouse_prof
 
 int table_find(const struct profile_table *table, const char *name);
 
-struct table_choice table_resolve(const struct profile_table *table, __u16 vendor, __u16 product);
+struct table_choice table_resolve(const struct profile_table *table, const struct device_path *path);
 
 int table_load(struct profile_table *table, const char *name, struct accel_profile *profile,
                struct accel_profile **replaced);

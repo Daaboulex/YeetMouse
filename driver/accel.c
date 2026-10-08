@@ -347,7 +347,7 @@ void accelerate_idle(struct accel_mouse *mouse)
     struct table_choice choice;
 
     rcu_read_lock();
-    choice = table_resolve(profiles_current(), mouse->vendor, mouse->product);
+    choice = table_resolve(profiles_current(), &mouse->path);
     if (!choice.disabled)
         accel_idle_report(choice.profile ? choice.profile : &g_profile, &mouse->state, ktime_get());
     rcu_read_unlock();
@@ -375,7 +375,7 @@ int accelerate(struct accel_mouse *mouse, int *x, int *y)
 
     rcu_read_lock();
     table = profiles_current();
-    choice = table_resolve(table, mouse->vendor, mouse->product);
+    choice = table_resolve(table, &mouse->path);
     if (choice.disabled) {
         rcu_read_unlock();
         return status;

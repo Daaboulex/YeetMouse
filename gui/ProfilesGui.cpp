@@ -286,17 +286,11 @@ namespace ProfilesGui {
             std::vector<Profiles::DeviceLine> lines = Profiles::LoadDevicesFile(Profiles::Root);
             std::vector<std::string> names = Profiles::ProfileNames(Profiles::Root);
             std::vector<Profiles::ConnectedMouse> mice = Profiles::ConnectedMice();
-            auto line_of = [&](uint16_t vendor, uint16_t product) -> const Profiles::DeviceLine * {
-                for (const Profiles::DeviceLine &line : lines)
-                    if (line.vendor == vendor && line.product == product)
-                        return &line;
-                return nullptr;
-            };
-
             if (std::none_of(mice.begin(), mice.end(), [](const Profiles::ConnectedMouse &mouse) { return !mouse.touchpad; }))
                 ImGui::TextDisabled("No mouse is using the YeetMouse driver");
             for (const Profiles::ConnectedMouse &mouse : mice) {
-                const Profiles::DeviceLine *line = line_of(mouse.vendor, mouse.product);
+                Profiles::AppliedLine applied = Profiles::LineFor(lines, mouse);
+                const Profiles::DeviceLine *line = applied.throughReceiver ? nullptr : applied.line;
                 std::string id = Profiles::DeviceId(mouse.vendor, mouse.product);
                 if (mouse.touchpad) {
                     TouchpadMenu(mouse, id, names);
@@ -305,7 +299,11 @@ namespace ProfilesGui {
                 std::string current = line ? line->profile : "";
                 if (!ImGui::BeginMenu((mouse.name + " (" + id + ")").c_str()))
                     continue;
-                if (ImGui::MenuItem("Default config", nullptr, current.empty()) && line)
+                std::string fallback = applied.throughReceiver
+                                           ? "Receiver " + Profiles::DeviceId(mouse.receiverVendor, mouse.receiverProduct) +
+                                                 ": " + applied.line->profile
+                                           : std::string("Default config");
+                if (ImGui::MenuItem(fallback.c_str(), nullptr, current.empty()) && line)
                     Forget(mouse.vendor, mouse.product);
                 for (const std::string &name : names)
                     if (ImGui::MenuItem(name.c_str(), nullptr, current == name))
@@ -313,9 +311,9 @@ namespace ProfilesGui {
                 if (ImGui::MenuItem("Disabled (raw input)", nullptr, current == Profiles::Disabled))
                     Assign(mouse.vendor, mouse.product, Profiles::Disabled, {});
                 ImGui::Separator();
-                ImGui::BeginDisabled(!line || line->disabled());
+                ImGui::BeginDisabled(!applied.line || applied.line->disabled());
                 if (ImGui::MenuItem("DPI and timing...")) {
-                    device_settings = *line;
+                    device_settings = *applied.line;
                     open_device_settings = true;
                 }
                 ImGui::EndDisabled();
@@ -324,9 +322,8 @@ namespace ProfilesGui {
 
             bool header = false;
             for (const Profiles::DeviceLine &line : lines) {
-                if (std::any_of(mice.begin(), mice.end(), [&](const Profiles::ConnectedMouse &mouse) {
-                        return mouse.vendor == line.vendor && mouse.product == line.product;
-                    }))
+                if (std::any_of(mice.begin(), mice.end(),
+                                [&](const Profiles::ConnectedMouse &mouse) { return mouse.covers(line); }))
                     continue;
                 if (!header) {
                     ImGui::SeparatorText("Not connected");

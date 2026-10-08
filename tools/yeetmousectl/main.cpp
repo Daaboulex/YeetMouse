@@ -170,24 +170,24 @@ static int ProfileRemove(const std::string &name) {
 static int DeviceList() {
     try {
         std::vector<Profiles::DeviceLine> lines = Profiles::LoadDevicesFile(Profiles::Root);
-        auto line_of = [&](uint16_t vendor, uint16_t product) -> const Profiles::DeviceLine * {
-            for (const Profiles::DeviceLine &line : lines)
-                if (line.vendor == vendor && line.product == product)
-                    return &line;
-            return nullptr;
-        };
         std::vector<Profiles::ConnectedMouse> mice = Profiles::ConnectedMice();
         for (const Profiles::ConnectedMouse &mouse : mice) {
-            const Profiles::DeviceLine *line = line_of(mouse.vendor, mouse.product);
-            std::cout << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name << "\" "
-                      << (mouse.touchpad ? std::string("touchpad, curved through KWin with yeetmousectl touchpad")
-                                         : line ? line->profile : std::string("default"))
-                      << "\n";
+            Profiles::AppliedLine applied = Profiles::LineFor(lines, mouse);
+            std::cout << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name << "\" ";
+            if (mouse.touchpad)
+                std::cout << "touchpad, curved through KWin with yeetmousectl touchpad";
+            else if (!applied.line)
+                std::cout << "default";
+            else if (applied.throughReceiver)
+                std::cout << applied.line->profile << " (through receiver "
+                          << Profiles::DeviceId(mouse.receiverVendor, mouse.receiverProduct) << ")";
+            else
+                std::cout << applied.line->profile;
+            std::cout << "\n";
         }
         for (const Profiles::DeviceLine &line : lines)
-            if (std::none_of(mice.begin(), mice.end(), [&](const Profiles::ConnectedMouse &mouse) {
-                    return mouse.vendor == line.vendor && mouse.product == line.product;
-                }))
+            if (std::none_of(mice.begin(), mice.end(),
+                             [&](const Profiles::ConnectedMouse &mouse) { return mouse.covers(line); }))
                 std::cout << Profiles::DeviceId(line.vendor, line.product) << " (not connected) " << line.profile << "\n";
     } catch (const Profiles::Refused &refused) {
         return Failed(refused);
