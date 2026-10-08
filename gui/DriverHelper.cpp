@@ -1,5 +1,5 @@
 #include "DriverHelper.h"
-#include <FixedMath/Fixed64.h>
+#include "FixedPoint.h"
 #include <fstream>
 #include <filesystem>
 #include <iomanip>
