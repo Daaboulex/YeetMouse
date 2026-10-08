@@ -795,6 +795,7 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "systemd-modules-load.service" ];
         wants = [ "systemd-modules-load.service" ];
+        unitConfig.ConditionPathExists = "/sys/module/yeetmouse";
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
