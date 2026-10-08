@@ -7,7 +7,8 @@ SRC = main.cpp  \
       ../../gui/CustomCurve.cpp \
       ../../gui/FunctionHelper.cpp \
       ../../gui/RawAccel.cpp \
-      ../../gui/ImGuiStubs.cpp
+      ../../gui/ImGuiStubs.cpp \
+      ../../gui/Profiles.cpp
 
 OBJ = $(SRC:.cpp=.o)
 

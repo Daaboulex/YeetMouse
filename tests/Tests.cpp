@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iterator>
@@ -19,6 +20,7 @@
 #include "driver/profile_table.h"
 #include "gui/ConfigHelper.h"
 #include "gui/FunctionHelper.h"
+#include "gui/Profiles.h"
 #include "gui/RawAccel.h"
 
 //static CachedFunction functions[AccelMode_Count];
@@ -2444,6 +2446,149 @@ bool Tests::TestProfileTable() {
         supervisor.Validate(table_load(&state, "fresh", &profiles[9], &replaced) == 0 && table_find(&state, "fresh") == 9);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during profile table\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
+bool Tests::TestProfileFiles() {
+    TestSupervisor supervisor{"Profile Files"};
+
+    auto devices = [](const std::string &text) {
+        std::istringstream stream(text);
+        return Profiles::ReadDevices(stream);
+    };
+    auto refused = [&](const std::string &text, const std::string &reason) {
+        try {
+            devices(text);
+        } catch (const Profiles::Refused &refusal) {
+            return std::string(refusal.what()).find(reason) != std::string::npos;
+        }
+        return false;
+    };
+    const std::string good = "046d:c539 power preScale=0.625 minTime=1 maxTime=100 fixedTime=0 "
+                             "windowsId=HID\\VID_046D&PID_C539&MI_01&Col01\n"
+                             "\n"
+                             "045e:0040 disabled\n"
+                             "1532:0084 jump.v2 fixedTime=1 minTime=0.125 maxTime=50 preScale=2\n";
+
+    try {
+        supervisor.NextTest();
+        std::vector<Profiles::DeviceLine> lines = devices(good);
+        supervisor.Validate(lines.size() == 3);
+        supervisor.Validate(lines[0].vendor == 0x046d && lines[0].product == 0xc539 && lines[0].profile == "power" &&
+                            lines[0].preScale == 0.625 && lines[0].minTime == 1 && lines[0].maxTime == 100 &&
+                            !lines[0].fixedTime && lines[0].windowsId == "HID\\VID_046D&PID_C539&MI_01&Col01");
+        supervisor.Validate(lines[1].disabled() && lines[1].vendor == 0x045e);
+        supervisor.Validate(lines[2].fixedTime && lines[2].minTime == 0.125 && lines[2].preScale == 2);
+        std::vector<Profiles::DeviceLine> again = devices(Profiles::WriteDevices(lines));
+        supervisor.Validate(Profiles::WriteDevices(again) == Profiles::WriteDevices(lines) && again.size() == 3);
+
+        supervisor.NextTest();
+        supervisor.Validate(refused("46d:c539 power preScale=1 minTime=0 maxTime=100 fixedTime=0", "vendor:product"));
+        supervisor.Validate(refused("046d:c539", "names no profile"));
+        supervisor.Validate(refused("046d:c539 a/b preScale=1 minTime=0 maxTime=100 fixedTime=0", "not a valid profile"));
+        supervisor.Validate(refused("046d:c539 power preScale=1 maxTime=100 fixedTime=0", "minTime is missing"));
+        supervisor.Validate(refused("046d:c539 power preScale=1 preScale=2 minTime=0 maxTime=100 fixedTime=0", "twice"));
+        supervisor.Validate(refused("046d:c539 power dpi=800 preScale=1 minTime=0 maxTime=100 fixedTime=0",
+                                    "not a device setting"));
+        supervisor.Validate(refused("046d:c539 power preScale=1 minTime=0 maxTime=100 fixedTime=2", "not a device setting"));
+        supervisor.Validate(refused("046d:c539 power preScale=x minTime=0 maxTime=100 fixedTime=0", "not a number"));
+        supervisor.Validate(refused(good + "046D:C539 other preScale=1 minTime=0 maxTime=100 fixedTime=0", "listed twice"));
+
+        supervisor.NextTest();
+        yeetmouse_devices_args args = Profiles::DevicesArgs(lines);
+        __s64 expected = 0;
+        supervisor.Validate(DriverHelper::FixedPoint(0.625, expected) && args.count == 3 &&
+                            args.devices[0].pre_scale == expected && std::string(args.devices[0].profile) == "power");
+        supervisor.Validate(args.devices[1].disabled == 1 && args.devices[1].profile[0] == '\0');
+        auto args_refused = [](std::vector<Profiles::DeviceLine> spoiled, const std::string &reason) {
+            try {
+                Profiles::DevicesArgs(spoiled);
+            } catch (const Profiles::Refused &refusal) {
+                return std::string(refusal.what()).find(reason) != std::string::npos;
+            }
+            return false;
+        };
+        std::vector<Profiles::DeviceLine> spoiled = lines;
+        spoiled[0].preScale = 0;
+        supervisor.Validate(args_refused(spoiled, "preScale is not above 0"));
+        spoiled = lines;
+        spoiled[2].minTime = 0;
+        supervisor.Validate(args_refused(spoiled, "fixedTime needs minTime above 0"));
+        spoiled = std::vector<Profiles::DeviceLine>(YEETMOUSE_MAX_DEVICES + 1, lines[0]);
+        supervisor.Validate(args_refused(spoiled, "more than"));
+
+        supervisor.NextTest();
+        Parameters curve;
+        curve.accelMode = AccelMode_Lut;
+        curve.lutSize = 3;
+        curve.lutVelocity = true;
+        const double speeds[] = {1, 5, 20};
+        for (int i = 0; i < 3; i++) {
+            curve.lutDataX[i] = speeds[i];
+            curve.lutDataY[i] = speeds[i] * 2;
+        }
+        curve.sens = 1.5f;
+        curve.preScale = 0.5f;
+        curve.minTime = 1;
+        std::string written = Profiles::WriteProfile(curve);
+        supervisor.Validate(written.find("preScale") == std::string::npos && written.find("minTime") == std::string::npos &&
+                            written.find("maxTime") == std::string::npos && written.find("fixedTime") == std::string::npos);
+        std::istringstream profile_text(written);
+        Parameters read = Profiles::ReadProfile(profile_text);
+        supervisor.Validate(read.accelMode == AccelMode_Lut && read.lutSize == 3 && read.lutVelocity && read.sens == 1.5f &&
+                            read.lutDataX[2] == 20 && read.lutDataY[2] == 40);
+        bool device_key_refused = false;
+        try {
+            std::istringstream with_device(written + "preScale=0.5\n");
+            Profiles::ReadProfile(with_device);
+        } catch (const Profiles::Refused &refusal) {
+            device_key_refused = std::string(refusal.what()).find("devices.conf") != std::string::npos;
+        }
+        supervisor.Validate(device_key_refused);
+
+        supervisor.NextTest();
+        std::filesystem::path root = SCRATCH_DIR;
+        std::filesystem::remove_all(root);
+        supervisor.Validate(Profiles::ProfileNames(root).empty() && Profiles::LoadDevicesFile(root).empty());
+        std::filesystem::create_directories(root / "profiles");
+        Profiles::SaveFile(root / "profiles" / "power.conf", written);
+        Profiles::SaveFile(root / "profiles" / "jump.conf", written);
+        Profiles::SaveFile(root / "profiles" / "notes.txt", "not a profile\n");
+        Profiles::SaveFile(root / "devices.conf", good);
+        supervisor.Validate(Profiles::ProfileNames(root) == std::vector<std::string>{"jump", "power"});
+        supervisor.Validate(Profiles::LoadProfileFile(root, "power").lutSize == 3);
+        supervisor.Validate(Profiles::LoadDevicesFile(root).size() == 3);
+        Profiles::SaveFile(root / "devices.conf", "045e:0040 disabled\n");
+        supervisor.Validate(Profiles::LoadDevicesFile(root).size() == 1 && !std::filesystem::exists(root / "devices.conf.new"));
+        bool bad_name_refused = false;
+        try {
+            Profiles::LoadProfileFile(root, "../devices");
+        } catch (const Profiles::Refused &) {
+            bad_name_refused = true;
+        }
+        supervisor.Validate(bad_name_refused);
+        std::filesystem::remove_all(root);
+
+        supervisor.NextTest();
+        std::istringstream proc("I: Bus=0003 Vendor=046d Product=c539 Version=0111\n"
+                                "N: Name=\"Logitech G502\"\n"
+                                "H: Handlers=sysrq kbd event5 yeetmouse \n"
+                                "\n"
+                                "I: Bus=0003 Vendor=1532 Product=0084 Version=0111\n"
+                                "N: Name=\"Razer Keyboard\"\n"
+                                "H: Handlers=kbd event6 \n"
+                                "\n"
+                                "I: Bus=0005 Vendor=05ac Product=0265 Version=0001\n"
+                                "N: Name=\"Magic Mouse\"\n"
+                                "H: Handlers=event7 yeetmouse\n");
+        std::vector<Profiles::ConnectedMouse> mice = Profiles::ReadConnectedMice(proc);
+        supervisor.Validate(mice.size() == 2 && mice[0].vendor == 0x046d && mice[0].product == 0xc539 &&
+                            mice[0].name == "Logitech G502" && mice[1].vendor == 0x05ac && mice[1].name == "Magic Mouse");
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during profile files\n", ex.what());
         supervisor.result = false;
     }
 

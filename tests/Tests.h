@@ -58,6 +58,8 @@ public:
 
     static bool TestProfileTable();
 
+    static bool TestProfileFiles();
+
 private:
     //static CachedFunction functions[AccelMode_Count];
 

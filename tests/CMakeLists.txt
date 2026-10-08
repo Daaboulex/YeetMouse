@@ -58,10 +58,12 @@ add_executable(YeetMouseTests main.cpp
         ../gui/DriverHelper.cpp
         ../gui/CustomCurve.cpp
         ../driver/profile_table.c
+        ../gui/Profiles.cpp
         ../gui/ImGuiStubs.cpp
         ../driver/accel_modes.c)
 
-target_compile_definitions(YeetMouseTests PRIVATE TEST_ENV FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+target_compile_definitions(YeetMouseTests PRIVATE TEST_ENV FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/scratch")
 
 target_compile_options(YeetMouseTests PRIVATE -funsigned-char)
 

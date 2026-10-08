@@ -52,6 +52,11 @@ int main() {
         bad_sum++;
     }
 
+    if (!Tests::TestProfileFiles()) {
+        fprintf(stderr, "Test failed for profile files\n");
+        bad_sum++;
+    }
+
     if (bad_sum == 0) {
         printf(GREEN"All tests passed!\n\n" RESET);
     } else {
