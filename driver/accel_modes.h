@@ -150,8 +150,6 @@ unsigned long accel_lut_parse(const char *first, const char *second, unsigned lo
 
 bool accel_angle_snap_valid(FP_LONG threshold);
 
-bool accel_times_valid(FP_LONG min_time, FP_LONG max_time, bool fixed_time);
-
 bool accel_weights_valid(FP_LONG lp_norm, FP_LONG domain_x, FP_LONG domain_y, FP_LONG range_x, FP_LONG range_y);
 
 bool accel_half_lives_valid(FP_LONG input, FP_LONG scale, FP_LONG output);

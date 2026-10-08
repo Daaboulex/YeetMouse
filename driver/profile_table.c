@@ -164,22 +164,13 @@ int table_set_devices(struct profile_table *table, const struct yeetmouse_device
     for (i = 0; i < args->count; i++) {
         const struct yeetmouse_device_args *device = &args->devices[i];
 
-        if (device->disabled > 1 || device->fixed_time > 1 || device->reserved[0] != 0 || device->reserved[1] != 0)
+        if (yeetmouse_device_problem(device))
             return -EINVAL;
         for (j = 0; j < i; j++)
             if (args->devices[j].vendor == device->vendor && args->devices[j].product == device->product)
                 return -EINVAL;
-        if (device->disabled) {
-            if (device->profile[0] != '\0')
-                return -EINVAL;
-            continue;
-        }
-        if (!yeetmouse_name_valid(device->profile))
-            return -EINVAL;
-        if (table_find(table, device->profile) < 0)
+        if (!device->disabled && table_find(table, device->profile) < 0)
             return -ENOENT;
-        if (device->pre_scale <= 0 || !accel_times_valid(device->min_time, device->max_time, device->fixed_time))
-            return -EINVAL;
     }
 
     for (i = 0; i < args->count; i++) {

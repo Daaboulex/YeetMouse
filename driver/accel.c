@@ -10,6 +10,8 @@
 #include "../shared_definitions.h"
 #include "accel_modes.h"
 #include "defaults.h"
+#include "profiles.h"
+#include <linux/rcupdate.h>
 
 MODULE_AUTHOR("Christopher Williams <chilliams (at) gmail (dot) com>"); //Original idea of this module
 MODULE_AUTHOR("Klaus Zipfel <klaus (at) zipfel (dot) family>");         //Current maintainer
@@ -263,7 +265,7 @@ INLINE void update_params(ktime_t now)
     g_profile.angle_snap_angle = g_AngleSnap_Angle;
     g_profile.angle_snap_threshold = g_AngleSnap_Threshold;
 
-    if (!accel_times_valid(g_MinTime, g_MaxTime, g_FixedTime)) {
+    if (yeetmouse_times_problem(g_MinTime, g_MaxTime, g_FixedTime)) {
         printk("YeetMouse: Error: MaxTime must be above 0, MinTime not below 0, and above 0 when FixedTime is set.\n");
         g_MinTime = 0;
         g_MaxTime = FP64_100;
@@ -329,14 +331,34 @@ INLINE void update_params(ktime_t now)
     g_MidpointY = g_profile.y.midpoint;
 }
 
-// Acceleration happens here
-void accelerate_idle(struct accel_state *state)
+static void follow_table(struct accel_mouse *mouse, const struct profile_table *table)
 {
-    accel_idle_report(&g_profile, state, ktime_get());
+    if (mouse->generation == table->generation)
+        return;
+    mouse->generation = table->generation;
+    memset(mouse->state.input, 0, sizeof(mouse->state.input));
+    memset(mouse->state.scale, 0, sizeof(mouse->state.scale));
+    memset(mouse->state.output, 0, sizeof(mouse->state.output));
 }
 
-int accelerate(struct accel_state *state, int *x, int *y)
+// Acceleration happens here
+void accelerate_idle(struct accel_mouse *mouse)
 {
+    struct table_choice choice;
+
+    rcu_read_lock();
+    choice = table_resolve(profiles_current(), mouse->vendor, mouse->product);
+    if (!choice.disabled)
+        accel_idle_report(choice.profile ? choice.profile : &g_profile, &mouse->state, ktime_get());
+    rcu_read_unlock();
+}
+
+int accelerate(struct accel_mouse *mouse, int *x, int *y)
+{
+    const struct profile_table *table;
+    const struct accel_profile *profile;
+    const struct accel_device *device;
+    struct table_choice choice;
     FP_LONG delta_x, delta_y, ms;
     ktime_t now;
     int status = 0;
@@ -345,18 +367,29 @@ int accelerate(struct accel_state *state, int *x, int *y)
     delta_y = FP64_FromInt(*y);
 
     now = ktime_get();
-    ms = accel_elapsed(state, now);
 
     g_profile.x.use_smoothing = g_UseSmoothing;
 
     // Update acceleration parameters periodically
     update_params(now);
 
-    ms = accel_time(&g_device, ms);
+    rcu_read_lock();
+    table = profiles_current();
+    choice = table_resolve(table, mouse->vendor, mouse->product);
+    if (choice.disabled) {
+        rcu_read_unlock();
+        return status;
+    }
+    follow_table(mouse, table);
+    profile = choice.profile ? choice.profile : &g_profile;
+    device = choice.device ? choice.device : &g_device;
 
-    accel_packet(&g_profile, &g_device, state, &delta_x, &delta_y, ms);
+    ms = accel_time(device, accel_elapsed(&mouse->state, now));
 
-    accel_round(&g_profile, state, delta_x, delta_y, x, y);
+    accel_packet(profile, device, &mouse->state, &delta_x, &delta_y, ms);
+
+    accel_round(profile, &mouse->state, delta_x, delta_y, x, y);
+    rcu_read_unlock();
 
     // Used to very roughly estimate the performance, and 0.1% lows
     // ktime_t iter_time = ktime_sub(ktime_get(), now);

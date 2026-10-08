@@ -1046,10 +1046,6 @@ bool accel_angle_snap_valid(FP_LONG threshold) {
     return threshold >= 0 && threshold < FP64_PI;
 }
 
-bool accel_times_valid(FP_LONG min_time, FP_LONG max_time, bool fixed_time) {
-    return max_time > 0 && min_time >= 0 && (!fixed_time || min_time > 0);
-}
-
 bool accel_weights_valid(FP_LONG lp_norm, FP_LONG domain_x, FP_LONG domain_y, FP_LONG range_x, FP_LONG range_y) {
     return lp_norm >= FP64_1 && domain_x > 0 && domain_y > 0 && range_x >= 0 && range_y >= 0;
 }

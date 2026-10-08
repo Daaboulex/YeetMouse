@@ -5,6 +5,11 @@
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
+#ifdef __KERNEL__
+#include <linux/stddef.h>
+#else
+#include <stddef.h>
+#endif
 
 enum AccelMode {
     AccelMode_Current = 0, // Mainly used in GUI, denotes lack of a curve on the driver side
@@ -71,6 +76,28 @@ static inline bool yeetmouse_name_valid(const char *name) {
             return false;
     }
     return false;
+}
+
+static inline const char *yeetmouse_times_problem(__s64 min_time, __s64 max_time, bool fixed_time) {
+    if (max_time <= 0)
+        return "maxTime is not above 0";
+    if (min_time < 0)
+        return "minTime is below 0";
+    if (fixed_time && min_time <= 0)
+        return "fixedTime needs minTime above 0";
+    return NULL;
+}
+
+static inline const char *yeetmouse_device_problem(const struct yeetmouse_device_args *device) {
+    if (device->disabled > 1 || device->fixed_time > 1 || device->reserved[0] != 0 || device->reserved[1] != 0)
+        return "a flag is out of range";
+    if (device->disabled)
+        return device->profile[0] != '\0' ? "a disabled mouse names a profile" : NULL;
+    if (!yeetmouse_name_valid(device->profile))
+        return "the profile name is not valid";
+    if (device->pre_scale <= 0)
+        return "preScale is not above 0";
+    return yeetmouse_times_problem(device->min_time, device->max_time, device->fixed_time);
 }
 
 #define YEETMOUSE_IOCTL_LOAD_PROFILE _IOW('Y', 0x40, struct yeetmouse_profile_args)

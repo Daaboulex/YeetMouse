@@ -3,8 +3,14 @@
 
 #include "accel_modes.h"
 
-int accelerate(struct accel_state *state, int *x, int *y);
+struct accel_mouse {
+    struct accel_state state;
+    __u16 vendor, product;
+    __u64 generation;
+};
 
-void accelerate_idle(struct accel_state *state);
+int accelerate(struct accel_mouse *mouse, int *x, int *y);
+
+void accelerate_idle(struct accel_mouse *mouse);
 
 #endif /* _ACCEL_H */

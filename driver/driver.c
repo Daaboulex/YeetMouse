@@ -1,6 +1,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include "accel.h"
+#include "profiles.h"
 #include "util.h"
 #include <linux/hid.h>
 #include <linux/init.h>
@@ -21,7 +22,7 @@
 struct mouse_state {
     int x;
     int y;
-    struct accel_state accel;
+    struct accel_mouse accel;
 };
 
 #if __cleanup_events
@@ -76,6 +77,8 @@ static void driver_events(struct input_handle *handle, const struct input_value 
     /* Reset state */
     state->x = NONE_EVENT_VALUE;
     state->y = NONE_EVENT_VALUE;
+    state->accel.vendor = dev->id.vendor;
+    state->accel.product = dev->id.product;
     /* Deal with leftover EV_REL events we should take into account for the next run */
     for (v = v_syn; v != vals + count; v++) {
         if (v->type == EV_REL) {
@@ -273,11 +276,19 @@ struct input_handler driver_handler = {
 };
 
 static int __init yeetmouse_init(void) {
-    return input_register_handler(&driver_handler);
+    int error = profiles_init();
+
+    if (error)
+        return error;
+    error = input_register_handler(&driver_handler);
+    if (error)
+        profiles_exit();
+    return error;
 }
 
 static void __exit yeetmouse_exit(void) {
     input_unregister_handler(&driver_handler);
+    profiles_exit();
 }
 
 MODULE_DESCRIPTION("USB HID input handler applying mouse acceleration (Yeetmouse)");
