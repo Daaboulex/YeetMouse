@@ -1106,6 +1106,17 @@ bool Tests::TestFixedPointArithmetic() {
         supervisor.Validate(FP64_Tanh(FP64_FromInt(1 << 30)) == One && FP64_Tanh(-FP64_FromInt(1 << 30)) == -One);
         supervisor.Validate(std::fabs(FP64_ToFloat(FP64_Log2(FP64_FromDouble(0.25))) + 2) < 1e-6);
 
+        for (double v = -31.9; v < 30.9; v += 0.001237) {
+            FP_LONG exponent = FP64_FromDouble(v);
+            double truth = std::exp2(static_cast<double>(exponent) / 4294967296.0) * 4294967296.0;
+            supervisor.Validate(std::fabs(static_cast<double>(FP64_Exp2Precise(exponent)) - truth) <= 0.5 + truth * 2e-12);
+        }
+        for (double v = 1e-6; v < 2e9; v *= 1.0137) {
+            FP_LONG value = FP64_FromDouble(v);
+            double truth = std::log2(static_cast<double>(value) / 4294967296.0);
+            supervisor.Validate(std::fabs(static_cast<double>(FP64_Log2Precise(value)) / 4294967296.0 - truth) < 1.5e-9);
+        }
+
         {
             static FP_LONG lut_x[MAX_LUT_ARRAY_SIZE], lut_y[MAX_LUT_ARRAY_SIZE];
             std::vector<double> xs, ys;

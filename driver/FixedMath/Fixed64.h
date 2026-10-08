@@ -1029,6 +1029,48 @@ static inline FP_LONG FP64_Pow(FP_LONG x, FP_LONG exponent) {
 }
 
 #ifdef __SIZEOF_INT128__
+static inline FP_LONG FP64_Exp2Precise(FP_LONG x) {
+    static const FP_ULONG ln2 = 0xb17217f7d1cf79acull;
+    static const FP_ULONG inverse_factorials[13] = {
+        0x4000000000000000ull, 0x4000000000000000ull, 0x2000000000000000ull, 0xaaaaaaaaaaaaaabull,
+        0x2aaaaaaaaaaaaabull, 0x88888888888889ull, 0x16c16c16c16c17ull, 0x3403403403403ull,
+        0x680680680680ull, 0xb8ef1d2ab64ull, 0x127e4fb778aull, 0x1ae64567f5ull, 0x23ddb1dffull,
+    };
+    FP_ULONG fraction, y, sum;
+    int whole, shift, k;
+
+    if (x >= 31 * One)
+        return MaxValue;
+    if (x <= -32 * One)
+        return 0;
+    whole = (int) (x >> FP64_Shift);
+    fraction = (FP_ULONG) (x & FractionMask) << FP64_Shift;
+    y = (FP_ULONG) (((unsigned __int128) fraction * ln2) >> 64);
+    sum = inverse_factorials[12];
+    for (k = 11; k >= 0; k--)
+        sum = inverse_factorials[k] + (FP_ULONG) (((unsigned __int128) sum * y) >> 64);
+    shift = 30 - whole;
+    if (shift == 0)
+        return (FP_LONG) sum;
+    return (FP_LONG) ((sum + (1ull << (shift - 1))) >> shift);
+}
+
+static inline FP_LONG FP64_Log2Precise(FP_LONG x) {
+    FP_LONG estimate, normalized;
+    int whole;
+
+    if (x <= 0)
+        return MinValue;
+    estimate = FP64_Log2(x);
+    for (int step = 0; step < 2; step++) {
+        whole = (int) (estimate >> FP64_Shift);
+        normalized = whole >= 0 ? x >> whole : x * ((FP_LONG) 1 << -whole);
+        normalized = FP64_Mul(normalized, FP64_Exp2Precise((FP_LONG) whole * One - estimate));
+        estimate += FP64_Mul(normalized - One, RCP_LN2);
+    }
+    return estimate;
+}
+
 static inline bool FP64_PowOverflows(FP_LONG x, FP_LONG exponent) {
     FP_LONG log_x, power;
     if (x <= 0)
