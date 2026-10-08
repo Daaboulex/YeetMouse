@@ -2,11 +2,12 @@
   lib,
   makeDesktopItem,
   pkgs,
+  stdenv,
   kernel,
   shortRev ? "dev",
 }:
 
-kernel.stdenv.mkDerivation rec {
+stdenv.mkDerivation rec {
   pname = "yeetmouse";
   version = shortRev;
   src = lib.fileset.toSource {
@@ -25,7 +26,7 @@ kernel.stdenv.mkDerivation rec {
       copyDesktopItems
     ];
   buildInputs = [
-    kernel.stdenv.cc.cc.lib
+    stdenv.cc.cc.lib
     pkgs.glfw3
   ];
 
