@@ -434,6 +434,20 @@ namespace RawAccel {
             if (!ClassicConstantsFit(out))
                 throw Refused("a classic cap whose constants leave YeetMouse's fixed-point range");
         }
+
+        void MapNatural(const AccelArgs &args, Parameters &out) {
+            if (!(args.decayRate > 0) || !(args.limit > 0) || !(args.inputOffset >= 0))
+                throw Refused("natural needs a positive decay rate and limit and no negative offset");
+            if (args.limit == 1) {
+                out.accelMode = AccelMode_Current;
+                return;
+            }
+            out.accelMode = AccelMode_Natural;
+            out.accel = static_cast<float>(args.decayRate * SpeedScale);
+            out.exponent = static_cast<float>(args.limit);
+            out.midpoint = static_cast<float>(args.inputOffset / SpeedScale);
+            out.useSmoothing = args.gain;
+        }
     }
 
     Parameters ToParameters(const Profile &profile, const DeviceConfig &device) {
@@ -485,6 +499,9 @@ namespace RawAccel {
                 break;
             case Mode::Classic:
                 MapClassic(profile.x, out);
+                break;
+            case Mode::Natural:
+                MapNatural(profile.x, out);
                 break;
             default:
                 Require(false, std::string("the ") + ModeNames[static_cast<int>(profile.x.mode)] + " mode");

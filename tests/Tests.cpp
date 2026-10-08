@@ -1526,6 +1526,40 @@ bool Tests::TestRawAccelParity() {
         classic_owner.x.acceleration = 0.02;
         classic_owner.x.cap = {0, 0.7};
         supervisor.Validate(!refused(classic_owner, device) && counts_match(classic_owner, device, 5));
+
+        supervisor.NextTest();
+        int natural_converted = 0;
+        for (bool gain : {false, true}) {
+            for (double offset : {0.0, 4.0}) {
+                for (double limit : {0.5, 1.5, 3.0}) {
+                    for (double decay : {0.05, 0.3}) {
+                        RawAccel::Profile profile = owner;
+                        profile.x.mode = RawAccel::Mode::Natural;
+                        profile.x.gain = gain;
+                        profile.x.inputOffset = offset;
+                        profile.x.limit = limit;
+                        profile.x.decayRate = decay;
+                        supervisor.Validate(!refused(profile, device));
+                        natural_converted++;
+                        supervisor.Validate(vectors_match(profile, device));
+                    }
+                }
+            }
+        }
+        supervisor.Validate(natural_converted == 24);
+        RawAccel::Profile flat_natural = owner;
+        flat_natural.x.mode = RawAccel::Mode::Natural;
+        flat_natural.x.limit = 1;
+        supervisor.Validate(!refused(flat_natural, device) && vectors_match(flat_natural, device));
+        flat_natural.x.decayRate = 0;
+        supervisor.Validate(refused(flat_natural, device));
+        RawAccel::Profile natural_owner = owner;
+        natural_owner.x.mode = RawAccel::Mode::Natural;
+        natural_owner.x.gain = true;
+        natural_owner.x.inputOffset = 3;
+        natural_owner.x.limit = 2;
+        natural_owner.x.decayRate = 0.1;
+        supervisor.Validate(counts_match(natural_owner, device, 6));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
         supervisor.result = false;
