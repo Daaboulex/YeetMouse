@@ -1,8 +1,10 @@
 #include "RawAccel.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <iterator>
+#include <limits>
 #include <nlohmann/json.hpp>
 
 #include "DriverHelper.h"
@@ -636,5 +638,166 @@ namespace RawAccel {
             out.yCurve = CurveOf(vertical);
         }
         return out;
+    }
+}
+
+namespace RawAccel {
+    namespace {
+        struct Export {
+            std::vector<std::string> problems;
+
+            void Need(bool supported, const std::string &what) {
+                if (!supported)
+                    problems.push_back(what);
+            }
+
+            double Decimal(float value, const std::string &what) {
+                char text[32];
+                double decimal = 0;
+                char *end = std::to_chars(text, text + sizeof text, value).ptr;
+                Need(std::isfinite(value) && std::from_chars(text, end, decimal).ec == std::errc(),
+                     what + " that is not a finite number");
+                return decimal;
+            }
+
+            int Whole(double exact) {
+                return exact >= 1 && exact <= std::numeric_limits<int>::max() ? static_cast<int>(std::lround(exact)) : 0;
+            }
+
+            AccelArgs Curve(const CurveParameters &curve, const std::string &where) {
+                AccelArgs args;
+                args.gain = curve.useSmoothing;
+                switch (curve.accelMode) {
+                    case AccelMode_Current:
+                        break;
+                    case AccelMode_Linear:
+                    case AccelMode_Classic: {
+                        bool linear = curve.accelMode == AccelMode_Linear;
+                        args.mode = Mode::Classic;
+                        args.acceleration = Decimal(curve.accel, where + " acceleration");
+                        args.exponentClassic = linear ? 2 : Decimal(curve.exponent, where + " exponent");
+                        args.inputOffset = linear ? 0 : Decimal(curve.inputOffset, where + " input offset");
+                        double cap = curve.useSmoothing ? Decimal(curve.midpoint, where + " smooth cap")
+                                                        : linear ? 0 : Decimal(curve.legacyCap, where + " legacy cap");
+                        Need(!curve.useSmoothing || cap > 0, where + " smooth cap at or below 0, which Raw Accel reads as no cap");
+                        args.cap = {0, cap};
+                        break;
+                    }
+                    case AccelMode_Power: {
+                        args.mode = Mode::Power;
+                        args.scale = Decimal(curve.accel, where + " scale");
+                        args.exponentPower = Decimal(curve.exponent, where + " exponent");
+                        args.outputOffset = Decimal(curve.midpoint, where + " output offset");
+                        args.gain = curve.useSmoothing || curve.legacyCap == 0;
+                        double cap = curve.useSmoothing ? Decimal(curve.motivity, where + " smooth cap")
+                                                        : Decimal(curve.legacyCap, where + " legacy cap");
+                        Need(!curve.useSmoothing || cap > 0, where + " smooth cap at or below 0, which Raw Accel reads as no cap");
+                        args.cap = {0, cap};
+                        break;
+                    }
+                    case AccelMode_Natural:
+                        args.mode = Mode::Natural;
+                        args.decayRate = Decimal(curve.accel, where + " decay rate");
+                        args.limit = Decimal(curve.exponent, where + " limit");
+                        args.inputOffset = Decimal(curve.midpoint, where + " input offset");
+                        break;
+                    case AccelMode_Jump:
+                        args.mode = Mode::Jump;
+                        args.cap = {Decimal(curve.midpoint, where + " step speed"), Decimal(curve.accel, where + " step output")};
+                        args.smooth = Decimal(curve.exponent, where + " smoothness");
+                        break;
+                    case AccelMode_Synchronous:
+                        args.mode = Mode::Synchronous;
+                        args.syncSpeed = Decimal(curve.accel, where + " synchronous speed");
+                        args.gamma = Decimal(curve.exponent, where + " gamma");
+                        args.motivity = Decimal(curve.motivity, where + " motivity");
+                        args.smooth = Decimal(curve.midpoint, where + " smoothness");
+                        break;
+                    case AccelMode_Lut:
+                    case AccelMode_CustomCurve:
+                        args.mode = Mode::Lut;
+                        args.gain = curve.lutVelocity;
+                        Need(curve.lutSize >= 0 && curve.lutSize <= MAX_LUT_ARRAY_SIZE, where + " lookup table size out of range");
+                        for (int i = 0; i < std::clamp(curve.lutSize, 0, MAX_LUT_ARRAY_SIZE); i++) {
+                            args.data.push_back(static_cast<float>(curve.lutDataX[i]));
+                            args.data.push_back(static_cast<float>(curve.lutDataY[i]));
+                        }
+                        break;
+                    case AccelMode_Motivity:
+                        Need(false, where + " motivity mode, which is YeetMouse's own");
+                        break;
+                    default:
+                        Need(false, where + " acceleration mode that YeetMouse does not know");
+                }
+                return args;
+            }
+        };
+    }
+
+    Settings FromParameters(const Parameters &params) {
+        Export out;
+        Profile profile;
+        DeviceConfig device;
+
+        out.Need(params.outCap == 0, "the output cap (outCap)");
+        out.Need(params.inCap == 0, "the input cap (inCap)");
+        out.Need(params.offset == 0, "the offset (offset)");
+        out.Need(params.asThreshold == 0, "YeetMouse's angle snapping (as_threshold); Raw Accel's is axisSnap");
+        out.Need(params.truncateCarry, "rounding the carry to the nearest count; Raw Accel truncates it (truncateCarry)");
+        out.Need(params.clockOnAnyReport, "a clock that skips reports without motion; Raw Accel restarts it on every "
+                                          "report (clockOnAnyReport)");
+
+        double preScale = out.Decimal(params.preScale, "a pre-scale (preScale)");
+        device.dpi = out.Whole(preScale > 0 ? RawAccelDpi / preScale : 0);
+        out.Need(device.dpi > 0 && std::fabs(RawAccelDpi / device.dpi - preScale) <= 1e-6 * preScale,
+                 "a pre-scale (preScale) that is not 1000 divided by a whole DPI");
+
+        double minTime = out.Decimal(params.minTime, "a minimum time (minTime)");
+        double maxTime = out.Decimal(params.maxTime, "a maximum time (maxTime)");
+        out.Need(minTime > 0, "a minimum time (minTime) of 0 or less; Raw Accel needs a positive one and defaults to 0.0625");
+        if (params.fixedTime && minTime > 0) {
+            device.pollingRate = out.Whole(1000 / minTime);
+            device.pollTimeLock = true;
+            out.Need(device.pollingRate > 0 && std::fabs(1000.0 / device.pollingRate - minTime) <= 1e-6 * minTime,
+                     "a fixed time (minTime with fixedTime) that is not 1000 ms divided by a whole polling rate");
+        } else if (!params.fixedTime) {
+            device.minimumTime = minTime;
+            device.maximumTime = maxTime;
+        }
+
+        double sens = out.Decimal(params.sens, "a sensitivity (sens)");
+        out.Need(sens > 0, "a sensitivity (sens) that is not positive");
+        profile.outputDpi = sens * RawAccelDpi;
+        profile.ratioYX = params.useAnisotropy ? out.Decimal(params.ratioYX, "a Y/X ratio (ratioYX)") : 1;
+        profile.ratioLR = out.Decimal(params.ratioLR, "an L/R ratio (ratioLR)");
+        profile.ratioUD = out.Decimal(params.ratioUD, "a U/D ratio (ratioUD)");
+        profile.rotation = out.Decimal(params.rotation, "a rotation (rotation)");
+        profile.snap = out.Decimal(params.axisSnap, "an axis snap (axisSnap)");
+        profile.speedMax = out.Decimal(params.speedClamp, "a speed cap (speedClamp)");
+        profile.domain = {out.Decimal(params.domainX, "a domain weight (domainX)"),
+                          out.Decimal(params.domainY, "a domain weight (domainY)")};
+        profile.range = {out.Decimal(params.rangeX, "a range weight (rangeX)"),
+                         out.Decimal(params.rangeY, "a range weight (rangeY)")};
+        profile.speed.whole = !params.byComponent;
+        profile.speed.lpNorm = out.Decimal(params.lpNorm, "an lp norm (lpNorm)");
+        profile.speed.inputHalfLife = out.Decimal(params.inputSmoothHalfLife, "a half-life (inputSmoothHalfLife)");
+        profile.speed.scaleHalfLife = out.Decimal(params.scaleSmoothHalfLife, "a half-life (scaleSmoothHalfLife)");
+        profile.speed.outputHalfLife = out.Decimal(params.outputSmoothHalfLife, "a half-life (outputSmoothHalfLife)");
+        profile.x = out.Curve(CurveOf(params), params.byComponent ? "the horizontal curve's" : "the curve's");
+        if (params.byComponent)
+            profile.y = out.Curve(params.yCurve, "the vertical curve's");
+
+        if (!out.problems.empty()) {
+            std::string list;
+            for (const std::string &problem : out.problems)
+                list += (list.empty() ? "" : "; ") + problem;
+            throw Refused("no Raw Accel equivalent for " + list);
+        }
+
+        ToParameters(profile, device);
+        Settings settings;
+        settings.defaultDeviceConfig = device;
+        settings.profiles.push_back(profile);
+        return settings;
     }
 }

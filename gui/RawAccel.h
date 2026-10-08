@@ -102,6 +102,8 @@ namespace RawAccel {
     inline constexpr double RawAccelDpi = 1000;
 
     Parameters ToParameters(const Profile &profile, const DeviceConfig &device);
+
+    Settings FromParameters(const Parameters &params);
 }
 
 #endif //GUI_RAWACCEL_H

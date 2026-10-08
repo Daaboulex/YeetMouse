@@ -37,6 +37,11 @@ int main() {
         bad_sum++;
     }
 
+    if (!Tests::TestRawAccelExport()) {
+        fprintf(stderr, "Test failed for Raw Accel export\n");
+        bad_sum++;
+    }
+
     if (bad_sum == 0) {
         printf(GREEN"All tests passed!\n\n" RESET);
     } else {

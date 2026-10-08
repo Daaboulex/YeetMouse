@@ -1432,71 +1432,81 @@ bool Tests::TestRawAccelSettings() {
     return supervisor.GetResult();
 }
 
+static bool Close(FP_LONG actual, double expected, double tolerance) {
+    double value = FP64_ToFloat(actual);
+    double scale = std::max(std::fabs(expected), 1.0);
+    return std::fabs(value - expected) / scale < tolerance;
+}
+
+static bool VectorsMatch(const Parameters &params, const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device,
+                         double tolerance) {
+    TestManager::ApplyParameters(params);
+    RawAccelOracle oracle(profile, device);
+    accel_state smoothing_state{};
+    bool good = true;
+    for (int dx = -300; dx <= 300; dx += 7) {
+        for (int dy = -300; dy <= 300; dy += 11) {
+            if (dx == 0 && dy == 0)
+                continue;
+            RawAccelOracle::Output expected = oracle.Packet(dx, dy, 1.0);
+            FP_LONG x = FP64_FromInt(dx);
+            FP_LONG y = FP64_FromInt(dy);
+            accel_packet(&TestManager::GetProfile(), &smoothing_state, &x, &y, FP64_1);
+            good &= Close(x, expected.x, tolerance) && Close(y, expected.y, tolerance);
+        }
+    }
+    return good;
+}
+
+static bool CountsMatch(const Parameters &params, const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device,
+                        unsigned seed) {
+    const double intervals[] = {0.05, 0.3, 0.9, 1.0, 1.4, 2.0, 8.0, 30.0, 150.0};
+    bool good = true;
+
+    for (bool synchronised : {false, true}) {
+        TestManager::ApplyParameters(params);
+        RawAccelOracle oracle(profile, device);
+        std::mt19937 rng(seed);
+        long sum_x = 0, sum_y = 0, raw_x = 0, raw_y = 0;
+        for (int i = 0; i < 20000; i++) {
+            int dx = static_cast<int>(rng() % 161) - 80;
+            int dy = static_cast<int>(rng() % 161) - 80;
+            if (dx == 0 && dy == 0)
+                continue;
+            double ms = intervals[rng() % (sizeof(intervals) / sizeof(intervals[0]))];
+            double carry_x = 0, carry_y = 0;
+            oracle.Carry(carry_x, carry_y);
+            if (synchronised)
+                TestManager::SetCarry(carry_x, carry_y);
+            RawAccelOracle::Output expected = oracle.Packet(dx, dy, ms);
+            int out_x = 0, out_y = 0;
+            TestManager::Step(dx, dy, ms, out_x, out_y);
+            if (synchronised) {
+                auto near_integer = [](double value) { return std::fabs(value - std::round(value)) < 1e-6 * std::max(std::fabs(value), 1.0); };
+                good &= out_x == expected.countsX || near_integer(expected.x + carry_x);
+                good &= out_y == expected.countsY || near_integer(expected.y + carry_y);
+            } else {
+                sum_x += out_x;
+                sum_y += out_y;
+                raw_x += expected.countsX;
+                raw_y += expected.countsY;
+                good &= std::labs(sum_x - raw_x) <= 1 && std::labs(sum_y - raw_y) <= 1;
+            }
+        }
+    }
+    return good;
+}
+
 bool Tests::TestRawAccelParity() {
     TestSupervisor supervisor{"Raw Accel Parity"};
 
-    auto close = [](FP_LONG actual, double expected, double tolerance) {
-        double value = FP64_ToFloat(actual);
-        double scale = std::max(std::fabs(expected), 1.0);
-        return std::fabs(value - expected) / scale < tolerance;
+    auto vectors_match = [](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device,
+                            double tolerance = 1e-6) {
+        return VectorsMatch(RawAccel::ToParameters(profile, device), profile, device, tolerance);
     };
 
-    auto vectors_match = [&](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device,
-                             double tolerance = 1e-6) {
-        TestManager::ApplyParameters(RawAccel::ToParameters(profile, device));
-        RawAccelOracle oracle(profile, device);
-        accel_state smoothing_state{};
-        bool good = true;
-        for (int dx = -300; dx <= 300; dx += 7) {
-            for (int dy = -300; dy <= 300; dy += 11) {
-                if (dx == 0 && dy == 0)
-                    continue;
-                RawAccelOracle::Output expected = oracle.Packet(dx, dy, 1.0);
-                FP_LONG x = FP64_FromInt(dx);
-                FP_LONG y = FP64_FromInt(dy);
-                accel_packet(&TestManager::GetProfile(), &smoothing_state, &x, &y, FP64_1);
-                good &= close(x, expected.x, tolerance) && close(y, expected.y, tolerance);
-            }
-        }
-        return good;
-    };
-
-    auto counts_match = [&](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device, unsigned seed) {
-        const double intervals[] = {0.05, 0.3, 0.9, 1.0, 1.4, 2.0, 8.0, 30.0, 150.0};
-        bool good = true;
-
-        for (bool synchronised : {false, true}) {
-            TestManager::ApplyParameters(RawAccel::ToParameters(profile, device));
-            RawAccelOracle oracle(profile, device);
-            std::mt19937 rng(seed);
-            long sum_x = 0, sum_y = 0, raw_x = 0, raw_y = 0;
-            for (int i = 0; i < 20000; i++) {
-                int dx = static_cast<int>(rng() % 161) - 80;
-                int dy = static_cast<int>(rng() % 161) - 80;
-                if (dx == 0 && dy == 0)
-                    continue;
-                double ms = intervals[rng() % (sizeof(intervals) / sizeof(intervals[0]))];
-                double carry_x = 0, carry_y = 0;
-                oracle.Carry(carry_x, carry_y);
-                if (synchronised)
-                    TestManager::SetCarry(carry_x, carry_y);
-                RawAccelOracle::Output expected = oracle.Packet(dx, dy, ms);
-                int out_x = 0, out_y = 0;
-                TestManager::Step(dx, dy, ms, out_x, out_y);
-                if (synchronised) {
-                    auto near_integer = [](double value) { return std::fabs(value - std::round(value)) < 1e-6 * std::max(std::fabs(value), 1.0); };
-                    good &= out_x == expected.countsX || near_integer(expected.x + carry_x);
-                    good &= out_y == expected.countsY || near_integer(expected.y + carry_y);
-                } else {
-                    sum_x += out_x;
-                    sum_y += out_y;
-                    raw_x += expected.countsX;
-                    raw_y += expected.countsY;
-                    good &= std::labs(sum_x - raw_x) <= 1 && std::labs(sum_y - raw_y) <= 1;
-                }
-            }
-        }
-        return good;
+    auto counts_match = [](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device, unsigned seed) {
+        return CountsMatch(RawAccel::ToParameters(profile, device), profile, device, seed);
     };
 
     auto refused = [](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &device) {
@@ -1906,8 +1916,278 @@ bool Tests::TestRawAccelParity() {
             bad_table.x.data.push_back(1);
         }
         supervisor.Validate(refused(bad_table, device));
+
+        supervisor.NextTest();
+        auto round_trips = [](const RawAccel::Profile &profile, const RawAccel::DeviceConfig &config, unsigned seed) {
+            Parameters params = RawAccel::ToParameters(profile, config);
+            RawAccel::Settings again = RawAccel::FromParameters(params);
+            return VectorsMatch(params, again.profiles.at(0), again.defaultDeviceConfig, 1e-6) &&
+                   CountsMatch(params, again.profiles.at(0), again.defaultDeviceConfig, seed);
+        };
+        for (const RawAccel::DeviceConfig &config : {device, locked, automatic, short_max})
+            supervisor.Validate(round_trips(owner, config, 17));
+        snapped_owner.snap = 20;
+        for (const RawAccel::Profile &profile : {classic_owner, natural_owner, jump_owner, synchronous_owner, table_owner,
+                                                 velocity_owner, component_owner, weighted_owner, snapped_owner})
+            supervisor.Validate(round_trips(profile, device, 18));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel parity\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
+bool Tests::TestRawAccelExport() {
+    TestSupervisor supervisor{"Raw Accel Export"};
+
+    auto exported_matches = [](const Parameters &params, unsigned seed = 0) {
+        RawAccel::Settings settings = RawAccel::FromParameters(params);
+        const RawAccel::Profile &profile = settings.profiles.at(0);
+        const RawAccel::DeviceConfig &device = settings.defaultDeviceConfig;
+        return VectorsMatch(params, profile, device, 1e-6) && (seed == 0 || CountsMatch(params, profile, device, seed));
+    };
+
+    auto refusal = [](const Parameters &params) {
+        try {
+            RawAccel::FromParameters(params);
+        } catch (const RawAccel::Refused &refused) {
+            return std::string(refused.what());
+        }
+        return std::string();
+    };
+
+    auto refused = [&](const Parameters &params) { return !refusal(params).empty(); };
+
+    Parameters ready;
+    ready.minTime = static_cast<float>(RawAccel::DefaultMinimumTime);
+    ready.truncateCarry = true;
+    ready.clockOnAnyReport = true;
+
+    try {
+        supervisor.NextTest();
+        std::string upstream = refusal(Parameters{});
+        supervisor.Validate(upstream.find("minTime") != std::string::npos &&
+                            upstream.find("truncateCarry") != std::string::npos &&
+                            upstream.find("clockOnAnyReport") != std::string::npos);
+        supervisor.Validate(!refused(ready) && exported_matches(ready, 21));
+
+        supervisor.NextTest();
+        Parameters linear = ready;
+        linear.accelMode = AccelMode_Linear;
+        linear.accel = 0.05f;
+        for (bool smoothing : {false, true}) {
+            for (float cap : {1.8f, 0.6f}) {
+                linear.useSmoothing = smoothing;
+                linear.midpoint = cap;
+                supervisor.Validate(!refused(linear) && exported_matches(linear));
+            }
+        }
+        linear.midpoint = 0;
+        supervisor.Validate(refused(linear));
+        Parameters classic = ready;
+        classic.accelMode = AccelMode_Classic;
+        classic.accel = 0.01f;
+        int classic_exported = 0;
+        for (bool smoothing : {false, true}) {
+            for (float exponent : {1.5f, 2.0f, 3.0f}) {
+                for (float offset : {0.0f, 3.0f}) {
+                    for (float cap : {0.0f, 1.8f, 0.6f}) {
+                        classic.useSmoothing = smoothing;
+                        classic.exponent = exponent;
+                        classic.inputOffset = offset;
+                        classic.midpoint = cap;
+                        classic.legacyCap = cap;
+                        if (smoothing && cap == 0) {
+                            supervisor.Validate(refused(classic));
+                            continue;
+                        }
+                        supervisor.Validate(!refused(classic) && exported_matches(classic));
+                        classic_exported++;
+                    }
+                }
+            }
+        }
+        supervisor.Validate(classic_exported == 30);
+
+        supervisor.NextTest();
+        Parameters power = ready;
+        power.accelMode = AccelMode_Power;
+        power.motivity = 3;
+        int power_exported = 0;
+        for (float scale : {0.5f, 1.0f, 2.0f}) {
+            for (float exponent : {0.15f, 0.4f}) {
+                for (float offset : {0.0f, 0.5f}) {
+                    for (int cap : {0, 1, 2}) {
+                        power.accel = scale;
+                        power.exponent = exponent;
+                        power.midpoint = offset;
+                        power.useSmoothing = cap == 1;
+                        power.legacyCap = cap == 2 ? 2.5f : 0;
+                        if (refused(power))
+                            continue;
+                        power_exported++;
+                        supervisor.Validate(exported_matches(power));
+                    }
+                }
+            }
+        }
+        supervisor.Validate(power_exported == 36);
+        power.useSmoothing = true;
+        power.midpoint = 0;
+        power.motivity = 0;
+        supervisor.Validate(refused(power));
+
+        supervisor.NextTest();
+        Parameters natural = ready;
+        natural.accelMode = AccelMode_Natural;
+        for (bool smoothing : {false, true}) {
+            for (float decay : {0.05f, 0.3f}) {
+                for (float limit : {0.5f, 1.0f, 1.5f, 3.0f}) {
+                    for (float offset : {0.0f, 4.0f}) {
+                        natural.useSmoothing = smoothing;
+                        natural.accel = decay;
+                        natural.exponent = limit;
+                        natural.midpoint = offset;
+                        supervisor.Validate(!refused(natural) && exported_matches(natural));
+                    }
+                }
+            }
+        }
+        Parameters jump = ready;
+        jump.accelMode = AccelMode_Jump;
+        for (bool smoothing : {false, true}) {
+            for (float smooth : {0.0f, 0.25f, 0.5f, 1.0f}) {
+                for (float step : {4.0f, 20.0f}) {
+                    for (float output : {0.5f, 3.0f}) {
+                        jump.useSmoothing = smoothing;
+                        jump.exponent = smooth;
+                        jump.midpoint = step;
+                        jump.accel = output;
+                        supervisor.Validate(!refused(jump) && exported_matches(jump));
+                    }
+                }
+            }
+        }
+        jump.exponent = 0.3f;
+        jump.midpoint = 1 / 0.3f;
+        supervisor.Validate(refused(jump));
+        Parameters synchronous = ready;
+        synchronous.accelMode = AccelMode_Synchronous;
+        synchronous.motivity = 1.5f;
+        for (bool smoothing : {false, true}) {
+            for (float smooth : {0.0f, 0.5f, 1.0f}) {
+                for (float speed : {2.0f, 30.0f}) {
+                    for (float gamma : {0.5f, 3.0f}) {
+                        synchronous.useSmoothing = smoothing;
+                        synchronous.midpoint = smooth;
+                        synchronous.accel = speed;
+                        synchronous.exponent = gamma;
+                        supervisor.Validate(!refused(synchronous) && exported_matches(synchronous));
+                    }
+                }
+            }
+        }
+        synchronous.motivity = 1;
+        supervisor.Validate(refused(synchronous));
+
+        supervisor.NextTest();
+        Parameters table = ready;
+        table.accelMode = AccelMode_Lut;
+        const double speeds[] = {2, 10, 30, 80}, scales[] = {1, 1.4, 2.2, 2.6};
+        table.lutSize = 4;
+        for (bool velocity : {false, true}) {
+            for (int i = 0; i < table.lutSize; i++) {
+                table.lutDataX[i] = speeds[i];
+                table.lutDataY[i] = velocity ? speeds[i] * scales[i] : scales[i];
+            }
+            table.lutVelocity = velocity;
+            table.accelMode = AccelMode_Lut;
+            supervisor.Validate(!refused(table) && exported_matches(table, 26));
+            table.accelMode = AccelMode_CustomCurve;
+            supervisor.Validate(!refused(table) && exported_matches(table));
+        }
+        table.lutDataX[2] = table.lutDataX[1];
+        supervisor.Validate(refused(table));
+        Parameters motivity = ready;
+        motivity.accelMode = AccelMode_Motivity;
+        supervisor.Validate(refused(motivity));
+
+        supervisor.NextTest();
+        Parameters global = power;
+        global.accel = 1;
+        global.exponent = 0.4f;
+        global.midpoint = 0;
+        global.motivity = 3;
+        global.sens = 1.5f;
+        global.preScale = 1.25f;
+        global.useAnisotropy = true;
+        global.ratioYX = 2;
+        global.rotation = 10;
+        global.lpNorm = 3;
+        global.domainY = 1.5f;
+        global.rangeY = 0.6f;
+        global.inputSmoothHalfLife = 0.5f;
+        global.scaleSmoothHalfLife = 3;
+        global.outputSmoothHalfLife = 2;
+        global.axisSnap = 20;
+        global.speedClamp = 60;
+        global.ratioLR = 0.8f;
+        global.ratioUD = 1.2f;
+        supervisor.Validate(!refused(global) && exported_matches(global, 22));
+        std::istringstream written(RawAccel::Write(RawAccel::FromParameters(global)));
+        RawAccel::Settings reread = RawAccel::Read(written);
+        supervisor.Validate(VectorsMatch(global, reread.profiles.at(0), reread.defaultDeviceConfig, 1e-6));
+        supervisor.Validate(reread.defaultDeviceConfig.dpi == 800);
+        Parameters fixed = global;
+        fixed.fixedTime = true;
+        fixed.minTime = 1;
+        supervisor.Validate(!refused(fixed) && exported_matches(fixed, 23));
+        supervisor.Validate(RawAccel::FromParameters(fixed).defaultDeviceConfig.pollingRate == 1000);
+        Parameters short_max = global;
+        short_max.maxTime = 30;
+        supervisor.Validate(!refused(short_max) && exported_matches(short_max, 24));
+        Parameters component = global;
+        component.byComponent = true;
+        component.yCurve.accelMode = AccelMode_Classic;
+        component.yCurve.useSmoothing = true;
+        component.yCurve.accel = 0.02f;
+        component.yCurve.exponent = 2.5f;
+        component.yCurve.midpoint = 3;
+        supervisor.Validate(!refused(component) && exported_matches(component, 25));
+        component.yCurve.accelMode = AccelMode_Motivity;
+        supervisor.Validate(refused(component));
+
+        supervisor.NextTest();
+        Parameters odd_dpi = ready;
+        odd_dpi.preScale = 0.8f;
+        supervisor.Validate(!refused(odd_dpi) && RawAccel::FromParameters(odd_dpi).defaultDeviceConfig.dpi == 1250);
+        odd_dpi.preScale = 0.7f;
+        supervisor.Validate(refused(odd_dpi));
+        Parameters odd_rate = ready;
+        odd_rate.fixedTime = true;
+        odd_rate.minTime = 0.3f;
+        supervisor.Validate(refused(odd_rate));
+        Parameters inverted = ready;
+        inverted.maxTime = 0.01f;
+        supervisor.Validate(refused(inverted));
+        for (float Parameters::*field : {&Parameters::outCap, &Parameters::inCap, &Parameters::offset,
+                                          &Parameters::asThreshold}) {
+            Parameters own = ready;
+            own.*field = 2;
+            supervisor.Validate(refused(own));
+        }
+        Parameters still = ready;
+        still.sens = 0;
+        supervisor.Validate(refused(still));
+        Parameters unreadable = ready;
+        unreadable.useAnisotropy = true;
+        unreadable.ratioYX = NAN;
+        supervisor.Validate(refused(unreadable));
+        unreadable.useAnisotropy = false;
+        supervisor.Validate(!refused(unreadable));
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during Raw Accel export\n", ex.what());
         supervisor.result = false;
     }
 

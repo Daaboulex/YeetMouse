@@ -52,6 +52,8 @@ public:
 
     static bool TestRawAccelParity();
 
+    static bool TestRawAccelExport();
+
 private:
     //static CachedFunction functions[AccelMode_Count];
 
