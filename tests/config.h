@@ -6,6 +6,7 @@
 
 #ifdef __cplusplus
 #define printk printf
+#define pr_err printf
 extern "C" {
 #endif
 
@@ -15,6 +16,7 @@ extern "C" {
 #include <limits.h>
 #include <stdbool.h>
 #define printk printf
+#define pr_err printf
 
 #include <driver/FixedMath/Fixed64.h>
 static float FP64_ToFloat(FP_LONG v) {

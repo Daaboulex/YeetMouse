@@ -160,7 +160,7 @@ static void update_curve_constants(struct accel_curve *c) {
     // Synchronous
     if (c->mode == AccelMode_Synchronous) {
         if (c->motivity <= FP64_1) {
-            printk("YeetMouse: Error: Acceleration mode 'Synchronous' is not supported for motivity 1.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Synchronous' is not supported for motivity 1.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -187,7 +187,7 @@ static void update_curve_constants(struct accel_curve *c) {
     // Linear
     if (c->mode == AccelMode_Linear) {
         if (c->acceleration == 0) {
-            printk("YeetMouse: Error: Acceleration mode 'Linear' is not supported for acceleration 0.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Linear' is not supported for acceleration 0.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -214,15 +214,15 @@ static void update_curve_constants(struct accel_curve *c) {
     // Classic
     if (c->mode == AccelMode_Classic) {
         if (c->use_smoothing && (c->exponent == 0 || c->k.exp_sub_1 == 0)) {
-            printk("YeetMouse: Error: Acceleration mode 'Classic' is not supported for exponent 0 or 1 while using the the smooth cap.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Classic' is not supported for exponent 0 or 1 while using the the smooth cap.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         } else if (c->input_offset < 0 || c->legacy_cap < 0) {
-            printk("YeetMouse: Error: Acceleration mode 'Classic' is not supported for a negative input offset or legacy cap.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Classic' is not supported for a negative input offset or legacy cap.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         } else if (!classic_constants(c)) {
-            printk("YeetMouse: Error: Acceleration mode 'Classic' is not supported for a cap whose constants leave the fixed-point range.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Classic' is not supported for a cap whose constants leave the fixed-point range.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -231,12 +231,12 @@ static void update_curve_constants(struct accel_curve *c) {
     // Natural
     if (c->mode == AccelMode_Natural) {
         if (c->k.exp_sub_1 == 0 || c->exponent == FP64_1) {
-            printk("YeetMouse: Error: Acceleration mode 'Natural' is not supported for exponent 1.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Natural' is not supported for exponent 1.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
         if (c->acceleration == 0) {
-            printk("YeetMouse: Error: Acceleration mode 'Natural' is not supported for acceleration 0.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Natural' is not supported for acceleration 0.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -249,7 +249,7 @@ static void update_curve_constants(struct accel_curve *c) {
     // Jump
     if (c->mode == AccelMode_Jump) {
         if (c->midpoint == 0) {
-            printk("YeetMouse: Error: Acceleration mode 'Jump' is not supported for midpoint 0.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Jump' is not supported for midpoint 0.\n");
             c->midpoint = FP64_1;
             c->acceleration = 0;
             c->mode = AccelMode_Current;
@@ -276,13 +276,13 @@ static void update_curve_constants(struct accel_curve *c) {
 
     // Power
     if (c->mode == AccelMode_Power && c->legacy_cap < 0) {
-        printk("YeetMouse: Error: Acceleration mode 'Power' is not supported for a negative legacy cap.\n");
+        pr_err("YeetMouse: Error: Acceleration mode 'Power' is not supported for a negative legacy cap.\n");
         c->acceleration = 0;
         c->mode = AccelMode_Current;
     }
     if (c->mode == AccelMode_Power) {
         if (c->exponent == 0 || c->exponent == -FP64_1 || c->acceleration == 0) {
-            printk("YeetMouse: Error: Acceleration mode 'Power' is not supported for exponent 0 or -1 or acceleration 0.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Power' is not supported for exponent 0 or -1 or acceleration 0.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -291,12 +291,12 @@ static void update_curve_constants(struct accel_curve *c) {
             c->k.power_constant = 0;
         }
         else if ((c->midpoint >= c->motivity) && c->use_smoothing) {
-            printk("YeetMouse: Error: Acceleration mode 'Power' is not supported for output offsets higher than the smooth cap.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Power' is not supported for output offsets higher than the smooth cap.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
         else if (!power_constants(c)) {
-            printk("YeetMouse: Error: Acceleration mode 'Power' is not supported for an output offset or smooth cap whose constants leave the fixed-point range.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'Power' is not supported for an output offset or smooth cap whose constants leave the fixed-point range.\n");
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -308,14 +308,14 @@ static void update_curve_constants(struct accel_curve *c) {
             c->mode = AccelMode_Current;
         else if (c->lut_velocity && c->lut_x[0] <= 0) {
             c->mode = AccelMode_Current;
-            printk("YeetMouse: Error: Acceleration mode 'LUT' is not supported for velocity values whose first speed is not positive.\n");
+            pr_err("YeetMouse: Error: Acceleration mode 'LUT' is not supported for velocity values whose first speed is not positive.\n");
         }
 
         // Check if LUT_x is sorted
         for (int i = 1; i < c->lut_size; i++) {
             if (c->lut_x[i - 1] > c->lut_x[i]) {
                 c->mode = AccelMode_Current;
-                printk("YeetMouse: Error: Acceleration mode 'LUT' is not supported for unsorted LUT_x.\n");
+                pr_err("YeetMouse: Error: Acceleration mode 'LUT' is not supported for unsorted LUT_x.\n");
                 break;
             }
         }

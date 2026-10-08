@@ -266,13 +266,13 @@ INLINE void update_params(ktime_t now)
     g_profile.angle_snap_threshold = g_AngleSnap_Threshold;
 
     if (yeetmouse_times_problem(g_MinTime, g_MaxTime, g_FixedTime)) {
-        printk("YeetMouse: Error: MaxTime must be above 0, MinTime not below 0, and above 0 when FixedTime is set.\n");
+        pr_err("YeetMouse: Error: MaxTime must be above 0, MinTime not below 0, and above 0 when FixedTime is set.\n");
         g_MinTime = 0;
         g_MaxTime = FP64_100;
         g_FixedTime = 0;
     }
     if (!accel_weights_valid(g_LpNorm, g_DomainX, g_DomainY, g_RangeX, g_RangeY)) {
-        printk("YeetMouse: Error: LpNorm must be at least 1, the domain weights above 0 and the range weights not below 0.\n");
+        pr_err("YeetMouse: Error: LpNorm must be at least 1, the domain weights above 0 and the range weights not below 0.\n");
         g_LpNorm = FP64_FromInt(2);
         g_DomainX = FP64_1;
         g_DomainY = FP64_1;
@@ -293,13 +293,13 @@ INLINE void update_params(ktime_t now)
     g_profile.y.lut_size = accel_lut_parse(g_param_LutDataBufY, g_param_LutDataBufY2, PARAM_UPDATE_UL(LutSizeY),
                                            g_profile.y.lut_x, g_profile.y.lut_y);
     if (!accel_half_lives_valid(g_InputSmoothHalfLife, g_ScaleSmoothHalfLife, g_OutputSmoothHalfLife)) {
-        printk("YeetMouse: Error: smoothing half-lives must not be negative.\n");
+        pr_err("YeetMouse: Error: smoothing half-lives must not be negative.\n");
         g_InputSmoothHalfLife = 0;
         g_ScaleSmoothHalfLife = 0;
         g_OutputSmoothHalfLife = 0;
     }
     if (!accel_snap_valid(g_AxisSnap, g_SpeedClamp, g_RatioLR, g_RatioUD)) {
-        printk("YeetMouse: Error: AxisSnap must lie in [0, pi/4], SpeedClamp not below 0 and RatioLR and RatioUD above 0.\n");
+        pr_err("YeetMouse: Error: AxisSnap must lie in [0, pi/4], SpeedClamp not below 0 and RatioLR and RatioUD above 0.\n");
         g_AxisSnap = 0;
         g_SpeedClamp = 0;
         g_RatioLR = FP64_1;
