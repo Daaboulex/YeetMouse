@@ -79,7 +79,7 @@ let
         }
         {
           value = toString params.useSmoothing;
-          param = "useSmoothing";
+          param = "UseSmoothing";
         }
         {
           value = toString params.smoothCap;
@@ -111,14 +111,14 @@ let
             description = "Speed output offset";
           };
           useSmoothing = mkOption {
-            type = bool;
+            type = types.bool;
             default = false;
             description = "Enables the ability to use smooth capping in the Power curve";
             apply = x: if x then "1" else "0";
           };
           smoothCap = mkOption {
             type = floatRange 0.1 10.0;
-            default = 6;
+            default = 6.0;
             apply = toString;
             description = "Only used when useSmoothing is enabled, it a applies a smooth cap to the set value";
           };
@@ -143,7 +143,7 @@ let
         }
         {
           value = toString params.useSmoothing;
-          param = "useSmoothing";
+          param = "UseSmoothing";
         }
         {
           value = toString params.smoothCap;
@@ -200,7 +200,7 @@ let
         }
         {
           value = toString params.useSmoothing;
-          param = "useSmoothing";
+          param = "UseSmoothing";
         }
         {
           value = toString params.smoothCap;
@@ -327,12 +327,12 @@ let
           };
           midpoint = mkOption {
             type = floatRange 0 50.0;
-            default = 0;
+            default = 0.0;
             description = "Natural acceleration mid-point";
           };
           limit = mkOption {
             type = floatRange 0.001 8.0;
-            default = 2;
+            default = 2.0;
             description = "Natural acceleration limit (smoothness of the applied output curve)";
           };
           useSmoothing = mkOption {
@@ -449,7 +449,7 @@ let
             data = mkOption {
               type = types.listOf lutVec;
               default = [ ];
-              apply = ls: map (t: "${toString t [ 0 ]},${toString t [ 1 ]}") ls;
+              apply = ls: map (t: "${toString (elemAt t 0)},${toString (elemAt t 1)}") ls;
               description = "Lookup Table data (a list of `[x, y]` points)";
             };
           };
@@ -464,7 +464,7 @@ let
             param = "LutDataBuf";
           }
           {
-            value = length params.data;
+            value = toString (length params.data);
             param = "LutSize";
           }
         ];
@@ -487,20 +487,23 @@ in
     sensitivity =
       let
         sensitivityValue = floatRange 0.01 10.0;
-        anisotropyValue = types.submodule {
-          description = "Anisotropic sensitivity, separating X and Y movement";
-          options = {
-            x = mkOption {
-              type = sensitivityValue;
-              description = "Horizontal sensitivity";
+        anisotropyValue =
+          types.submodule {
+            options = {
+              x = mkOption {
+                type = sensitivityValue;
+                description = "Horizontal sensitivity";
+              };
+              ratioYX = mkOption {
+                type = sensitivityValue;
+                default = 1.0;
+                description = "Ratio of vertical to horizontal sensitivity (Y/X)";
+              };
             };
-            ratioYX = mkOption {
-              type = sensitivityValue;
-              default = 1.0;
-              description = "Ratio of vertical to horizontal sensitivity (Y/X)";
-            };
+          }
+          // {
+            description = "Anisotropic sensitivity, separating X and Y movement";
           };
-        };
       in
       mkOption {
         type = types.either sensitivityValue anisotropyValue;
