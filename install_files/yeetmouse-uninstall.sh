@@ -5,6 +5,7 @@ set -euo pipefail
 DKMS_NAME="yeetmouse-driver"
 SERVICE_NAME="yeetmouse.service"
 CONFIG_FILE="/etc/yeetmouse.conf"
+CONFIG_DIR="/etc/yeetmouse"
 
 USR_BIN_CTL="/usr/bin/yeetmousectl"
 USR_BIN_GUI="/usr/bin/yeetmouse"
@@ -13,6 +14,7 @@ USR_BIN_UNINSTALL="/usr/bin/yeetmouse-uninstall"
 DESKTOP_FILE="/usr/share/applications/yeetmouse.desktop"
 ICON_FILE="/usr/share/icons/hicolor/256x256/apps/yeetmouse.png"
 SYSTEMD_UNIT="/usr/lib/systemd/system/${SERVICE_NAME}"
+TMPFILES_CONF="/usr/lib/tmpfiles.d/yeetmouse.conf"
 
 KEEP_CONFIG=""
 PURGE_CONFIG=""
@@ -84,10 +86,11 @@ rm -f "$USR_BIN_UNINSTALL"
 rm -f "$DESKTOP_FILE"
 rm -f "$ICON_FILE"
 rm -f "$SYSTEMD_UNIT"
+rm -f "$TMPFILES_CONF"
 
 if [[ -z "$KEEP_CONFIG" && -z "$PURGE_CONFIG" ]]; then
-	if [[ -f "$CONFIG_FILE" ]]; then
-		read -r -p "Remove ${CONFIG_FILE} too? [y/N] " reply
+	if [[ -f "$CONFIG_FILE" || -d "$CONFIG_DIR" ]]; then
+		read -r -p "Remove ${CONFIG_FILE} and the profiles in ${CONFIG_DIR} too? [y/N] " reply
 		case "$reply" in
 			[yY]|[yY][eE][sS])
 				PURGE_CONFIG="yes"
@@ -101,11 +104,12 @@ if [[ -z "$KEEP_CONFIG" && -z "$PURGE_CONFIG" ]]; then
 	fi
 fi
 
-if [[ -n "$PURGE_CONFIG" && -f "$CONFIG_FILE" ]]; then
-	echo "Removing config file..."
+if [[ -n "$PURGE_CONFIG" ]]; then
+	echo "Removing the config and profiles..."
 	rm -f "$CONFIG_FILE"
+	rm -rf "$CONFIG_DIR"
 else
-	echo "Keeping config file."
+	echo "Keeping the config and profiles."
 fi
 
 echo "YeetMouse uninstallation complete."

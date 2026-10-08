@@ -162,6 +162,13 @@ sudo modprobe yeetmouse
 if getent group yeetmouse >/dev/null 2>&1 && [[ -d /sys/module/yeetmouse/parameters ]]; then
 	sudo chown root:yeetmouse /sys/module/yeetmouse/parameters/* || true
 	sudo chmod 0660 /sys/module/yeetmouse/parameters/* || true
+	sudo chown root:yeetmouse /dev/yeetmouse
+fi
+
+if command -v systemd-tmpfiles >/dev/null 2>&1; then
+	sudo systemd-tmpfiles --create /usr/lib/tmpfiles.d/yeetmouse.conf
+else
+	sudo install -d -m 2775 -g yeetmouse /etc/yeetmouse /etc/yeetmouse/profiles
 fi
 
 # Apply config immediately if present
