@@ -105,6 +105,8 @@ namespace Profiles {
 
     void WriteSetup(const std::filesystem::path &etc, const Setup &setup);
 
+    void MergeSetup(const std::filesystem::path &root, const Setup &setup);
+
     class GameClaim {
     public:
         explicit GameClaim(const std::string &name);

@@ -706,3 +706,24 @@ namespace Profiles {
         DriverSetDevices(lines);
     }
 }
+
+namespace Profiles {
+    void MergeSetup(const std::filesystem::path &root, const Setup &setup) {
+        std::vector<std::string> existing = ProfileNames(root);
+        for (const auto &[name, params] : setup.profiles)
+            if (std::find(existing.begin(), existing.end(), name) != existing.end())
+                throw Refused("a profile named \"" + name + "\" already exists; rename one of them first");
+        std::vector<DeviceLine> lines = LoadDevicesFile(root);
+        for (const DeviceLine &line : setup.devices) {
+            for (const DeviceLine &listed : lines)
+                if (listed.vendor == line.vendor && listed.product == line.product)
+                    throw Refused(DeviceId(line.vendor, line.product) + " is already in devices.conf; forget it first");
+            lines.push_back(line);
+        }
+        DevicesArgs(lines);
+
+        for (const auto &[name, params] : setup.profiles)
+            SaveProfile(root, name, params);
+        SaveFile(root / "devices.conf", WriteDevices(lines));
+    }
+}

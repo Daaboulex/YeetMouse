@@ -2765,6 +2765,24 @@ bool Tests::TestRawAccelSetup() {
         supervisor.Validate(RawAccel::Write(Profiles::ToRawAccel(reread, reread_skipped)) == RawAccel::Write(exported));
         supervisor.Validate(refusal([&] { Profiles::WriteSetup(etc, setup); }).find("already exists") != std::string::npos);
         std::filesystem::remove_all(etc);
+
+        supervisor.NextTest();
+        std::filesystem::path root = SCRATCH_DIR;
+        std::filesystem::remove_all(root);
+        Profiles::SaveProfile(root, "mine", setup.defaults);
+        Profiles::AssignDevice(root, setup.defaults, 0x05ac, 0x0265, "mine", {});
+        Profiles::MergeSetup(root, setup);
+        supervisor.Validate(Profiles::ProfileNames(root) == std::vector<std::string>{"classic.v2", "default", "jump", "mine"});
+        std::vector<Profiles::DeviceLine> merged = Profiles::LoadDevicesFile(root);
+        supervisor.Validate(merged.size() == 5 && merged[0].vendor == 0x05ac && merged[1].windowsId == setup.devices[0].windowsId);
+        supervisor.Validate(refusal([&] { Profiles::MergeSetup(root, setup); }).find("already exists") != std::string::npos);
+        std::filesystem::remove(root / "profiles" / "jump.conf");
+        std::filesystem::remove(root / "profiles" / "default.conf");
+        std::filesystem::remove(root / "profiles" / "classic.v2.conf");
+        supervisor.Validate(refusal([&] { Profiles::MergeSetup(root, setup); }).find("already in devices.conf") !=
+                            std::string::npos);
+        supervisor.Validate(Profiles::ProfileNames(root) == std::vector<std::string>{"mine"});
+        std::filesystem::remove_all(root);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel setup\n", ex.what());
         supervisor.result = false;
