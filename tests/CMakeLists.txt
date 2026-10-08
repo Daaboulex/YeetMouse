@@ -61,7 +61,7 @@ target_compile_definitions(YeetMouseTests PRIVATE TEST_ENV FIXTURES_DIR="${CMAKE
 target_compile_options(YeetMouseTests PRIVATE -funsigned-char)
 
 set_source_files_properties(RawAccelOracle.cpp PROPERTIES
-        COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:GNU>:-fpermissive>")
+        COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:GNU>:-fpermissive;-fno-strict-aliasing>")
 
 target_include_directories(YeetMouseTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/..
