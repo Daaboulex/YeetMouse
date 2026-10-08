@@ -28,6 +28,7 @@ struct accel_curve_constants {
     FP_LONG accel_sub_1;
     FP_LONG exp_sub_1;
     FP_LONG current_func_at_0;
+    FP_LONG zero_scale;
 
     // Synchronous (legacy)
     FP_LONG logMot;
@@ -74,6 +75,10 @@ struct accel_curve {
     struct accel_curve_constants k;
 };
 
+struct accel_smoothing {
+    FP_LONG window_log2, cutoff_log2, window_trend_log2, cutoff_trend_log2;
+};
+
 struct accel_profile {
     struct accel_curve x, y;
     char by_component;
@@ -90,6 +95,8 @@ struct accel_profile {
     FP_LONG min_time, max_time;
 
     FP_LONG lp_norm, lp_inverse, domain_x, domain_y, range_x, range_y;
+    FP_LONG input_half_life, scale_half_life, output_half_life;
+    struct accel_smoothing input_k, scale_k, output_k;
     char lp_mode;
     char fixed_time;
     char truncate_carry;
@@ -98,9 +105,14 @@ struct accel_profile {
     bool is_init;
 };
 
+struct accel_smoother {
+    FP_LONG window, cutoff, window_trend, cutoff_trend;
+};
+
 struct accel_state {
     FP_LONG carry_x, carry_y;
     long long last_report_ns;
+    struct accel_smoother input[2], scale[2], output[2];
 };
 
 static const FP_LONG FP64_PI =   C0NST_FP64_FromDouble(3.14159);
@@ -141,7 +153,7 @@ FP_LONG accel_elapsed(struct accel_state *s, long long now_ns);
 
 FP_LONG accel_time(const struct accel_profile *p, FP_LONG ms);
 
-void accel_packet(const struct accel_profile *p, FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms);
+void accel_packet(const struct accel_profile *p, struct accel_state *s, FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms);
 
 void accel_round(const struct accel_profile *p, struct accel_state *s, FP_LONG delta_x, FP_LONG delta_y,
                  int *out_x, int *out_y);

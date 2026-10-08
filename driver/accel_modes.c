@@ -128,6 +128,25 @@ static bool classic_constants(struct accel_curve *c) {
     return true;
 }
 
+static FP_LONG curve_at_zero(const struct accel_curve *c) {
+    switch (c->mode) {
+        case AccelMode_Synchronous:
+            return c->use_smoothing ? FP64_DivPrecise(c->k.sync_lut.data[0], c->k.sync_lut.x_start) : c->k.minSens;
+        case AccelMode_Jump:
+            if (c->use_smoothing || c->k.r == 0)
+                return FP64_1;
+            return FP64_Add(FP64_DivPrecise(c->k.accel_sub_1,
+                                            FP64_AddSaturating(FP64_1, FP64_Exp(FP64_Mul(c->k.r, c->midpoint)))), FP64_1);
+        case AccelMode_Lut:
+        case AccelMode_CustomCurve:
+            return 0;
+        case AccelMode_Current:
+            return FP64_1;
+        default:
+            return accel_curve_eval(c, 0);
+    }
+}
+
 // Recalculate new modes constants
 static void update_curve_constants(struct accel_curve *c) {
     // General
@@ -303,9 +322,26 @@ static void update_curve_constants(struct accel_curve *c) {
     }
 
     c->k.current_func_at_0 = accel_curve_eval(c, FP64_0_01);
+    c->k.zero_scale = curve_at_zero(c);
+}
+
+static FP_LONG cutoff_log2(FP_LONG window_log2) {
+    FP_LONG window = window_log2 == MinValue ? 0 : FP64_Exp2Precise(window_log2);
+    return FP64_Log2Precise(FP64_Sub(FP64_1, FP64_SqrtPrecise(FP64_Sub(FP64_1, window))));
+}
+
+static void smoothing_constants(struct accel_smoothing *k, FP_LONG half_life, FP_LONG trend_half_life) {
+    k->window_log2 = half_life > 0 ? FP64_DivPrecise(-FP64_1, half_life) : MinValue;
+    k->cutoff_log2 = cutoff_log2(k->window_log2);
+    k->window_trend_log2 = trend_half_life > 0 ? FP64_DivPrecise(-FP64_1, trend_half_life) : MinValue;
+    k->cutoff_trend_log2 = cutoff_log2(k->window_trend_log2);
 }
 
 void update_profile_constants(struct accel_profile *p) {
+    smoothing_constants(&p->input_k, p->input_half_life, C0NST_FP64_FromDouble(1.25));
+    smoothing_constants(&p->scale_k, p->scale_half_life, 0);
+    smoothing_constants(&p->output_k, p->output_half_life, C0NST_FP64_FromDouble(0.7));
+
     p->lp_mode = p->lp_norm == FP64_FromInt(2) || p->lp_norm < FP64_1 ? LP_EUCLIDEAN : p->lp_norm >= FP64_FromInt(16) ? LP_MAX : LP_GENERAL;
     p->lp_inverse = p->lp_mode == LP_GENERAL ? FP64_DivPrecise(FP64_1, p->lp_norm) : 0;
 
@@ -717,27 +753,75 @@ static FP_LONG accel_range_weight(const struct accel_profile *p, FP_LONG delta_x
     return FP64_Add(p->range_x, FP64_Mul(FP64_DivPrecise(angle, PiHalf), FP64_Sub(p->range_y, p->range_x)));
 }
 
-static FP_LONG accel_axis_scale(const struct accel_profile *p, const struct accel_curve *c, FP_LONG delta,
-                                FP_LONG domain, FP_LONG range, FP_LONG ms) {
+static FP_LONG smoothing_step(FP_LONG coefficient_log2, FP_LONG ms) {
+    if (ms <= 0)
+        return 0;
+    if (coefficient_log2 == MinValue || FP64_MulOverflows(ms, coefficient_log2))
+        return FP64_1;
+    return FP64_Sub(FP64_1, FP64_Exp2Precise(FP64_Mul(ms, coefficient_log2)));
+}
+
+static FP_LONG smooth_simple(const struct accel_smoothing *k, struct accel_smoother *m, FP_LONG value, FP_LONG ms) {
+    m->window = FP64_Add(m->window, FP64_Mul(smoothing_step(k->window_log2, ms), FP64_Sub(value, m->window)));
+    m->cutoff = FP64_Add(m->cutoff, FP64_Mul(smoothing_step(k->cutoff_log2, ms), FP64_Sub(value, m->cutoff)));
+    return FP64_Min(m->window, m->cutoff);
+}
+
+static FP_LONG smooth_linear(const struct accel_smoothing *k, struct accel_smoother *m, FP_LONG value, FP_LONG ms) {
+    static const FP_LONG trend_dampening = C0NST_FP64_FromDouble(0.75);
+    FP_LONG old_window = m->window, old_cutoff = m->cutoff;
+
+    m->window_trend = FP64_Mul(m->window_trend, trend_dampening);
+    m->cutoff_trend = FP64_Mul(m->cutoff_trend, trend_dampening);
+    m->window = FP64_Add(m->window, FP64_Mul(m->window_trend, ms));
+    m->cutoff = FP64_Add(m->cutoff, FP64_Mul(m->cutoff_trend, ms));
+    m->window = FP64_Add(m->window, FP64_Mul(smoothing_step(k->window_log2, ms), FP64_Sub(value, m->window)));
+    m->cutoff = FP64_Add(m->cutoff, FP64_Mul(smoothing_step(k->cutoff_log2, ms), FP64_Sub(value, m->cutoff)));
+    if (m->window < 0)
+        m->window = 0;
+    if (m->cutoff < 0)
+        m->cutoff = 0;
+    if (ms > 0) {
+        m->window_trend = FP64_Add(m->window_trend, FP64_Mul(smoothing_step(k->window_trend_log2, ms),
+                                   FP64_Sub(FP64_DivPrecise(FP64_Sub(m->window, old_window), ms), m->window_trend)));
+        m->cutoff_trend = FP64_Add(m->cutoff_trend, FP64_Mul(smoothing_step(k->cutoff_trend_log2, ms),
+                                   FP64_Sub(FP64_DivPrecise(FP64_Sub(m->cutoff, old_cutoff), ms), m->cutoff_trend)));
+    }
+    return FP64_Min(m->window, m->cutoff);
+}
+
+static FP_LONG accel_axis_scale(const struct accel_profile *p, struct accel_state *s, int axis, FP_LONG delta, FP_LONG ms) {
+    const struct accel_curve *c = axis ? &p->y : &p->x;
+    FP_LONG domain = axis ? p->domain_y : p->domain_x;
+    FP_LONG range = axis ? p->range_y : p->range_x;
     FP_LONG speed, scale;
 
     if (domain != FP64_1)
         delta = FP64_Mul(delta, domain);
     speed = FP64_DivPrecise(FP64_Abs(delta), ms);
+    if (p->input_half_life > 0)
+        speed = smooth_linear(&p->input_k, &s->input[axis], speed, ms);
     if (p->input_cap > 0 && FP64_Sub(speed, p->input_cap) > 0)
         speed = p->input_cap;
     speed = FP64_Sub(speed, p->offset);
 
-    scale = speed > 0 ? accel_curve_eval(c, speed) : c->k.current_func_at_0;
+    scale = speed > 0 ? accel_curve_eval(c, speed) : c->k.zero_scale;
     if (range != FP64_1)
         scale = FP64_Add(FP64_1, FP64_Mul(FP64_Sub(scale, FP64_1), range));
+    if (p->scale_half_life > 0)
+        scale = smooth_simple(&p->scale_k, &s->scale[axis], scale, ms);
     return scale;
 }
 
-static void accel_component_packet(const struct accel_profile *p, FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms) {
-    FP_LONG scale_x = FP64_Mul(accel_axis_scale(p, &p->x, *delta_x, p->domain_x, p->range_x, ms), p->sensitivity);
-    FP_LONG scale_y = FP64_Mul(FP64_Mul(accel_axis_scale(p, &p->y, *delta_y, p->domain_y, p->range_y, ms),
-                                        p->sensitivity), p->ratio_yx);
+static FP_LONG smooth_axis_output(const struct accel_profile *p, struct accel_state *s, int axis, FP_LONG value, FP_LONG ms) {
+    FP_LONG smoothed = smooth_linear(&p->output_k, &s->output[axis], FP64_Abs(value), ms);
+    return value < 0 ? -smoothed : smoothed;
+}
+
+static void accel_component_packet(const struct accel_profile *p, struct accel_state *s, FP_LONG *delta_x,
+                                   FP_LONG *delta_y, FP_LONG ms) {
+    FP_LONG scale_x = FP64_Mul(accel_axis_scale(p, s, 0, *delta_x, ms), p->sensitivity);
+    FP_LONG scale_y = FP64_Mul(FP64_Mul(accel_axis_scale(p, s, 1, *delta_y, ms), p->sensitivity), p->ratio_yx);
 
     if (p->output_cap > 0) {
         scale_x = FP64_Min(p->output_cap, scale_x);
@@ -746,12 +830,16 @@ static void accel_component_packet(const struct accel_profile *p, FP_LONG *delta
 
     *delta_x = FP64_Mul(*delta_x, scale_x);
     *delta_y = FP64_Mul(*delta_y, scale_y);
+    if (p->output_half_life > 0) {
+        *delta_x = smooth_axis_output(p, s, 0, *delta_x, ms);
+        *delta_y = smooth_axis_output(p, s, 1, *delta_y, ms);
+    }
 }
 
-void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
+void accel_packet(const struct accel_profile *p, struct accel_state *s, FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
     FP_LONG delta_x = *delta_x_out;
     FP_LONG delta_y = *delta_y_out;
-    FP_LONG speed, rotated_x, rotated_y;
+    FP_LONG speed, rotated_x, rotated_y, output_factor = FP64_1;
 
     // Apply Pre-Scale
     if (p->pre_scale != FP64_1) {
@@ -767,7 +855,7 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
     }
 
     if (p->by_component) {
-        accel_component_packet(p, &rotated_x, &rotated_y, ms);
+        accel_component_packet(p, s, &rotated_x, &rotated_y, ms);
         delta_x = rotated_x;
         delta_y = rotated_y;
         goto snap;
@@ -779,6 +867,8 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
     else
         speed = accel_speed(p, delta_x, delta_y);
     speed = FP64_DivPrecise(speed, ms);
+    if (p->input_half_life > 0)
+        speed = smooth_linear(&p->input_k, &s->input[0], speed, ms);
 
     // Apply speedcap
     if (p->input_cap > 0) {
@@ -797,10 +887,19 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
     if (speed > 0)
         speed = accel_curve_eval(&p->x, speed);
     else
-        speed = p->x.k.current_func_at_0;
+        speed = p->input_half_life > 0 ? p->x.k.zero_scale : p->x.k.current_func_at_0;
 
     if (p->range_x != FP64_1 || p->range_y != FP64_1)
         speed = FP64_Add(FP64_1, FP64_Mul(FP64_Sub(speed, FP64_1), accel_range_weight(p, delta_x, delta_y)));
+    if (p->scale_half_life > 0)
+        speed = smooth_simple(&p->scale_k, &s->scale[0], speed, ms);
+    if (p->output_half_life > 0) {
+        FP_LONG scaled_x = FP64_Mul(delta_x, speed);
+        FP_LONG scaled_y = FP64_Mul(delta_y, speed);
+        FP_LONG magnitude = FP64_SqrtPrecise(FP64_Add(FP64_Mul(scaled_x, scaled_x), FP64_Mul(scaled_y, scaled_y)));
+        if (magnitude > 0)
+            output_factor = FP64_DivPrecise(smooth_linear(&p->output_k, &s->output[0], magnitude, ms), magnitude);
+    }
 
     // Actually apply accelerated sensitivity, allow post-scaling and apply carry from previous round
     // Like RawAccel, sensitivity will be a final multiplier:
@@ -828,6 +927,11 @@ void accel_packet(const struct accel_profile *p, FP_LONG *delta_x_out, FP_LONG *
         // Apply acceleration
         delta_x = FP64_Mul(delta_x, speed);
         delta_y = FP64_Mul(delta_y, speed_Y);
+    }
+
+    if (output_factor != FP64_1) {
+        delta_x = FP64_Mul(delta_x, output_factor);
+        delta_y = FP64_Mul(delta_y, output_factor);
     }
 
 snap:

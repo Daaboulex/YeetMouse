@@ -244,6 +244,9 @@ void TestManager::ApplyParameters(const Parameters &params) {
     profile.range_x = FP64_FromFloat(params.rangeX);
     profile.range_y = FP64_FromFloat(params.rangeY);
     profile.by_component = params.byComponent;
+    profile.input_half_life = FP64_FromFloat(params.inputSmoothHalfLife);
+    profile.scale_half_life = FP64_FromFloat(params.scaleSmoothHalfLife);
+    profile.output_half_life = FP64_FromFloat(params.outputSmoothHalfLife);
     profile.y.mode = params.yCurve.accelMode;
     profile.y.use_smoothing = params.yCurve.useSmoothing;
     profile.y.acceleration = FP64_FromFloat(params.yCurve.accel);
@@ -285,7 +288,7 @@ void TestManager::Step(int dx, int dy, double measuredMs, int &outX, int &outY) 
     FP_LONG ms = accel_time(&profile, FP64_FromDouble(measuredMs));
     FP_LONG x = FP64_FromInt(dx);
     FP_LONG y = FP64_FromInt(dy);
-    accel_packet(&profile, &x, &y, ms);
+    accel_packet(&profile, &state, &x, &y, ms);
     accel_round(&profile, &state, x, y, &outX, &outY);
 }
 

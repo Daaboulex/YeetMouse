@@ -76,6 +76,9 @@ PARAM_UL(LutSize,       LUT_SIZE,           "LUT data array size");
 PARAM_ARR(LutDataBuf,   LUT_DATA,           "Data of the LUT stored in a human form"); // g_LutDataBuf should not be used!
 PARAM_ARR(LutDataBuf2,  LUT_DATA_2,         "Points of the LUT that do not fit in LutDataBuf, in the same form");
 
+PARAM_F(InputSmoothHalfLife, INPUT_SMOOTH_HALF_LIFE, "Half-life in ms of Raw Accel's input speed smoothing; 0 is off");
+PARAM_F(ScaleSmoothHalfLife, SCALE_SMOOTH_HALF_LIFE, "Half-life in ms of Raw Accel's sensitivity smoothing; 0 is off");
+PARAM_F(OutputSmoothHalfLife, OUTPUT_SMOOTH_HALF_LIFE, "Half-life in ms of Raw Accel's output speed smoothing; 0 is off");
 PARAM_BYTE(ByComponent, BY_COMPONENT,       "Give each axis its own speed and its own curve (the Y parameters below), as Raw Accel's by-component mode");
 PARAM_BYTE(AccelerationModeY, ACCELERATION_MODE_Y, "Curve of vertical movement when ByComponent is set");
 PARAM_F(AccelerationY,  ACCELERATION_Y,       "Acceleration of the vertical curve");
@@ -192,6 +195,9 @@ INLINE void update_params(ktime_t now)
     PARAM_UPDATE(DomainY);
     PARAM_UPDATE(RangeX);
     PARAM_UPDATE(RangeY);
+    PARAM_UPDATE(InputSmoothHalfLife);
+    PARAM_UPDATE(ScaleSmoothHalfLife);
+    PARAM_UPDATE(OutputSmoothHalfLife);
     PARAM_UPDATE(AccelerationY);
     PARAM_UPDATE(ExponentY);
     PARAM_UPDATE(MidpointY);
@@ -269,6 +275,15 @@ INLINE void update_params(ktime_t now)
     g_profile.y.lut_velocity = PARAM_UPDATE_UL(LutVelocityY) != 0;
     g_profile.y.lut_size = accel_lut_parse(g_param_LutDataBufY, g_param_LutDataBufY2, PARAM_UPDATE_UL(LutSizeY),
                                            g_profile.y.lut_x, g_profile.y.lut_y);
+    if (g_InputSmoothHalfLife < 0 || g_ScaleSmoothHalfLife < 0 || g_OutputSmoothHalfLife < 0) {
+        printk("YeetMouse: Error: smoothing half-lives must not be negative.\n");
+        g_InputSmoothHalfLife = 0;
+        g_ScaleSmoothHalfLife = 0;
+        g_OutputSmoothHalfLife = 0;
+    }
+    g_profile.input_half_life = g_InputSmoothHalfLife;
+    g_profile.scale_half_life = g_ScaleSmoothHalfLife;
+    g_profile.output_half_life = g_OutputSmoothHalfLife;
     g_profile.lp_norm = g_LpNorm;
     g_profile.domain_x = g_DomainX;
     g_profile.domain_y = g_DomainY;
@@ -313,7 +328,7 @@ int accelerate(struct accel_state *state, int *x, int *y)
 
     ms = accel_time(&g_profile, ms);
 
-    accel_packet(&g_profile, &delta_x, &delta_y, ms);
+    accel_packet(&g_profile, state, &delta_x, &delta_y, ms);
 
     accel_round(&g_profile, state, delta_x, delta_y, x, y);
 

@@ -1310,7 +1310,8 @@ bool Tests::TestTimingAndRounding() {
                 if (dx == 0 && dy == 0)
                     continue;
                 FP_LONG out_x = FP64_FromInt(dx), out_y = FP64_FromInt(dy);
-                accel_packet(&linear, &out_x, &out_y, FP64_1);
+                accel_state linear_state{};
+                accel_packet(&linear, &linear_state, &out_x, &out_y, FP64_1);
                 double factor = 1 + 1000 * std::hypot(dx, dy);
                 supervisor.Validate(std::fabs(static_cast<double>(out_x) / 4294967296.0 - dx * factor) <= 1e-8 * std::fabs(dx * factor) + 1e-6);
             }
@@ -1442,6 +1443,7 @@ bool Tests::TestRawAccelParity() {
                              double tolerance = 1e-6) {
         TestManager::ApplyParameters(RawAccel::ToParameters(profile, device));
         RawAccelOracle oracle(profile, device);
+        accel_state smoothing_state{};
         bool good = true;
         for (int dx = -300; dx <= 300; dx += 7) {
             for (int dy = -300; dy <= 300; dy += 11) {
@@ -1450,7 +1452,7 @@ bool Tests::TestRawAccelParity() {
                 RawAccelOracle::Output expected = oracle.Packet(dx, dy, 1.0);
                 FP_LONG x = FP64_FromInt(dx);
                 FP_LONG y = FP64_FromInt(dy);
-                accel_packet(&TestManager::GetProfile(), &x, &y, FP64_1);
+                accel_packet(&TestManager::GetProfile(), &smoothing_state, &x, &y, FP64_1);
                 good &= close(x, expected.x, tolerance) && close(y, expected.y, tolerance);
             }
         }
@@ -1480,7 +1482,7 @@ bool Tests::TestRawAccelParity() {
                 int out_x = 0, out_y = 0;
                 TestManager::Step(dx, dy, ms, out_x, out_y);
                 if (synchronised) {
-                    auto near_integer = [](double value) { return std::fabs(value - std::round(value)) < 1e-5; };
+                    auto near_integer = [](double value) { return std::fabs(value - std::round(value)) < 1e-6 * std::max(std::fabs(value), 1.0); };
                     good &= out_x == expected.countsX || near_integer(expected.x + carry_x);
                     good &= out_y == expected.countsY || near_integer(expected.y + carry_y);
                 } else {
@@ -1771,6 +1773,48 @@ bool Tests::TestRawAccelParity() {
         component_owner.y = classic_y;
         component_owner.range = {1, 0.7};
         supervisor.Validate(counts_match(component_owner, device, 13));
+
+        supervisor.NextTest();
+        for (bool whole : {true, false}) {
+            for (std::array<double, 3> half_lives : {std::array<double, 3>{2, 0, 0}, std::array<double, 3>{0, 3, 0},
+                                                      std::array<double, 3>{0, 0, 1.5}, std::array<double, 3>{0.5, 4, 2},
+                                                      std::array<double, 3>{0.01, 0, 0}}) {
+                RawAccel::Profile profile = owner;
+                profile.speed.whole = whole;
+                profile.y = classic_y;
+                profile.speed.inputHalfLife = half_lives[0];
+                profile.speed.scaleHalfLife = half_lives[1];
+                profile.speed.outputHalfLife = half_lives[2];
+                supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+                supervisor.Validate(counts_match(profile, device, 14));
+            }
+        }
+        RawAccel::AccelArgs natural_y = owner.x;
+        natural_y.mode = RawAccel::Mode::Natural;
+        natural_y.gain = false;
+        natural_y.limit = 2;
+        natural_y.decayRate = 0.2;
+        RawAccel::AccelArgs synchronous_y = owner.x;
+        synchronous_y.mode = RawAccel::Mode::Synchronous;
+        synchronous_y.gain = false;
+        synchronous_y.syncSpeed = 6;
+        synchronous_y.motivity = 1.8;
+        synchronous_y.smooth = 0.5;
+        RawAccel::AccelArgs synchronous_gain_y = synchronous_y;
+        synchronous_gain_y.gain = true;
+        RawAccel::AccelArgs table_y = owner.x;
+        table_y.mode = RawAccel::Mode::Lut;
+        table_y.gain = false;
+        table_y.data = {2, 1, 10, 1.4f, 30, 2.2f, 80, 2.6f};
+        for (const RawAccel::AccelArgs &vertical : {jump_y, natural_y, synchronous_y, synchronous_gain_y, table_y}) {
+            RawAccel::Profile profile = owner;
+            profile.speed.whole = false;
+            profile.y = vertical;
+            profile.speed.inputHalfLife = 0.5;
+            profile.speed.scaleHalfLife = 3;
+            supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
+            supervisor.Validate(counts_match(profile, device, 15));
+        }
 
         supervisor.NextTest();
         std::mt19937 table_rng(20261008);

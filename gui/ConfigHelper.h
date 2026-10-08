@@ -138,6 +138,12 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.rangeY = val;
         else if (name == "bycomponent" || name == "by_component")
             params.byComponent = val != 0;
+        else if (name == "inputsmoothhalflife" || name == "input_smooth_half_life")
+            params.inputSmoothHalfLife = val;
+        else if (name == "scalesmoothhalflife" || name == "scale_smooth_half_life")
+            params.scaleSmoothHalfLife = val;
+        else if (name == "outputsmoothhalflife" || name == "output_smooth_half_life")
+            params.outputSmoothHalfLife = val;
         else if (name == "accelmodey" || name == "acceleration_mode_y")
             params.yCurve.accelMode = std::isnan(val) ? AccelMode_From_EnumString(val_str)
                                                       : static_cast<AccelMode>(std::clamp((int) val, 0, (int) AccelMode_Count - 1));

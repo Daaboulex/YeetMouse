@@ -269,6 +269,9 @@ struct Parameters {
     float legacyCap = 0;
     bool lutVelocity = false;
     bool byComponent = false;
+    float inputSmoothHalfLife = 0;
+    float scaleSmoothHalfLife = 0;
+    float outputSmoothHalfLife = 0;
     CurveParameters yCurve;
 
     double lutDataX[MAX_LUT_ARRAY_SIZE]{};
