@@ -109,7 +109,6 @@ if [[ -n "$installed_version" ]]; then
 	exit 0
 fi
 
-CREATED_GROUP=0
 INSTALLED_DKMS_FILES=0
 INSTALLED_USERSPACE=0
 INSTALLED_SERVICE=0
@@ -120,7 +119,6 @@ DKMS_MODULE_INSTALLED=0
 if ! getent group yeetmouse >/dev/null 2>&1; then
 	echo "Creating yeetmouse group"
 	sudo groupadd -r yeetmouse
-	CREATED_GROUP=1
 fi
 
 if [[ -n "$TARGET_USER" ]] && id "$TARGET_USER" &>/dev/null; then
