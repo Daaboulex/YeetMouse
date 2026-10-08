@@ -73,6 +73,20 @@ namespace Profiles {
     std::vector<ConnectedMouse> ReadConnectedMice(std::istream &devices);
 
     std::vector<ConnectedMouse> ConnectedMice();
+
+    class GameClaim {
+    public:
+        explicit GameClaim(const std::string &name);
+
+        ~GameClaim();
+
+        GameClaim(const GameClaim &) = delete;
+
+        GameClaim &operator=(const GameClaim &) = delete;
+
+    private:
+        int fd;
+    };
 }
 
 #endif //GUI_PROFILES_H

@@ -30,6 +30,10 @@ jobs:
         run: make yeetmousectl
         if: ${{ !cancelled() }}
 
+      - name: Check yeetmousectl run
+        run: tests/yeetmousectl_run.sh tools/yeetmousectl/yeetmousectl
+        if: ${{ !cancelled() }}
+
       - name: Build tests
         run: |
           # TODO: Use UBSan as well

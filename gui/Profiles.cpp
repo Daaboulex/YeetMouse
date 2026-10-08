@@ -363,3 +363,24 @@ namespace Profiles {
         return ReadConnectedMice(devices);
     }
 }
+
+namespace Profiles {
+    GameClaim::GameClaim(const std::string &name) : fd(open(DevicePath, O_RDWR | O_CLOEXEC)) {
+        if (fd < 0) {
+            int error = errno;
+            throw Refused(std::string("cannot open ") + DevicePath + ": " + std::strerror(error), error);
+        }
+        yeetmouse_name_args args{};
+        if (name.size() < YEETMOUSE_NAME_LEN)
+            std::copy(name.begin(), name.end(), args.name);
+        if (ioctl(fd, YEETMOUSE_IOCTL_CLAIM, &args) != 0) {
+            int error = errno;
+            close(fd);
+            throw Refused("claiming profile \"" + name + "\": " + DriverError(error), error);
+        }
+    }
+
+    GameClaim::~GameClaim() {
+        close(fd);
+    }
+}

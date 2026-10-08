@@ -6,6 +6,11 @@
 #include <optional>
 #include <sstream>
 #include <vector>
+#include <csignal>
+#include <cstdio>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 // GUI helpers
 #include "../../gui/ConfigHelper.h"
@@ -279,6 +284,68 @@ static int DeviceRemove(const std::string &id) {
     return 0;
 }
 
+static volatile sig_atomic_t g_game = 0;
+
+static void ForwardToGame(int signal) {
+    if (g_game > 0)
+        kill(static_cast<pid_t>(g_game), signal);
+}
+
+static void Notify(const std::string &message) {
+    std::cerr << "yeetmousectl: " << message << std::endl;
+    const char *argv[] = {"notify-send", "--app-name=YeetMouse", "YeetMouse kept the saved curve", message.c_str(),
+                          nullptr};
+    pid_t notifier = 0;
+    if (posix_spawnp(&notifier, "notify-send", nullptr, nullptr, const_cast<char *const *>(argv), environ) == 0)
+        waitpid(notifier, nullptr, 0);
+}
+
+static int RunGame(const std::string &profile, char **command) {
+    std::optional<Profiles::GameClaim> claim;
+    try {
+        Profiles::DriverLoad(profile, Profiles::LoadProfileFile(Profiles::Root, profile));
+        claim.emplace(profile);
+    } catch (const Profiles::Refused &refused) {
+        Notify(std::string("the game runs on the saved curve: ") + refused.what());
+    }
+
+    const int forwarded[] = {SIGINT, SIGTERM, SIGHUP, SIGQUIT};
+    sigset_t blocked, previous;
+    sigemptyset(&blocked);
+    for (int signal : forwarded)
+        sigaddset(&blocked, signal);
+    sigprocmask(SIG_BLOCK, &blocked, &previous);
+
+    pid_t game = fork();
+    if (game < 0) {
+        std::perror("yeetmousectl: cannot start the game");
+        return 1;
+    }
+    if (game == 0) {
+        sigprocmask(SIG_SETMASK, &previous, nullptr);
+        execvp(command[0], command);
+        std::perror(("yeetmousectl: cannot run " + std::string(command[0])).c_str());
+        _exit(127);
+    }
+
+    g_game = game;
+    struct sigaction forward{};
+    forward.sa_handler = ForwardToGame;
+    sigemptyset(&forward.sa_mask);
+    for (int signal : forwarded)
+        sigaction(signal, &forward, nullptr);
+    sigprocmask(SIG_SETMASK, &previous, nullptr);
+
+    int status = 0;
+    while (waitpid(game, &status, 0) < 0) {
+        if (errno != EINTR) {
+            std::perror("yeetmousectl: lost the game");
+            return 1;
+        }
+    }
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+}
+
 static std::string DumpDriver() {
     Parameters params{};
 
@@ -300,7 +367,8 @@ int main(int argc, char **argv) {
                 "  yeetmousectl export-rawaccel [<config>]\n"
                 "  yeetmousectl load\n"
                 "  yeetmousectl profile list | save <name> <config> | remove <name>\n"
-                "  yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | remove <vendor:product>\n";
+                "  yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | remove <vendor:product>\n"
+                "  yeetmousectl run <profile> -- <command> [args...]\n";
 
         return 0;
     }
@@ -385,6 +453,14 @@ int main(int argc, char **argv) {
         std::cerr << "Usage: yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | "
                      "remove <vendor:product>\n";
         return 2;
+    }
+
+    if (cmd == "run") {
+        if (argc < 5 || std::string(argv[3]) != "--") {
+            std::cerr << "Usage: yeetmousectl run <profile> -- <command> [args...]\n";
+            return 2;
+        }
+        return RunGame(argv[2], argv + 4);
     }
 
     std::cerr << "Unknown command\n";
