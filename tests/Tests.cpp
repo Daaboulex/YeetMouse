@@ -1105,6 +1105,13 @@ bool Tests::TestFixedPointArithmetic() {
         }
         supervisor.Validate(FP64_Tanh(FP64_FromInt(1 << 30)) == One && FP64_Tanh(-FP64_FromInt(1 << 30)) == -One);
 
+        for (double v = 0.01; v < 2e9; v *= 1.0137) {
+            FP_LONG square = FP64_FromDouble(v);
+            double truth = std::sqrt(static_cast<double>(square) / 4294967296.0);
+            double root = static_cast<double>(FP64_SqrtPrecise(square)) / 4294967296.0;
+            supervisor.Validate(std::fabs(root - truth) / truth < 1e-8);
+        }
+
         for (FP_LONG (*atan2)(FP_LONG, FP_LONG) : {FP64_Atan2, FP64_Atan2Fast, FP64_Atan2Fastest}) {
             for (float y = -3; y <= 3; y += 0.25f) {
                 for (float x = -3; x <= 3; x += 0.25f) {

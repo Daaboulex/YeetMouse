@@ -571,33 +571,6 @@ static inline FP_LONG FP64_Mod(FP_LONG a, FP_LONG b) {
     return a % b;
 }
 
-/// <summary>
-/// Calculates the square root of the given number.
-/// </summary>
-static inline FP_LONG FP64_SqrtPrecise(FP_LONG a) {
-    // Adapted from https://github.com/chmike/fpsqrt
-    if (a <= 0) {
-        if (a < 0)
-            InvalidArgument("Fixed64::SqrtPrecise", "a", a);
-        return 0;
-    }
-
-    FP_ULONG r = (FP_ULONG) a;
-    FP_ULONG b = 0x4000000000000000ll;
-    FP_ULONG q = 0ll;
-    while (b > 0x40ll) {
-        FP_ULONG t = q + b;
-        if (r >= t) {
-            r -= t;
-            q = t + b;
-        }
-        r <<= 1;
-        b >>= 1;
-    }
-    q >>= 16;
-    return (FP_LONG) q;
-}
-
 static inline FP_LONG FP64_Sqrt(FP_LONG x) {
     // Return 0 for all non-positive values.
     if (x <= 0) {
@@ -623,6 +596,13 @@ static inline FP_LONG FP64_Sqrt(FP_LONG x) {
     // Apply exponent, convert back to s32.32.
     FP_LONG yr = (FP_LONG) Qmul30(adjust, y) << 2;
     return (offset >= 0) ? (yr << offset) : (yr >> -offset);
+}
+
+static inline FP_LONG FP64_SqrtPrecise(FP_LONG x) {
+    FP_LONG root = FP64_Sqrt(x);
+    if (root <= 0)
+        return root;
+    return (root + FP64_DivPrecise(x, root)) / 2;
 }
 
 static inline FP_LONG FP64_SqrtFast(FP_LONG x) {
