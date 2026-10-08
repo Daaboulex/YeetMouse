@@ -346,6 +346,38 @@ static int RunGame(const std::string &profile, char **command) {
     return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
 }
 
+static int ImportRawAccelSetup(const std::string &file, const std::string &etc) {
+    std::ifstream stream(file);
+    if (!stream.is_open()) {
+        std::cerr << "Failed to open Raw Accel settings: " << file << std::endl;
+        return 1;
+    }
+    try {
+        Profiles::WriteSetup(etc, Profiles::FromRawAccel(RawAccel::Read(stream)));
+    } catch (const RawAccel::Refused &refused) {
+        return Failed(refused);
+    } catch (const Profiles::Refused &refused) {
+        return Failed(refused);
+    } catch (const std::filesystem::filesystem_error &error) {
+        return Failed(error);
+    }
+    std::cout << "Imported into " << etc << "." << std::endl;
+    return 0;
+}
+
+static int ExportRawAccelSetup(const std::string &etc) {
+    try {
+        std::vector<std::string> skipped;
+        std::string json = RawAccel::Write(Profiles::ToRawAccel(Profiles::ReadSetup(etc), skipped));
+        for (const std::string &device : skipped)
+            std::cerr << "Not exported: " << device << std::endl;
+        std::cout << json;
+    } catch (const Profiles::Refused &refused) {
+        return Failed(refused);
+    }
+    return 0;
+}
+
 static std::string DumpDriver() {
     Parameters params{};
 
@@ -363,8 +395,8 @@ int main(int argc, char **argv) {
                 "  yeetmousectl apply <config>\n"
                 "  yeetmousectl dump\n"
                 "  yeetmousectl save <file>\n"
-                "  yeetmousectl import-rawaccel <settings.json> [<device id>]\n"
-                "  yeetmousectl export-rawaccel [<config>]\n"
+                "  yeetmousectl import-rawaccel <settings.json> [<device id> | --into <etc dir>]\n"
+                "  yeetmousectl export-rawaccel [<config> | --from <etc dir>]\n"
                 "  yeetmousectl load\n"
                 "  yeetmousectl profile list | save <name> <config> | remove <name>\n"
                 "  yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | remove <vendor:product>\n"
@@ -410,8 +442,10 @@ int main(int argc, char **argv) {
     }
 
     if (cmd == "import-rawaccel") {
+        if (argc == 5 && std::string(argv[3]) == "--into")
+            return ImportRawAccelSetup(argv[2], argv[4]);
         if (argc < 3 || argc > 4) {
-            std::cerr << "Usage: yeetmousectl import-rawaccel <settings.json> [<device id>]\n";
+            std::cerr << "Usage: yeetmousectl import-rawaccel <settings.json> [<device id> | --into <etc dir>]\n";
             return 2;
         }
 
@@ -419,8 +453,10 @@ int main(int argc, char **argv) {
     }
 
     if (cmd == "export-rawaccel") {
+        if (argc == 4 && std::string(argv[2]) == "--from")
+            return ExportRawAccelSetup(argv[3]);
         if (argc > 3) {
-            std::cerr << "Usage: yeetmousectl export-rawaccel [<config>]\n";
+            std::cerr << "Usage: yeetmousectl export-rawaccel [<config> | --from <etc dir>]\n";
             return 2;
         }
 

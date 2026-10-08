@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "DriverHelper.h"
+#include "RawAccel.h"
 
 namespace Profiles {
     inline const std::filesystem::path Root = "/etc/yeetmouse";
@@ -73,6 +74,22 @@ namespace Profiles {
     std::vector<ConnectedMouse> ReadConnectedMice(std::istream &devices);
 
     std::vector<ConnectedMouse> ConnectedMice();
+
+    struct Setup {
+        Parameters defaults;
+        std::vector<std::pair<std::string, Parameters>> profiles;
+        std::vector<DeviceLine> devices;
+    };
+
+    void ParseWindowsId(const std::string &id, uint16_t &vendor, uint16_t &product);
+
+    Setup FromRawAccel(const RawAccel::Settings &settings);
+
+    RawAccel::Settings ToRawAccel(const Setup &setup, std::vector<std::string> &skipped);
+
+    Setup ReadSetup(const std::filesystem::path &etc);
+
+    void WriteSetup(const std::filesystem::path &etc, const Setup &setup);
 
     class GameClaim {
     public:

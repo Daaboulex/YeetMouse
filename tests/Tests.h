@@ -60,6 +60,8 @@ public:
 
     static bool TestProfileFiles();
 
+    static bool TestRawAccelSetup();
+
 private:
     //static CachedFunction functions[AccelMode_Count];
 

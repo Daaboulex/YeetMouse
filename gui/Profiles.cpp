@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
+#include <functional>
 #include <set>
 #include <sstream>
 #include <sys/ioctl.h>
@@ -382,5 +383,227 @@ namespace Profiles {
 
     GameClaim::~GameClaim() {
         close(fd);
+    }
+}
+
+namespace Profiles {
+    namespace {
+        std::vector<std::string> SplitIds(const std::string &ids) {
+            std::vector<std::string> list;
+            std::istringstream stream(ids);
+            std::string id;
+            while (std::getline(stream, id, ','))
+                if (!id.empty())
+                    list.push_back(id);
+            return list;
+        }
+
+        bool HexRun(const std::string &upper, const std::string &marker, uint16_t &out) {
+            std::size_t start = upper.find(marker);
+            if (start == std::string::npos)
+                return false;
+            start += marker.size();
+            std::size_t end = start;
+            while (end < upper.size() && std::isxdigit(static_cast<unsigned char>(upper[end])))
+                end++;
+            if (end - start < 4)
+                return false;
+            return std::from_chars(upper.data() + end - 4, upper.data() + end, out, 16).ptr == upper.data() + end;
+        }
+
+        Parameters Converted(const std::function<Parameters()> &convert, const std::string &what) {
+            try {
+                return convert();
+            } catch (const RawAccel::Refused &refused) {
+                throw Refused(what + ": " + refused.what());
+            }
+        }
+
+        Parameters ForRawAccel(Parameters params) {
+            params.preScale = 1;
+            params.minTime = static_cast<float>(RawAccel::DefaultMinimumTime);
+            params.maxTime = static_cast<float>(RawAccel::DefaultMaximumTime);
+            params.fixedTime = false;
+            return params;
+        }
+
+        RawAccel::Settings Exported(const Parameters &params, const std::string &what) {
+            try {
+                return RawAccel::FromParameters(params);
+            } catch (const RawAccel::Refused &refused) {
+                throw Refused(what + ": " + refused.what());
+            }
+        }
+    }
+
+    void ParseWindowsId(const std::string &id, uint16_t &vendor, uint16_t &product) {
+        std::string upper = id;
+        std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) { return std::toupper(c); });
+        if (!(HexRun(upper, "VID_", vendor) || HexRun(upper, "VID&", vendor)) ||
+            !(HexRun(upper, "PID_", product) || HexRun(upper, "PID&", product)))
+            throw Refused("cannot read a vendor and product from the Windows id \"" + id + "\"");
+    }
+
+    Setup FromRawAccel(const RawAccel::Settings &settings) {
+        if (settings.profiles.empty())
+            throw Refused("the Raw Accel file holds no profile");
+        Setup setup;
+        for (const RawAccel::Profile &profile : settings.profiles) {
+            std::string what = "Raw Accel profile \"" + profile.name + "\"";
+            if (!yeetmouse_name_valid(profile.name.c_str()) || profile.name == Disabled)
+                throw Refused(what + ": YeetMouse names use letters, digits, '.', '_' or '-', start with a letter or "
+                              "digit and have at most " + std::to_string(YEETMOUSE_NAME_LEN - 1) +
+                              " characters; rename it in Raw Accel");
+            for (const auto &[name, params] : setup.profiles)
+                if (name == profile.name)
+                    throw Refused(what + " appears twice");
+            setup.profiles.emplace_back(profile.name, Converted([&] {
+                return RawAccel::ToParameters(profile, RawAccel::DeviceConfig{});
+            }, what));
+        }
+        setup.defaults = Converted([&] {
+            return RawAccel::ToParameters(settings.profiles.front(), settings.defaultDeviceConfig);
+        }, "Raw Accel's default device settings");
+
+        for (const RawAccel::Device &device : settings.devices) {
+            DeviceLine line;
+            ParseWindowsId(device.id, line.vendor, line.product);
+            line.windowsId = device.id;
+            std::string id = DeviceId(line.vendor, line.product);
+            if (device.config.disable) {
+                line.profile = Disabled;
+            } else {
+                line.profile = device.profile.empty() ? settings.profiles.front().name : device.profile;
+                auto profile = std::find_if(settings.profiles.begin(), settings.profiles.end(),
+                                            [&](const RawAccel::Profile &named) { return named.name == line.profile; });
+                if (profile == settings.profiles.end())
+                    throw Refused("Raw Accel device " + device.id + " names the profile \"" + line.profile +
+                                  "\", which the file does not hold");
+                Parameters timing = Converted([&] { return RawAccel::ToParameters(*profile, device.config); },
+                                              "Raw Accel device " + device.id);
+                line.preScale = timing.preScale;
+                line.minTime = timing.minTime;
+                line.maxTime = timing.maxTime;
+                line.fixedTime = timing.fixedTime;
+            }
+
+            auto same = std::find_if(setup.devices.begin(), setup.devices.end(), [&](const DeviceLine &listed) {
+                return listed.vendor == line.vendor && listed.product == line.product;
+            });
+            if (same == setup.devices.end()) {
+                setup.devices.push_back(line);
+                continue;
+            }
+            if (same->profile != line.profile || same->preScale != line.preScale || same->minTime != line.minTime ||
+                same->maxTime != line.maxTime || same->fixedTime != line.fixedTime)
+                throw Refused("Raw Accel devices " + same->windowsId + " and " + device.id + " are both " + id +
+                              " on Linux but have different settings");
+            same->windowsId += "," + device.id;
+        }
+        return setup;
+    }
+
+    RawAccel::Settings ToRawAccel(const Setup &setup, std::vector<std::string> &skipped) {
+        RawAccel::Settings settings;
+        settings.defaultDeviceConfig = Exported(setup.defaults, "the default config").defaultDeviceConfig;
+
+        std::string default_curve = WriteProfile(setup.defaults);
+        auto first = std::find_if(setup.profiles.begin(), setup.profiles.end(), [&](const auto &profile) {
+            return WriteProfile(profile.second) == default_curve;
+        });
+        std::string first_name = first != setup.profiles.end() ? first->first : "default";
+        if (first == setup.profiles.end()) {
+            for (const auto &[name, params] : setup.profiles)
+                if (name == first_name)
+                    throw Refused("the default config's curve differs from the profile named \"default\"; Raw Accel "
+                                  "uses its first profile for unlisted mice");
+            RawAccel::Profile profile = Exported(ForRawAccel(setup.defaults), "the default config").profiles.at(0);
+            profile.name = first_name;
+            settings.profiles.push_back(profile);
+        }
+        auto add = [&](const std::string &name, const Parameters &params) {
+            RawAccel::Profile profile = Exported(ForRawAccel(params), "profile \"" + name + "\"").profiles.at(0);
+            profile.name = name;
+            settings.profiles.push_back(profile);
+        };
+        if (first != setup.profiles.end())
+            add(first->first, first->second);
+        std::vector<std::pair<std::string, Parameters>> rest;
+        for (const auto &profile : setup.profiles)
+            if (first == setup.profiles.end() || profile.first != first->first)
+                rest.push_back(profile);
+        std::sort(rest.begin(), rest.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+        for (const auto &[name, params] : rest)
+            add(name, params);
+
+        for (const DeviceLine &line : setup.devices) {
+            std::string id = DeviceId(line.vendor, line.product);
+            if (line.windowsId.empty()) {
+                skipped.push_back(id + " has no Windows id; assign it in Raw Accel's device menu");
+                continue;
+            }
+            RawAccel::DeviceConfig config;
+            if (line.disabled()) {
+                config.disable = true;
+            } else {
+                Parameters timing;
+                timing.truncateCarry = true;
+                timing.clockOnAnyReport = true;
+                timing.preScale = static_cast<float>(line.preScale);
+                timing.minTime = static_cast<float>(line.minTime);
+                timing.maxTime = static_cast<float>(line.maxTime);
+                timing.fixedTime = line.fixedTime;
+                config = Exported(timing, "device " + id).defaultDeviceConfig;
+            }
+            for (const std::string &windows_id : SplitIds(line.windowsId)) {
+                uint16_t vendor = 0, product = 0;
+                ParseWindowsId(windows_id, vendor, product);
+                if (vendor != line.vendor || product != line.product)
+                    throw Refused("device " + id + " carries the Windows id " + windows_id + " of another mouse");
+                RawAccel::Device device;
+                device.name = id;
+                device.id = windows_id;
+                device.profile = line.disabled() ? "" : line.profile;
+                device.config = config;
+                settings.devices.push_back(device);
+            }
+        }
+        return settings;
+    }
+
+    Setup ReadSetup(const std::filesystem::path &etc) {
+        Setup setup;
+        std::filesystem::path defaults = etc / "yeetmouse.conf";
+        std::ifstream stream(defaults);
+        if (!stream.is_open())
+            throw Refused("cannot open " + defaults.string());
+        static char lut_data[MAX_LUT_TEXT_LEN];
+        bool is_config_h = false;
+        auto params = ConfigHelper::ImportAny(stream, lut_data, is_config_h);
+        if (!params || is_config_h)
+            throw Refused(defaults.string() + " is not a YeetMouse config");
+        setup.defaults = *params;
+        std::filesystem::path root = etc / "yeetmouse";
+        for (const std::string &name : ProfileNames(root))
+            setup.profiles.emplace_back(name, LoadProfileFile(root, name));
+        setup.devices = LoadDevicesFile(root);
+        return setup;
+    }
+
+    void WriteSetup(const std::filesystem::path &etc, const Setup &setup) {
+        std::filesystem::path root = etc / "yeetmouse";
+        std::vector<std::filesystem::path> targets = {etc / "yeetmouse.conf", root / "devices.conf"};
+        for (const auto &[name, params] : setup.profiles)
+            targets.push_back(root / "profiles" / (name + ".conf"));
+        for (const std::filesystem::path &target : targets)
+            if (std::filesystem::exists(target))
+                throw Refused(target.string() + " already exists; import into an empty directory");
+        DevicesArgs(setup.devices);
+
+        std::filesystem::create_directories(root / "profiles");
+        SaveFile(etc / "yeetmouse.conf", ConfigHelper::ExportPlainText(setup.defaults, false));
+        for (const auto &[name, params] : setup.profiles)
+            SaveFile(root / "profiles" / (name + ".conf"), WriteProfile(params));
+        SaveFile(root / "devices.conf", WriteDevices(setup.devices));
     }
 }

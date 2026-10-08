@@ -57,6 +57,11 @@ int main() {
         bad_sum++;
     }
 
+    if (!Tests::TestRawAccelSetup()) {
+        fprintf(stderr, "Test failed for the Raw Accel setup\n");
+        bad_sum++;
+    }
+
     if (bad_sum == 0) {
         printf(GREEN"All tests passed!\n\n" RESET);
     } else {

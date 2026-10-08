@@ -2595,6 +2595,142 @@ bool Tests::TestProfileFiles() {
     return supervisor.GetResult();
 }
 
+bool Tests::TestRawAccelSetup() {
+    TestSupervisor supervisor{"Raw Accel Setup"};
+
+    auto refusal = [](const std::function<void()> &action) {
+        try {
+            action();
+        } catch (const Profiles::Refused &refused) {
+            return std::string(refused.what());
+        }
+        return std::string();
+    };
+
+    try {
+        supervisor.NextTest();
+        uint16_t vendor = 0, product = 0;
+        Profiles::ParseWindowsId("HID\\VID_046D&PID_C539&MI_01&Col01", vendor, product);
+        supervisor.Validate(vendor == 0x046d && product == 0xc539);
+        Profiles::ParseWindowsId("HID\\{00001124-0000-1000-8000-00805f9b34fb}_VID&0002046d_PID&b016&Col01", vendor, product);
+        supervisor.Validate(vendor == 0x046d && product == 0xb016);
+        supervisor.Validate(!refusal([&] { Profiles::ParseWindowsId("USB\\ROOT_HUB30", vendor, product); }).empty());
+
+        std::ifstream file(FIXTURES_DIR "/rawaccel/power-velocity-output-cap.json");
+        RawAccel::Settings original = RawAccel::Read(file);
+        RawAccel::Profile jump = original.profiles.at(0);
+        jump.name = "jump";
+        jump.x.mode = RawAccel::Mode::Jump;
+        jump.x.gain = true;
+        jump.x.smooth = 0.5;
+        jump.x.cap = {12, 2};
+        RawAccel::Profile classic = original.profiles.at(0);
+        classic.name = "classic.v2";
+        classic.x.mode = RawAccel::Mode::Classic;
+        classic.x.gain = false;
+        classic.x.acceleration = 0.02;
+        classic.x.exponentClassic = 2;
+        classic.x.cap = {0, 0.7};
+        original.profiles.push_back(jump);
+        original.profiles.push_back(classic);
+        RawAccel::Device second_interface = original.devices.at(0);
+        second_interface.id = "HID\\VID_046D&PID_C539&MI_02&Col01";
+        RawAccel::Device bluetooth = original.devices.at(0);
+        bluetooth.id = "HID\\{00001124-0000-1000-8000-00805f9b34fb}_VID&0002046d_PID&b016&Col01";
+        bluetooth.profile = "jump";
+        bluetooth.config.dpi = 1600;
+        bluetooth.config.pollTimeLock = true;
+        RawAccel::Device switched_off = original.devices.at(0);
+        switched_off.id = "HID\\VID_045E&PID_0040";
+        switched_off.config.disable = true;
+        RawAccel::Device unnamed = original.devices.at(0);
+        unnamed.id = "HID\\VID_1532&PID_0084&MI_00";
+        unnamed.profile = "";
+        unnamed.config.dpi = 400;
+        original.devices.push_back(second_interface);
+        original.devices.push_back(bluetooth);
+        original.devices.push_back(switched_off);
+        original.devices.push_back(unnamed);
+
+        supervisor.NextTest();
+        Profiles::Setup setup = Profiles::FromRawAccel(original);
+        supervisor.Validate(setup.profiles.size() == 3 && setup.profiles[0].first == "default" &&
+                            setup.profiles[1].first == "jump" && setup.profiles[2].first == "classic.v2");
+        supervisor.Validate(setup.devices.size() == 4);
+        const Profiles::DeviceLine &g502 = setup.devices.at(0);
+        supervisor.Validate(g502.vendor == 0x046d && g502.product == 0xc539 && g502.profile == "default" &&
+                            g502.preScale == 1.25 && g502.minTime == 1 && !g502.fixedTime &&
+                            g502.windowsId == original.devices[0].id + "," + second_interface.id);
+        const Profiles::DeviceLine &wireless = setup.devices.at(1);
+        supervisor.Validate(wireless.product == 0xb016 && wireless.profile == "jump" && wireless.preScale == 0.625 &&
+                            wireless.fixedTime && wireless.minTime == 1);
+        supervisor.Validate(setup.devices.at(2).disabled() && setup.devices.at(3).profile == "default" &&
+                            setup.devices.at(3).preScale == 2.5);
+        Parameters expected_defaults = RawAccel::ToParameters(original.profiles[0], original.defaultDeviceConfig);
+        supervisor.Validate(Profiles::WriteProfile(setup.defaults) == Profiles::WriteProfile(expected_defaults) &&
+                            setup.defaults.preScale == expected_defaults.preScale);
+
+        supervisor.NextTest();
+        RawAccel::Settings spaced = original;
+        spaced.profiles[2].name = "My Profile";
+        supervisor.Validate(refusal([&] { Profiles::FromRawAccel(spaced); }).find("rename it") != std::string::npos);
+        RawAccel::Settings dangling = original;
+        dangling.devices[2].profile = "missing";
+        supervisor.Validate(refusal([&] { Profiles::FromRawAccel(dangling); }).find("does not hold") != std::string::npos);
+        RawAccel::Settings clashing = original;
+        clashing.devices[1].profile = "jump";
+        supervisor.Validate(refusal([&] { Profiles::FromRawAccel(clashing); }).find("different settings") != std::string::npos);
+
+        supervisor.NextTest();
+        std::vector<std::string> skipped;
+        RawAccel::Settings exported = Profiles::ToRawAccel(setup, skipped);
+        supervisor.Validate(skipped.empty() && exported.profiles.size() == 3);
+        supervisor.Validate(exported.profiles[0].name == original.profiles[0].name &&
+                            exported.profiles[1].name == "classic.v2" && exported.profiles[2].name == "jump");
+        for (const RawAccel::Profile &before : original.profiles) {
+            auto after = std::find_if(exported.profiles.begin(), exported.profiles.end(),
+                                      [&](const RawAccel::Profile &profile) { return profile.name == before.name; });
+            supervisor.Validate(after != exported.profiles.end() &&
+                                VectorsMatch(RawAccel::ToParameters(before, original.defaultDeviceConfig), *after,
+                                             exported.defaultDeviceConfig, 1e-6));
+        }
+        supervisor.Validate(exported.devices.size() == original.devices.size());
+        for (const RawAccel::Device &before : original.devices) {
+            auto after = std::find_if(exported.devices.begin(), exported.devices.end(),
+                                      [&](const RawAccel::Device &device) { return device.id == before.id; });
+            bool same = after != exported.devices.end() && after->config.disable == before.config.disable;
+            if (same && !before.config.disable) {
+                std::string profile = before.profile.empty() ? original.profiles[0].name : before.profile;
+                Parameters was = RawAccel::ToParameters(original.profiles[0], before.config);
+                Parameters is = RawAccel::ToParameters(exported.profiles[0], after->config);
+                same = after->profile == profile && was.preScale == is.preScale && was.minTime == is.minTime &&
+                       was.maxTime == is.maxTime && was.fixedTime == is.fixedTime;
+            }
+            supervisor.Validate(same);
+        }
+        Profiles::Setup local = setup;
+        local.devices[3].windowsId.clear();
+        std::vector<std::string> local_skipped;
+        supervisor.Validate(Profiles::ToRawAccel(local, local_skipped).devices.size() == original.devices.size() - 1 &&
+                            local_skipped.size() == 1 && local_skipped[0].find("1532:0084") != std::string::npos);
+
+        supervisor.NextTest();
+        std::filesystem::path etc = SCRATCH_DIR;
+        std::filesystem::remove_all(etc);
+        Profiles::WriteSetup(etc, setup);
+        std::vector<std::string> reread_skipped;
+        Profiles::Setup reread = Profiles::ReadSetup(etc);
+        supervisor.Validate(RawAccel::Write(Profiles::ToRawAccel(reread, reread_skipped)) == RawAccel::Write(exported));
+        supervisor.Validate(refusal([&] { Profiles::WriteSetup(etc, setup); }).find("already exists") != std::string::npos);
+        std::filesystem::remove_all(etc);
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during Raw Accel setup\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
 bool Tests::TestConfigFiles() {
     TestSupervisor supervisor{"Config Files"};
 
