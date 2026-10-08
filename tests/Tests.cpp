@@ -2837,15 +2837,20 @@ bool Tests::TestRawAccelSetup() {
         std::ofstream(etc / "yeetmouse" / "devices.conf", std::ios::app)
             << "1234:5678 missing preScale=1 minTime=0 maxTime=100 fixedTime=0\n";
         std::ofstream(etc / "yeetmouse" / "profiles" / "broken.conf") << "sens=abc\naccelMode=AccelMode_Linear\n";
+        std::ofstream(etc / "yeetmouse" / "profiles" / "stalled.conf") << "accelMode=AccelMode_Jump\nmidpoint=0\n";
         std::vector<std::string> problems = Profiles::CheckSetup(etc);
         auto names = [&](const std::string &text) {
             return std::any_of(problems.begin(), problems.end(),
                                [&](const std::string &problem) { return problem.find(text) != std::string::npos; });
         };
-        supervisor.Validate(problems.size() == 2 && names("\"missing\"") && names("broken"));
+        supervisor.Validate(problems.size() == 3 && names("\"missing\"") && names("broken") &&
+                            names("\"stalled\" is refused by the driver"));
         std::ofstream(etc / "yeetmouse" / "devices.conf", std::ios::app) << "not-an-id power\n";
         problems = Profiles::CheckSetup(etc);
-        supervisor.Validate(problems.size() == 2 && names("not-an-id") && names("broken"));
+        supervisor.Validate(problems.size() == 3 && names("not-an-id") && names("broken") && names("stalled"));
+        std::ofstream(etc / "yeetmouse.conf") << "accelMode=AccelMode_Linear\naccel=0\n";
+        problems = Profiles::CheckSetup(etc);
+        supervisor.Validate(problems.size() == 4 && names("yeetmouse.conf is refused by the driver"));
         std::filesystem::remove_all(etc);
 
         supervisor.NextTest();

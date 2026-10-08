@@ -28,7 +28,8 @@ OPENGL_LIBS := -lGL -ldl
 SOURCES = main.cpp gui.cpp DriverHelper.cpp ImGuiExtensions.cpp FunctionHelper.cpp CustomCurve.cpp ConfigHelper.cpp RawAccel.cpp Profiles.cpp ProfilesGui.cpp $(wildcard External/ImGui/*.cpp) $(wildcard gui/lib/*.cpp)
 
 # Define the object files
-OBJECTS = $(patsubst %.cpp, %.o, $(SOURCES))
+OBJECTS = $(patsubst %.cpp, %.o, $(SOURCES)) driver_accel_modes.o driver_profile_table.o
+DRIVERFLAGS = -DTEST_ENV -I ..
 
 # Define the target
 TARGET = YeetMouseGui
@@ -55,7 +56,10 @@ $(TARGET): $(OBJECTS)
 
 # Rule to build the object files
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) $(GLFW_CFLAGS) $(OPTIMIZATION_FLAGS) $(WARNFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(DRIVERFLAGS) $(GLFW_CFLAGS) $(OPTIMIZATION_FLAGS) $(WARNFLAGS) -c $< -o $@
+
+driver_%.o: ../driver/%.c
+	$(CC) $(DRIVERFLAGS) -funsigned-char $(OPTIMIZATION_FLAGS) -MMD -MP -c $< -o $@
 
 # Rule to build the object files for ImGui source files
 External/ImGui/%.o: External/ImGui/%.cpp

@@ -44,8 +44,8 @@ kernel.stdenv.mkDerivation rec {
   LD_LIBRARY_PATH = "/run/opengl-driver/lib:${lib.makeLibraryPath buildInputs}";
 
   postBuild = ''
-    make "-j$NIX_BUILD_CORES" -C $sourceRoot/tools/yeetmousectl "CXX=$CXX"
-    make "-j$NIX_BUILD_CORES" -C $sourceRoot/gui "M=$sourceRoot/gui" \
+    make "-j$NIX_BUILD_CORES" -C $sourceRoot/tools/yeetmousectl "CC=$CC" "CXX=$CXX"
+    make "-j$NIX_BUILD_CORES" -C $sourceRoot/gui "M=$sourceRoot/gui" "CC=$CC" \
       "LIBS=-lglfw -lGL" \
       "CXXFLAGS=-Wno-sign-compare -Wno-unused-function -Wno-return-type -isystem $sourceRoot/gui/External"
   '';

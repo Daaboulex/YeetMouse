@@ -1,5 +1,6 @@
 CXX = g++
-CXXFLAGS = -O2 -Wall -Wno-sign-compare -std=c++17 -isystem ../../gui/External -MMD -MP
+CXXFLAGS = -O2 -Wall -Wno-sign-compare -std=c++17 -isystem ../../gui/External -MMD -MP -DTEST_ENV -I ../..
+CFLAGS = -O2 -DTEST_ENV -funsigned-char -I ../.. -MMD -MP
 
 SRC = main.cpp  \
       ../../gui/ConfigHelper.cpp \
@@ -10,7 +11,10 @@ SRC = main.cpp  \
       ../../gui/ImGuiStubs.cpp \
       ../../gui/Profiles.cpp
 
-OBJ = $(SRC:.cpp=.o)
+OBJ = $(SRC:.cpp=.o) driver_accel_modes.o driver_profile_table.o
+
+driver_%.o: ../../driver/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 yeetmousectl: $(OBJ)
 	$(CXX) -o yeetmousectl $(OBJ)

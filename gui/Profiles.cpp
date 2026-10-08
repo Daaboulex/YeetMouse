@@ -11,6 +11,7 @@
 #include <linux/input.h>
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <sys/ioctl.h>
@@ -18,6 +19,8 @@
 
 #include "ConfigHelper.h"
 #include "FunctionHelper.h"
+#include "FixedPoint.h"
+#include "../driver/profile_table.h"
 
 namespace Profiles {
     namespace {
@@ -760,6 +763,18 @@ namespace Profiles {
 }
 
 namespace Profiles {
+    namespace {
+        std::optional<std::string> DriverRefusal(const Parameters &params, const std::string &name) {
+            yeetmouse_profile_args args;
+            if (!DriverHelper::ProfileArgs(params, name, args))
+                return "holds a value out of the driver's range";
+            auto profile = std::make_unique<accel_profile>();
+            if (profile_from_args(profile.get(), &args) != 0)
+                return "is refused by the driver";
+            return std::nullopt;
+        }
+    }
+
     std::vector<std::string> CheckSetup(const std::filesystem::path &etc) {
         std::vector<std::string> problems;
         std::filesystem::path root = etc / "yeetmouse";
@@ -771,9 +786,8 @@ namespace Profiles {
         }
         for (const std::string &name : names) {
             try {
-                yeetmouse_profile_args args;
-                if (!DriverHelper::ProfileArgs(LoadProfileFile(root, name), name, args))
-                    throw Refused("profile \"" + name + "\" holds a value out of the driver's range");
+                if (auto refusal = DriverRefusal(LoadProfileFile(root, name), name))
+                    throw Refused("profile \"" + name + "\" " + *refusal);
             } catch (const Refused &refused) {
                 problems.push_back(refused.what());
             }
@@ -794,11 +808,10 @@ namespace Profiles {
             static char lut_data[MAX_LUT_TEXT_LEN];
             bool is_config_h = false;
             auto params = ConfigHelper::ImportAny(stream, lut_data, is_config_h);
-            yeetmouse_profile_args args;
             if (!params || is_config_h)
                 problems.push_back(defaults.string() + " is not a YeetMouse config");
-            else if (!DriverHelper::ProfileArgs(*params, "default", args))
-                problems.push_back(defaults.string() + " holds a value out of the driver's range");
+            else if (auto refusal = DriverRefusal(*params, "default"))
+                problems.push_back(defaults.string() + " " + *refusal);
         }
         return problems;
     }

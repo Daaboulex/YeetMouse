@@ -19,7 +19,7 @@ extern "C" {
 #define pr_err printf
 
 #include <driver/FixedMath/Fixed64.h>
-static float FP64_ToFloat(FP_LONG v) {
+static inline float FP64_ToFloat(FP_LONG v) {
     return (float) v * (1.0f / 4294967296.0f);
 }
 
