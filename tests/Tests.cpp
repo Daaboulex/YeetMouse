@@ -947,6 +947,12 @@ bool Tests::TestAccelJump(float range_min, float range_max) {
                 supervisor.Validate(IsCloseEnoughRelative(res, TestManager::EvalFloatFunc(value)));
             }
         }
+
+        supervisor.NextTest();
+
+        TestManager::AccelJump(5.f, 3.f, 0.f, 5.f, false);
+        supervisor.Validate(accel_jump(&TestManager::GetProfile().x, FP64_FromInt(5)) == FP64_FromInt(3));
+        supervisor.Validate(accel_jump(&TestManager::GetProfile().x, FP64_FromDouble(4.99)) == FP64_1);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s, in Jump mode\n", ex.what());
         return false;

@@ -356,7 +356,7 @@ float CachedFunction::EvalFuncAt(float x) const {
             } else {
                 if (smoothness != 0)
                     val = (params->accel - 1) / (1 + D) + 1;
-                else if (x <= params->midpoint)
+                else if (x < params->midpoint)
                     val = 1;
                 else
                     val = (params->accel - 1) + 1;

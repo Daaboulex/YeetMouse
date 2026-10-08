@@ -537,7 +537,7 @@ FP_LONG accel_jump(const struct accel_curve *c, FP_LONG speed) {
     else {
         if (c->k.r != 0)
             speed = FP64_Add(FP64_DivPrecise(c->k.accel_sub_1, FP64_AddSaturating(FP64_1, D)), FP64_1);
-        else if (speed <= c->midpoint)
+        else if (speed < c->midpoint)
             speed = FP64_1;
         else
             speed = FP64_Add(c->k.accel_sub_1, FP64_1);
