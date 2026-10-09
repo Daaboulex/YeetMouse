@@ -1078,16 +1078,25 @@ bool accel_snap_valid(FP_LONG axis_snap, FP_LONG speed_clamp, FP_LONG ratio_lr, 
     return axis_snap >= 0 && axis_snap <= FP64_Add(PiHalf >> 1, C0NST_FP64_FromDouble(1e-6)) && speed_clamp >= 0 &&
            ratio_lr > 0 && ratio_ud > 0;
 }
-static const struct table_choice *mouse_choice(struct accel_mouse *mouse, const struct profile_table *table) {
-    if (!mouse->resolved || mouse->generation != table->generation) {
-        mouse->resolved = true;
-        mouse->generation = table->generation;
-        mouse->choice = table_resolve(table, &mouse->path);
-        memset(mouse->state.input, 0, sizeof(mouse->state.input));
-        memset(mouse->state.scale, 0, sizeof(mouse->state.scale));
-        memset(mouse->state.output, 0, sizeof(mouse->state.output));
-    }
+static void mouse_resolve(struct accel_mouse *mouse, const struct profile_table *table) {
+    mouse->resolved = true;
+    mouse->generation = table->generation;
+    mouse->choice = table_resolve(table, &mouse->path);
+    memset(mouse->state.input, 0, sizeof(mouse->state.input));
+    memset(mouse->state.scale, 0, sizeof(mouse->state.scale));
+    memset(mouse->state.output, 0, sizeof(mouse->state.output));
+}
+
+static INLINE const struct table_choice *mouse_choice(struct accel_mouse *mouse, const struct profile_table *table) {
+    if (!mouse->resolved || mouse->generation != table->generation)
+        mouse_resolve(mouse, table);
     return &mouse->choice;
+}
+
+static void accel_full_packet(const struct table_choice *choice, struct accel_state *s, FP_LONG delta_x, FP_LONG delta_y,
+                              FP_LONG ms, int *x, int *y) {
+    accel_packet(choice->profile, choice->device, s, &delta_x, &delta_y, ms);
+    accel_round(choice->profile, s, delta_x, delta_y, x, y);
 }
 
 void accel_mouse_packet(struct accel_mouse *mouse, const struct profile_table *table, long long now_ns, int *x, int *y) {
@@ -1104,10 +1113,11 @@ void accel_mouse_packet(struct accel_mouse *mouse, const struct profile_table *t
     } else {
         ms = accel_time(choice->device, accel_elapsed(&mouse->state, now_ns));
     }
-    if (choice->profile->plain)
-        accel_plain_packet(choice->profile, choice->device, &delta_x, &delta_y, ms);
-    else
-        accel_packet(choice->profile, choice->device, &mouse->state, &delta_x, &delta_y, ms);
+    if (!choice->profile->plain) {
+        accel_full_packet(choice, &mouse->state, delta_x, delta_y, ms, x, y);
+        return;
+    }
+    accel_plain_packet(choice->profile, choice->device, &delta_x, &delta_y, ms);
     accel_round(choice->profile, &mouse->state, delta_x, delta_y, x, y);
 }
 
