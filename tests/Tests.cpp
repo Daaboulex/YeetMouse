@@ -3054,6 +3054,20 @@ bool Tests::TestRawAccelSetup() {
         supervisor.Validate(refusal([&] { Profiles::MergeSetup(root, setup); }).find("already in devices.conf") !=
                             std::string::npos);
         supervisor.Validate(Profiles::ProfileNames(root) == std::vector<std::string>{"mine"});
+
+        Profiles::Setup stalled = setup;
+        stalled.devices.clear();
+        stalled.profiles = {{"stalled", setup.defaults}};
+        stalled.profiles[0].second.accelMode = AccelMode_Jump;
+        stalled.profiles[0].second.midpoint = 0;
+        supervisor.Validate(refusal([&] { Profiles::MergeSetup(root, stalled); }).find("Jump needs a Midpoint above 0") !=
+                                std::string::npos &&
+                            Profiles::ProfileNames(root) == std::vector<std::string>{"mine"});
+        std::ofstream(root / "profiles" / "stalled.conf") << "accelMode=AccelMode_Jump\nmidpoint=0\n";
+        std::size_t listed = Profiles::LoadDevicesFile(root).size();
+        supervisor.Validate(refusal([&] { Profiles::AssignDevice(root, setup.defaults, 0x1234, 0x5678, "stalled", {}); })
+                                    .find("Jump needs a Midpoint above 0") != std::string::npos &&
+                            Profiles::LoadDevicesFile(root).size() == listed);
         std::filesystem::remove_all(root);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during Raw Accel setup\n", ex.what());

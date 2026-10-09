@@ -191,7 +191,7 @@ static int ProfileRemove(const std::string &name) {
         try {
             Profiles::DriverDrop(name);
         } catch (const Profiles::Refused &refused) {
-            if (refused.code == EBUSY)
+            if (refused.code != ENOENT)
                 throw;
             std::cerr << "Not in the driver: " << refused.what() << std::endl;
         }
@@ -544,7 +544,8 @@ static std::optional<std::string> DumpDriver() {
             return std::nullopt;
         }
     } catch (const Profiles::Refused &refused) {
-        std::cerr << "Warning: " << refused.what() << std::endl;
+        std::cerr << "Cannot tell whether these parameters are live: " << refused.what() << std::endl;
+        return std::nullopt;
     }
     return ConfigHelper::ExportPlainText(params, false);
 }

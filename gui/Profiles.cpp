@@ -1038,7 +1038,8 @@ namespace Profiles {
         std::istringstream stream(text);
         DeviceLine updated = ReadDevices(stream).at(0);
         if (!updated.disabled())
-            LoadProfileFile(root, profile);
+            if (auto refusal = DriverRefusal(LoadProfileFile(root, profile), profile))
+                throw Refused("profile \"" + profile + "\" is refused: " + *refusal);
         if (line != lines.end())
             *line = updated;
         else
@@ -1120,6 +1121,9 @@ namespace Profiles {
             lines.push_back(line);
         }
         DevicesArgs(lines);
+        for (const auto &[name, params] : setup.profiles)
+            if (auto refusal = DriverRefusal(params, name))
+                throw Refused("profile \"" + name + "\" is refused: " + *refusal);
 
         for (const auto &[name, params] : setup.profiles)
             SaveProfile(root, name, params);

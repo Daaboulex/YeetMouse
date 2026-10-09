@@ -27,13 +27,7 @@ static bool GetParameterTy(const std::string &param_name, Ty &value) {
     try {
         using namespace std;
         ifstream file(YEETMOUSE_PARAMS_DIR + param_name);
-
-        if (file.bad())
-            return false;
-
-        file >> value;
-        file.close();
-        return true;
+        return file.is_open() && static_cast<bool>(file >> value);
     } catch (std::exception &ex) {
         fprintf(stderr, "Error when reading parameter %s (%s)\n", param_name.c_str(), ex.what());
         return false;
