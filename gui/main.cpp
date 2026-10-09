@@ -85,39 +85,45 @@ static int OnGui() {
     bool live_known = ProfilesGui::Live().has_value();
 
     if (ImGui::BeginMainMenuBar()) {
+        const bool valid = functions[selected_mode].isValid;
+        const char *invalid = "These values do not make a valid curve";
+        Parameters imported_params;
         if (ImGui::BeginMenu("File")) {
-            Parameters imported_params;
-            if (ImGui::MenuItem("Import...") && ConfigHelper::ImportFile(LUT_user_data, imported_params))
-                LoadIntoEditor(imported_params);
-            ImGui::SetItemTooltip("Load a YeetMouse config or config.h into the editor");
-
-            ImGui::BeginDisabled(!functions[selected_mode].isValid);
-            if (ImGui::BeginMenu("Export")) {
-                if (ImGui::MenuItem("YeetMouse config..."))
-                    ConfigHelper::ExportPlainText(params[selected_mode], true);
-                ImGui::SetItemTooltip("Save the editor's settings as a config file");
-                if (ImGui::MenuItem("config.h..."))
-                    ConfigHelper::ExportConfig(params[selected_mode], true);
-                ImGui::SetItemTooltip("Save them as driver defaults to build in");
+            if (ImGui::BeginMenu("Import")) {
+                if (ImGui::MenuItem("YeetMouse config...") &&
+                    ConfigHelper::ImportFile(LUT_user_data, imported_params))
+                    LoadIntoEditor(imported_params);
+                ImGui::SetItemTooltip("Load a YeetMouse config or config.h into the editor");
+                ProfilesGui::RawAccelImports(load_into_editor);
                 ImGui::EndMenu();
             }
-            ImGui::EndDisabled();
-            if (!functions[selected_mode].isValid)
-                ImGui::SetItemTooltip("These values do not make a valid curve");
-
-            ImGui::Separator();
-            ImGui::BeginDisabled(!functions[selected_mode].isValid);
-            if (ImGui::MenuItem("Copy to clipboard"))
-                ImGui::SetClipboardText(ConfigHelper::ExportPlainText(params[selected_mode], false).c_str());
-            ImGui::EndDisabled();
-            ImGui::SetItemTooltip("Copy the editor's settings as config text");
-            if (ImGui::MenuItem("Paste from clipboard") &&
-                ConfigHelper::ImportClipboard(LUT_user_data, ImGui::GetClipboardText(), imported_params))
-                LoadIntoEditor(imported_params);
-            ImGui::SetItemTooltip("Load config text from the clipboard into the editor");
+            if (ImGui::BeginMenu("Export")) {
+                ImGui::BeginDisabled(!valid);
+                if (ImGui::MenuItem("YeetMouse config..."))
+                    ConfigHelper::ExportPlainText(params[selected_mode], true);
+                ImGui::SetItemTooltip("%s", valid ? "Save the editor's settings as a YeetMouse config" : invalid);
+                if (ImGui::MenuItem("config.h (older YeetMouse)..."))
+                    ConfigHelper::ExportConfig(params[selected_mode], true);
+                ImGui::SetItemTooltip("%s", valid ? "For older YeetMouse, which builds settings into the driver" : invalid);
+                ImGui::EndDisabled();
+                ProfilesGui::RawAccelExports(params[selected_mode]);
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
-        ProfilesGui::RawAccelMenu(params[selected_mode], load_into_editor);
+        if (ImGui::BeginMenu("Edit")) {
+            ImGui::BeginDisabled(!valid);
+            if (ImGui::MenuItem("Copy settings"))
+                ImGui::SetClipboardText(ConfigHelper::ExportPlainText(params[selected_mode], false).c_str());
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("%s", valid ? "Copy the editor's settings as YeetMouse config text" : invalid);
+            if (ImGui::MenuItem("Paste settings") &&
+                ConfigHelper::ImportClipboard(LUT_user_data, ImGui::GetClipboardText(), imported_params))
+                LoadIntoEditor(imported_params);
+            ImGui::SetItemTooltip("Load YeetMouse config text from the clipboard into the editor");
+            ImGui::EndMenu();
+        }
+        ProfilesGui::ViewMenu();
         ProfilesGui::DevicesMenu();
         ImGui::EndMainMenuBar();
     }

@@ -621,13 +621,16 @@ namespace ProfilesGui {
         ImGui::NewLine();
     }
 
-    void RawAccelMenu(const Parameters &current, const Load &load) {
-        if (!ImGui::BeginMenu("Raw Accel"))
+    void ViewMenu() {
+        if (!ImGui::BeginMenu("View"))
             return;
-        ImGui::Toggle("Show features", &show_raw_accel);
+        ImGui::Checkbox("Raw Accel features", &show_raw_accel);
         ImGui::SetItemTooltip("Show Raw Accel's settings even when unused");
-        ImGui::Separator();
-        if (ImGui::MenuItem("Import profile...")) {
+        ImGui::EndMenu();
+    }
+
+    void RawAccelImports(const Load &load) {
+        if (ImGui::MenuItem("Raw Accel profile...")) {
             if (auto path = ConfigHelper::ChooseFile("Select a Raw Accel settings.json", false)) {
                 try {
                     std::ifstream stream(*path);
@@ -643,9 +646,9 @@ namespace ProfilesGui {
                 }
             }
         }
-        ImGui::SetItemTooltip("Load one profile from a settings.json into the editor");
+        ImGui::SetItemTooltip("Load one profile of a Raw Accel settings.json into the editor");
 
-        if (ImGui::MenuItem("Add profiles and devices...")) {
+        if (ImGui::MenuItem("Raw Accel profiles and mice...")) {
             if (auto path = ConfigHelper::ChooseFile("Select a Raw Accel settings.json", false)) {
                 try {
                     Profiles::SetupLock lock(Profiles::Root);
@@ -668,9 +671,11 @@ namespace ProfilesGui {
                 Refresh(true);
             }
         }
-        ImGui::SetItemTooltip("Add every profile and mouse of a settings.json");
+        ImGui::SetItemTooltip("Add every profile and mouse of a Raw Accel settings.json to YeetMouse");
+    }
 
-        if (ImGui::MenuItem("Export profile...")) {
+    void RawAccelExports(const Parameters &current) {
+        if (ImGui::MenuItem("Raw Accel profile...")) {
             try {
                 Parameters exported =
                     EditingDefault() ? current : WithDeviceSettings(current, DeviceSettingsFor(editing_profile));
@@ -679,9 +684,9 @@ namespace ProfilesGui {
                 Message(std::string("Not exported: ") + refused.what());
             }
         }
-        ImGui::SetItemTooltip("Write the editor's curve as a settings.json");
+        ImGui::SetItemTooltip("Save the editor's curve as a Raw Accel settings.json");
 
-        if (ImGui::MenuItem("Export all...")) {
+        if (ImGui::MenuItem("Raw Accel profiles and mice...")) {
             try {
                 std::vector<std::string> skipped;
                 std::string json = RawAccel::Write(Profiles::ToRawAccel(Profiles::ReadSetup("/etc"), skipped));
@@ -696,8 +701,7 @@ namespace ProfilesGui {
                 Message(std::string("Not exported: ") + refused.what());
             }
         }
-        ImGui::SetItemTooltip("Write the default, every profile and every mouse as one settings.json");
-        ImGui::EndMenu();
+        ImGui::SetItemTooltip("Save the default, every profile and every mouse as one Raw Accel settings.json");
     }
 
     void DevicesMenu() {

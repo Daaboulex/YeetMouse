@@ -38,7 +38,11 @@ namespace ProfilesGui {
 
     void StatusBar();
 
-    void RawAccelMenu(const Parameters &current, const Load &load);
+    void ViewMenu();
+
+    void RawAccelImports(const Load &load);
+
+    void RawAccelExports(const Parameters &current);
 
     void DevicesMenu();
 

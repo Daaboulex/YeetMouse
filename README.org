@@ -106,8 +106,9 @@
    + =Apply= uses the edited settings now and leaves the file alone. =Save= writes the file, then applies it. =Reset= puts the saved file back, on screen and in the driver. =Defaults= sets the current curve to its defaults. The line under the picker says =Edited=, =Applied, not saved= or =Saved=, read back from the driver, and switching away from unsaved changes asks first.
    + =Save as new profile=, =Delete profile= and =Copy into default= sit below the picker. A running game's profile shows as =Game running: <profile>=.
    + The =Devices= menu lists each mouse the driver handles, with the line the driver resolved for it. Pick =Default= or the receiver's line, a profile or =Disabled=, give a mouse paired through a receiver its own line, or set a line's =DPI and timing=. Mice in =devices.conf= that are not connected appear under =Not connected=, where =Forget= removes their line. Touchpads are listed too, as described under Touchpads below.
-   + The =File= menu imports and exports YeetMouse configs and config.h, and copies or pastes a config through the clipboard.
-   + The =Raw Accel= menu imports and exports Raw Accel settings and has =Show features=, which shows the Raw Accel section even when the curve uses none of it: timing, exact math, lp norm, domain and range weights, smoothing, axis snap, speed cap, directional ratios and a separate vertical curve.
+   + =File=, =Import= loads a YeetMouse config (or an old config.h) or one Raw Accel profile into the editor, or adds every profile and mouse of a Raw Accel settings.json. =File=, =Export= saves the editor's settings as a YeetMouse config, as config.h for older YeetMouse that builds settings into the driver, or as a Raw Accel profile, or saves the default, every profile and every mouse as one Raw Accel settings.json.
+   + =Edit= copies the editor's settings as YeetMouse config text and pastes such text back into the editor.
+   + =View=, =Raw Accel features= shows the Raw Accel section even when the curve uses none of it: timing, exact math, lp norm, domain and range weights, smoothing, axis snap, speed cap, directional ratios and a separate vertical curve.
    + The chart's right-click menu has ImPlot's =Auto-Fit= per axis, which follows the curves and ignores the mouse speed dots; double-clicking the chart fits it once.
 
 ** Arch
@@ -335,7 +336,7 @@
 
 ** How do I convert my RawAccel settings?
 - Run =yeetmousectl import-rawaccel settings.json= on a Raw Accel 1.7 file. It converts exactly, or refuses and names the setting it cannot reproduce. See Importing and exporting Raw Accel settings above.
-- In the GUI, =File=, =Import Raw Accel profile= loads one profile into the editor, and =Add Raw Accel profiles and devices= adds all of them to =/etc/yeetmouse=.
+- In the GUI, =File=, =Import=, =Raw Accel profile= loads one profile into the editor, and =Raw Accel profiles and mice= adds all of them to =/etc/yeetmouse=.
 - Files from Raw Accel versions before 1.7 are refused.
 - YeetMouse's own /Motivity/ mode has no Raw Accel equivalent, so a curve that uses it cannot be exported.
 
