@@ -35,7 +35,7 @@ test the first-point property failed (measured on 128-point tables before 82e8f8
 Built with goto-cc, with FP64_DivPrecise replaced by a body returning any value (div_defined.c
 proves the division defined; its value cannot move a pointer).
 
-For any bytes in both buffers (each NUL-terminated, the guarantee of module_param_string) and any
+For any bytes in two 8-byte buffers (each NUL-terminated, the guarantee of module_param_string; the driver's are 4096 bytes, which a bounded check cannot cover) and any
 table size, `accel_lut_parse` reads and writes only inside its buffers and arrays, and returns
 either the requested size or 0, never a table with missing points. Result (2026-10-08): 0 of 3049
 properties fail, 405 s on the M1. With the old unconditional step over a separator it reads past the end of

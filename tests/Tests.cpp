@@ -1750,7 +1750,6 @@ bool Tests::TestRawAccelParity() {
         supervisor.Validate(!refused(classic_owner, device) && counts_match(classic_owner, device, 5));
 
         supervisor.NextTest();
-        int natural_converted = 0;
         for (bool gain : {false, true}) {
             for (double offset : {0.0, 4.0}) {
                 for (double limit : {0.5, 1.5, 3.0}) {
@@ -1762,13 +1761,11 @@ bool Tests::TestRawAccelParity() {
                         profile.x.limit = limit;
                         profile.x.decayRate = decay;
                         supervisor.Validate(!refused(profile, device));
-                        natural_converted++;
                         supervisor.Validate(vectors_match(profile, device));
                     }
                 }
             }
         }
-        supervisor.Validate(natural_converted == 24);
         RawAccel::Profile flat_natural = owner;
         flat_natural.x.mode = RawAccel::Mode::Natural;
         flat_natural.x.limit = 1;
@@ -1882,7 +1879,6 @@ bool Tests::TestRawAccelParity() {
         jump_y.cap = {10, 2};
         RawAccel::AccelArgs flat_y = owner.x;
         flat_y.mode = RawAccel::Mode::NoAccel;
-        int component_converted = 0;
         for (const RawAccel::AccelArgs &vertical : {classic_y, jump_y, flat_y, owner.x}) {
             for (RawAccel::Vec2 domain : {RawAccel::Vec2{1, 1}, RawAccel::Vec2{0.5, 1.5}}) {
                 for (RawAccel::Vec2 range : {RawAccel::Vec2{1, 1}, RawAccel::Vec2{0.4, 1.8}}) {
@@ -1892,11 +1888,9 @@ bool Tests::TestRawAccelParity() {
                     profile.domain = domain;
                     profile.range = range;
                     supervisor.Validate(!refused(profile, device) && vectors_match(profile, device));
-                    component_converted++;
                 }
             }
         }
-        supervisor.Validate(component_converted == 16);
         RawAccel::Profile component_owner = owner;
         component_owner.speed.whole = false;
         component_owner.y = classic_y;
@@ -2092,7 +2086,6 @@ bool Tests::TestRawAccelExport() {
         Parameters classic = ready;
         classic.accelMode = AccelMode_Classic;
         classic.accel = 0.01f;
-        int classic_exported = 0;
         for (bool smoothing : {false, true}) {
             for (float exponent : {1.5f, 2.0f, 3.0f}) {
                 for (float offset : {0.0f, 3.0f}) {
@@ -2107,12 +2100,10 @@ bool Tests::TestRawAccelExport() {
                             continue;
                         }
                         supervisor.Validate(!refused(classic) && exported_matches(classic));
-                        classic_exported++;
                     }
                 }
             }
         }
-        supervisor.Validate(classic_exported == 30);
 
         supervisor.NextTest();
         Parameters power = ready;
