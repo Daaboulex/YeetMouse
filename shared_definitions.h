@@ -80,29 +80,29 @@ static inline bool yeetmouse_name_valid(const char *name) {
 
 static inline const char *yeetmouse_times_problem(__s64 min_time, __s64 max_time, bool fixed_time) {
     if (max_time <= 0)
-        return "maxTime is not above 0";
+        return "Max Time must be above 0";
     if (min_time < 0)
-        return "minTime is below 0";
+        return "Min Time must be 0 or more";
     if (min_time > max_time)
-        return "minTime is above maxTime";
+        return "Min Time must not be above Max Time";
     if (fixed_time && min_time <= 0)
-        return "fixedTime needs minTime above 0";
+        return "Fixed time needs a Min Time above 0";
     return NULL;
 }
 
 static inline const char *yeetmouse_scaling_problem(__s64 pre_scale, __s64 min_time, __s64 max_time, bool fixed_time) {
     if (pre_scale <= 0)
-        return "preScale is not above 0";
+        return "Pre-Scale must be above 0";
     return yeetmouse_times_problem(min_time, max_time, fixed_time);
 }
 
 static inline const char *yeetmouse_device_problem(const struct yeetmouse_device_args *device) {
     if (device->disabled > 1 || device->fixed_time > 1 || device->reserved[0] != 0 || device->reserved[1] != 0)
-        return "a flag is out of range";
+        return "A flag is out of range";
     if (device->disabled)
         return device->profile[0] != '\0' ? "a disabled mouse names a profile" : NULL;
     if (!yeetmouse_name_valid(device->profile))
-        return "the profile name is not valid";
+        return "The profile name is not valid";
     return yeetmouse_scaling_problem(device->pre_scale, device->min_time, device->max_time, device->fixed_time);
 }
 

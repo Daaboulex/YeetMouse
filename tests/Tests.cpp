@@ -2395,20 +2395,20 @@ bool Tests::TestProfileTable() {
         args = good;
         args.sensitivity += 1;
         supervisor.Validate(profile_from_args(&profiles[1], &args) == nullptr && profiles[1].digest != profiles[0].digest);
-        supervisor.Validate(reason([](yeetmouse_profile_args &a) { a.lp_norm = FP64_FromDouble(0.5); }).find("LpNorm") == 0);
+        supervisor.Validate(reason([](yeetmouse_profile_args &a) { a.lp_norm = FP64_FromDouble(0.5); }).find("Lp Norm") == 0);
         supervisor.Validate(reason([](yeetmouse_profile_args &a) {
             a.x.mode = AccelMode_Linear;
             a.x.acceleration = 0;
-        }).find("'Linear'") != std::string::npos);
+        }).find("Linear needs") != std::string::npos);
         supervisor.Validate(reason([](yeetmouse_profile_args &a) {
             a.x.mode = AccelMode_Natural;
             a.x.exponent = FP64_1;
             a.x.acceleration = 0;
-        }).find("exponent 1") != std::string::npos);
+        }).find("Limit other than 1") != std::string::npos);
         supervisor.Validate(reason([](yeetmouse_profile_args &a) {
             a.x.mode = AccelMode_Lut;
             a.x.lut_size = 1;
-        }).find("fewer than two points") != std::string::npos);
+        }).find("two points or more") != std::string::npos);
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.name[0] = '.'; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.x.mode = AccelMode_Count; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.y.lut_size = YEETMOUSE_LUT_POINTS + 1; }));
@@ -2437,10 +2437,10 @@ bool Tests::TestProfileTable() {
         timing.fixedTime = true;
         timing.minTime = 0;
         supervisor.Validate(!Profiles::DefaultRefusal(owner) && !Profiles::DriverRefusal(timing, "default") &&
-                            Profiles::DefaultRefusal(timing).value_or("").find("fixedTime") != std::string::npos);
+                            Profiles::DefaultRefusal(timing).value_or("").find("Fixed time") != std::string::npos);
         timing = owner;
         timing.preScale = 0;
-        supervisor.Validate(Profiles::DefaultRefusal(timing).value_or("").find("preScale") != std::string::npos);
+        supervisor.Validate(Profiles::DefaultRefusal(timing).value_or("").find("Pre-Scale") != std::string::npos);
 
         Parameters stale = owner;
         stale.lutSize = 2;
@@ -2633,10 +2633,10 @@ bool Tests::TestProfileFiles() {
         };
         std::vector<Profiles::DeviceLine> spoiled = lines;
         spoiled[0].preScale = 0;
-        supervisor.Validate(args_refused(spoiled, "preScale is not above 0"));
+        supervisor.Validate(args_refused(spoiled, "Pre-Scale must be above 0"));
         spoiled = lines;
         spoiled[2].minTime = 0;
-        supervisor.Validate(args_refused(spoiled, "fixedTime needs minTime above 0"));
+        supervisor.Validate(args_refused(spoiled, "Fixed time needs a Min Time above 0"));
         spoiled = std::vector<Profiles::DeviceLine>(YEETMOUSE_MAX_DEVICES + 1, lines[0]);
         supervisor.Validate(args_refused(spoiled, "more than"));
 
@@ -2794,7 +2794,7 @@ bool Tests::TestProfileFiles() {
         stalled.accel = 0;
         std::optional<std::string> reason = Profiles::DriverRefusal(stalled, "stalled");
         supervisor.Validate(reason && reason->find("Linear") != std::string::npos &&
-                            reason->find("acceleration 0") != std::string::npos);
+                            reason->find("Acceleration above 0") != std::string::npos);
 
         supervisor.NextTest();
         std::filesystem::remove_all(root);
@@ -2827,7 +2827,7 @@ bool Tests::TestProfileFiles() {
         supervisor.Validate(edit_refused([&] { Profiles::AssignDevice(root, defaults, 0x1234, 1, "power", {"dpi=800"}); },
                                          "not a device setting"));
         supervisor.Validate(edit_refused([&] { Profiles::AssignDevice(root, defaults, 0x1234, 1, "power", {"preScale=0"}); },
-                                         "preScale is not above 0"));
+                                         "Pre-Scale must be above 0"));
         supervisor.Validate(Profiles::LoadDevicesFile(root).size() == 2);
         supervisor.Validate(Profiles::ProfileUsers(Profiles::LoadDevicesFile(root), "jump") ==
                             std::vector<std::string>{"046d:c539"});
@@ -3029,13 +3029,13 @@ bool Tests::TestRawAccelSetup() {
                                [&](const std::string &problem) { return problem.find(text) != std::string::npos; });
         };
         supervisor.Validate(problems.size() == 3 && names("\"missing\"") && names("broken") &&
-                            names("\"stalled\" is refused by the driver"));
+                            names("\"stalled\" is refused: "));
         std::ofstream(etc / "yeetmouse" / "devices.conf", std::ios::app) << "not-an-id power\n";
         problems = Profiles::CheckSetup(etc);
         supervisor.Validate(problems.size() == 3 && names("not-an-id") && names("broken") && names("stalled"));
         std::ofstream(etc / "yeetmouse" / "default.conf") << "accelMode=AccelMode_Linear\naccel=0\n";
         problems = Profiles::CheckSetup(etc);
-        supervisor.Validate(problems.size() == 4 && names("default.conf is refused by the driver"));
+        supervisor.Validate(problems.size() == 4 && names("default.conf is refused: Linear needs an Acceleration above 0"));
         std::filesystem::remove_all(etc);
 
         supervisor.NextTest();
@@ -3370,7 +3370,7 @@ bool Tests::TestSetupWrites() {
         std::vector<Profiles::DeviceLine> usable = Profiles::LoadableLines(wanted, {"power"}, problems);
         supervisor.Validate(usable.size() == 2 && usable[0].product == 0xc539 && usable[1].disabled() &&
                             problems.size() == 2 && problems[0].find("046d:0084") == 0 &&
-                            problems[1].find("preScale") != std::string::npos);
+                            problems[1].find("Pre-Scale") != std::string::npos);
         std::vector<Profiles::DeviceLine> many;
         for (int i = 0; i <= YEETMOUSE_MAX_DEVICES; i++) {
             Profiles::DeviceLine line = lines[0];
@@ -3649,7 +3649,7 @@ bool Tests::TestPacketPath() {
         Parameters inverted;
         inverted.minTime = 5;
         inverted.maxTime = 2;
-        supervisor.Validate(Profiles::DefaultRefusal(inverted).value_or("").find("maxTime") != std::string::npos);
+        supervisor.Validate(Profiles::DefaultRefusal(inverted).value_or("").find("Max Time") != std::string::npos);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during the packet path\n", ex.what());
         supervisor.result = false;

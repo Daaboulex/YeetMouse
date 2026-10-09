@@ -339,7 +339,7 @@ namespace Profiles {
                 if (!DriverHelper::FixedPoint(line.preScale, device.pre_scale) ||
                     !DriverHelper::FixedPoint(line.minTime, device.min_time) ||
                     !DriverHelper::FixedPoint(line.maxTime, device.max_time))
-                    throw Refused(id + ": a value is out of the driver's range");
+                    throw Refused(id + ": a value is too large for the driver");
             }
             if (const char *problem = yeetmouse_device_problem(&device))
                 throw Refused(id + ": " + problem);
@@ -350,7 +350,7 @@ namespace Profiles {
     void DriverLoad(const std::string &name, const Parameters &params) {
         yeetmouse_profile_args args;
         if (!DriverHelper::ProfileArgs(params, name, args))
-            throw Refused("profile \"" + name + "\" holds a value out of the driver's range");
+            throw Refused("profile \"" + name + "\" holds a value too large for the driver");
         Driver().Call(YEETMOUSE_IOCTL_LOAD_PROFILE, &args, "loading profile \"" + name + "\"");
     }
 
@@ -1125,10 +1125,10 @@ namespace Profiles {
     std::optional<std::string> DriverRefusal(const Parameters &params, const std::string &name) {
         yeetmouse_profile_args args;
         if (!DriverHelper::ProfileArgs(params, name, args))
-            return "holds a value out of the driver's range";
+            return "A value is too large for the driver";
         auto profile = std::make_unique<accel_profile>();
         if (const char *problem = profile_from_args(profile.get(), &args))
-            return std::string("is refused by the driver: ") + problem;
+            return std::string(problem);
         return std::nullopt;
     }
 
@@ -1138,9 +1138,9 @@ namespace Profiles {
         __s64 pre_scale = 0, min_time = 0, max_time = 0;
         if (!DriverHelper::FixedPoint(params.preScale, pre_scale) || !DriverHelper::FixedPoint(params.minTime, min_time) ||
             !DriverHelper::FixedPoint(params.maxTime, max_time))
-            return "holds a value out of the driver's range";
+            return "A value is too large for the driver";
         if (const char *problem = yeetmouse_scaling_problem(pre_scale, min_time, max_time, params.fixedTime))
-            return std::string("is refused by the driver: ") + problem;
+            return std::string(problem);
         return std::nullopt;
     }
 
@@ -1229,7 +1229,7 @@ namespace Profiles {
         for (const std::string &name : names) {
             try {
                 if (auto refusal = DriverRefusal(LoadProfileFile(root, name), name))
-                    throw Refused("profile \"" + name + "\" " + *refusal);
+                    throw Refused("profile \"" + name + "\" is refused: " + *refusal);
             } catch (const Refused &refused) {
                 problems.push_back(refused.what());
             }
@@ -1248,7 +1248,7 @@ namespace Profiles {
         if (std::filesystem::exists(defaults)) {
             try {
                 if (auto refusal = DefaultRefusal(LoadDefaultFile(defaults)))
-                    problems.push_back(defaults.string() + " " + *refusal);
+                    problems.push_back(defaults.string() + " is refused: " + *refusal);
             } catch (const Refused &refused) {
                 problems.push_back(refused.what());
             }

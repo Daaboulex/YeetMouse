@@ -15,13 +15,13 @@ _Static_assert(sizeof(struct yeetmouse_devices_args) == 2056, "the device table 
 
 static const char *curve_from_args(struct accel_curve *curve, const struct yeetmouse_curve_args *args) {
     if (args->mode >= AccelMode_Count)
-        return "the acceleration mode is not known";
+        return "The curve type is not known";
     if (args->use_smoothing > 1 || args->lut_velocity > 1)
-        return "a curve flag is not 0 or 1";
+        return "A curve flag is not 0 or 1";
     if (args->reserved != 0)
-        return "a reserved curve field is set";
+        return "A reserved curve field is set";
     if (args->lut_size > YEETMOUSE_LUT_POINTS)
-        return "the lookup table holds more than 257 points";
+        return "The lookup table holds more than 257 points";
 
     curve->mode = (char) args->mode;
     curve->use_smoothing = (char) args->use_smoothing;
@@ -44,13 +44,13 @@ const char *profile_from_args(struct accel_profile *profile, const struct yeetmo
 
     memset(profile, 0, sizeof(*profile));
     if (!yeetmouse_name_valid(args->name))
-        return "the profile name is not valid";
+        return "The profile name is not valid";
     if (args->by_component > 1 || args->truncate_carry > 1 || args->clock_on_any_report > 1 ||
         args->exact_math > 1)
-        return "a profile flag is not 0 or 1";
+        return "A profile flag is not 0 or 1";
     for (i = 0; i < sizeof(args->reserved); i++)
         if (args->reserved[i] != 0)
-            return "a reserved profile field is set";
+            return "A reserved profile field is set";
     problem = curve_from_args(&profile->x, &args->x);
     if (!problem)
         problem = curve_from_args(&profile->y, &args->y);
@@ -83,13 +83,13 @@ const char *profile_from_args(struct accel_profile *profile, const struct yeetmo
     profile->exact_math = (char) args->exact_math;
 
     if (!accel_angle_snap_valid(profile->angle_snap_threshold))
-        return "AngleSnap_Threshold must lie in [0, pi)";
+        return "Snapping Threshold must be from 0 to under 180 degrees";
     if (!accel_weights_valid(profile->lp_norm, profile->domain_x, profile->domain_y, profile->range_x, profile->range_y))
-        return "LpNorm must be at least 1, the domain weights above 0 and the range weights not below 0";
+        return "Lp Norm must be 1 or more, Domain X and Y above 0, and Range X and Y 0 or more";
     if (!accel_half_lives_valid(profile->input_half_life, profile->scale_half_life, profile->output_half_life))
-        return "smoothing half-lives must not be negative";
+        return "Smoothing half-lives must be 0 or more";
     if (!accel_snap_valid(profile->axis_snap, profile->speed_clamp, profile->ratio_lr, profile->ratio_ud))
-        return "AxisSnap must lie in [0, pi/4], SpeedClamp not below 0 and RatioLR and RatioUD above 0";
+        return "Axis Snap must be 0 to 45 degrees, Speed Cap 0 or more, and Left/Right and Up/Down above 0";
 
     problem = update_profile_constants(profile);
     if (problem)

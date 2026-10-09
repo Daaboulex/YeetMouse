@@ -170,7 +170,7 @@ static const char *update_curve_constants(struct accel_curve *c) {
     // Synchronous
     if (c->mode == AccelMode_Synchronous) {
         if (c->motivity <= FP64_1) {
-            problem = "Acceleration mode 'Synchronous' is not supported for a motivity not above 1";
+            problem = "Synchronous needs a Motivity above 1";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -197,7 +197,7 @@ static const char *update_curve_constants(struct accel_curve *c) {
     // Linear
     if (c->mode == AccelMode_Linear) {
         if (c->acceleration == 0) {
-            problem = "Acceleration mode 'Linear' is not supported for acceleration 0";
+            problem = "Linear needs an Acceleration above 0";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -224,15 +224,15 @@ static const char *update_curve_constants(struct accel_curve *c) {
     // Classic
     if (c->mode == AccelMode_Classic) {
         if (c->use_smoothing && (c->exponent == 0 || c->k.exp_sub_1 == 0)) {
-            problem = "Acceleration mode 'Classic' is not supported for exponent 0 or 1 while using the smooth cap";
+            problem = "Classic with Smooth cap needs an Exponent other than 0 and 1";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         } else if (c->input_offset < 0 || c->legacy_cap < 0) {
-            problem = "Acceleration mode 'Classic' is not supported for a negative input offset or legacy cap";
+            problem = "Classic needs an Input Offset and Sens Cap of 0 or more";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         } else if (!classic_constants(c)) {
-            problem = "Acceleration mode 'Classic' is not supported for a cap whose constants leave the fixed-point range";
+            problem = "Classic's values are too large for the driver; lower Acceleration, Exponent or the cap";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -241,12 +241,12 @@ static const char *update_curve_constants(struct accel_curve *c) {
     // Natural
     if (c->mode == AccelMode_Natural) {
         if (c->k.exp_sub_1 == 0 || c->exponent == FP64_1) {
-            problem = "Acceleration mode 'Natural' is not supported for exponent 1";
+            problem = "Natural needs a Limit other than 1";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
         else if (c->acceleration == 0) {
-            problem = "Acceleration mode 'Natural' is not supported for acceleration 0";
+            problem = "Natural needs a Decay Rate above 0";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -259,7 +259,7 @@ static const char *update_curve_constants(struct accel_curve *c) {
     // Jump
     if (c->mode == AccelMode_Jump) {
         if (c->midpoint == 0) {
-            problem = "Acceleration mode 'Jump' is not supported for midpoint 0";
+            problem = "Jump needs a Midpoint above 0";
             c->midpoint = FP64_1;
             c->acceleration = 0;
             c->mode = AccelMode_Current;
@@ -286,13 +286,13 @@ static const char *update_curve_constants(struct accel_curve *c) {
 
     // Power
     if (c->mode == AccelMode_Power && c->legacy_cap < 0) {
-        problem = "Acceleration mode 'Power' is not supported for a negative legacy cap";
+        problem = "Power needs a Sens Cap of 0 or more";
         c->acceleration = 0;
         c->mode = AccelMode_Current;
     }
     if (c->mode == AccelMode_Power) {
         if (c->exponent == 0 || c->exponent == -FP64_1 || c->acceleration == 0) {
-            problem = "Acceleration mode 'Power' is not supported for exponent 0 or -1 or acceleration 0";
+            problem = "Power needs an Acceleration above 0 and an Exponent other than 0 and -1";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -301,12 +301,12 @@ static const char *update_curve_constants(struct accel_curve *c) {
             c->k.power_constant = 0;
         }
         else if ((c->midpoint >= c->motivity) && c->use_smoothing) {
-            problem = "Acceleration mode 'Power' is not supported for output offsets higher than the smooth cap";
+            problem = "Power needs an Output Offset below its Output Limit";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
         else if (!power_constants(c)) {
-            problem = "Acceleration mode 'Power' is not supported for an output offset or smooth cap whose constants leave the fixed-point range";
+            problem = "Power's values are too large for the driver; lower Acceleration, Output Offset or Output Limit";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -316,18 +316,18 @@ static const char *update_curve_constants(struct accel_curve *c) {
     if (c->mode == AccelMode_Lut || c->mode == AccelMode_CustomCurve) {
         if (c->lut_size <= 1 || c->lut_x[c->lut_size-1] == c->lut_x[c->lut_size-2]) {
             c->mode = AccelMode_Current;
-            problem = "Acceleration mode 'LUT' is not supported for fewer than two points or two last points at one speed";
+            problem = "The lookup table needs two points or more, the last two at different speeds";
         }
         else if (c->lut_velocity && c->lut_x[0] <= 0) {
             c->mode = AccelMode_Current;
-            problem = "Acceleration mode 'LUT' is not supported for velocity values whose first speed is not positive";
+            problem = "A table of velocities needs a first speed above 0";
         }
 
         // Check if LUT_x is sorted
         for (int i = 1; i < c->lut_size; i++) {
             if (c->lut_x[i - 1] > c->lut_x[i]) {
                 c->mode = AccelMode_Current;
-                problem = "Acceleration mode 'LUT' is not supported for unsorted LUT_x";
+                problem = "The lookup table's speeds must rise";
                 break;
             }
         }

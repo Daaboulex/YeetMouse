@@ -37,7 +37,7 @@ static std::optional<Parameters> ReadConfig(const std::string &file) {
 
 static std::optional<std::string> MakeDefaultLive(Parameters params, const std::string &file) {
     if (auto refusal = Profiles::DefaultRefusal(params))
-        return file + " " + *refusal;
+        return file + " is refused: " + *refusal;
     if (params.SaveAll())
         return std::nullopt;
     try {
@@ -171,7 +171,7 @@ static int ProfileSave(const std::string &name, const std::string &config) {
     try {
         Profiles::SetupLock lock(Profiles::Root);
         if (auto refusal = Profiles::DriverRefusal(*parsed, name))
-            throw Profiles::Refused(config + " " + *refusal);
+            throw Profiles::Refused(config + " is refused: " + *refusal);
         Profiles::SaveProfile(Profiles::Root, name, *parsed);
         Profiles::DriverLoad(name, Profiles::LoadProfileFile(Profiles::Root, name));
     } catch (const Profiles::Refused &refused) {

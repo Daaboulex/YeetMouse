@@ -36,7 +36,7 @@ namespace ProfilesGui {
 
     void ResetEdited(const Load &load);
 
-    void StatusBar();
+    void StatusBar(const std::string &edit_problem);
 
     void ViewMenu();
 

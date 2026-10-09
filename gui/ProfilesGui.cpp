@@ -599,7 +599,7 @@ namespace ProfilesGui {
         try {
             Profiles::SetupLock lock(Profiles::Root);
             if (auto refusal = Refusal(edited))
-                throw Profiles::Refused("the curve " + *refusal);
+                throw Profiles::Refused(*refusal);
             if (EditingDefault())
                 Profiles::SaveFile(Profiles::DefaultPath, ConfigHelper::ExportPlainText(edited, false));
             else
@@ -634,7 +634,7 @@ namespace ProfilesGui {
         Refresh(true);
     }
 
-    void StatusBar() {
+    void StatusBar(const std::string &edit_problem) {
         ImGui::AlignTextToFramePadding();
         auto item = [](const ImVec4 &color, const char *text, const std::string &tip) {
             ImGui::TextColored(color, "%s", text);
@@ -644,13 +644,16 @@ namespace ProfilesGui {
         if (!view.status) {
             item(Warning, ShortProblem(), view.problem);
         } else {
-            item(Good, "Driver live", "Generation " + std::to_string(view.status->generation));
+            item(Good, "Driver live", "The driver is loaded and reports its settings");
             if (!view.status->claims.empty())
                 item(Notice, ("Game running: " + view.status->claims.back()).c_str(),
                      "Its profile drives every mouse until the game exits");
             if (view.status->defaultRefused)
-                item(Warning, "Default refused", *view.status->defaultRefused);
+                item(Warning, "Default not applied",
+                     *view.status->defaultRefused + "; the previous default is still in use");
         }
+        if (!edit_problem.empty())
+            item(Warning, edit_problem.c_str(), "Apply and Save stay off until this is fixed");
         ImGui::NewLine();
     }
 
@@ -1029,7 +1032,7 @@ namespace ProfilesGui {
                     try {
                         Profiles::SetupLock lock(Profiles::Root);
                         if (auto refusal = Profiles::DriverRefusal(current, name))
-                            throw Profiles::Refused("the curve " + *refusal);
+                            throw Profiles::Refused(*refusal);
                         Profiles::SaveProfile(Profiles::Root, name, current);
                         Profiles::DriverLoad(name, current);
                         applied[name] = current;

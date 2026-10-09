@@ -1205,19 +1205,18 @@ static int OnGui() {
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {10, 10});
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {10, 10});
+    const Parameters &edited = params[selected_mode];
+    std::optional<std::string> refusal = ProfilesGui::Refusal(edited);
+    std::string edit_problem = selected_mode == AccelMode_Lut && edited.lutSize == 0
+                                   ? "The lookup table is empty: enter its points and press Use table"
+                               : refusal ? *refusal
+                               : !functions[selected_mode].isValid ? "These values do not make a valid curve"
+                                                                   : std::string();
+    std::string blocked = !ProfilesGui::Unavailable().empty() ? ProfilesGui::Unavailable() : edit_problem;
     if (ImGui::BeginChild("EndButtons", ImVec2(-1, -status_height), ImGuiChildFlags_FrameStyle)) {
         ImGui::PopStyleColor();
 
         ImGui::SetWindowFontScale(1.2f);
-
-        const Parameters &edited = params[selected_mode];
-        std::optional<std::string> refusal = ProfilesGui::Refusal(edited);
-        std::string blocked = !ProfilesGui::Unavailable().empty() ? ProfilesGui::Unavailable()
-                              : selected_mode == AccelMode_Lut && edited.lutSize == 0
-                                  ? "The lookup table is empty: enter its points and press Use table"
-                              : !functions[selected_mode].isValid ? "These values do not make a valid curve"
-                              : refusal ? "This curve " + *refusal
-                                        : std::string();
         auto explain = [&](const char *done) {
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 ImGui::SetTooltip("%s", !blocked.empty() ? blocked.c_str() : done);
@@ -1263,7 +1262,7 @@ static int OnGui() {
 
     ImGui::EndGroup();
 
-    ProfilesGui::StatusBar();
+    ProfilesGui::StatusBar(edit_problem);
 
     ProfilesGui::Popups(params[selected_mode], load_into_editor);
 
