@@ -141,7 +141,9 @@ int GUI::Setup(int (*OnGui)())
     //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 #endif
 
+#ifdef GLFW_WAYLAND_APP_ID
     glfwWindowHintString(GLFW_WAYLAND_APP_ID, "yeetmouse");
+#endif
     glfwWindowHintString(GLFW_X11_CLASS_NAME, "yeetmouse");
     glfwWindowHintString(GLFW_X11_INSTANCE_NAME, "yeetmouse");
 
