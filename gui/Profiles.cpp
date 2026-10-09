@@ -16,6 +16,7 @@
 #include <set>
 #include <sstream>
 #include <sys/ioctl.h>
+#include <tuple>
 #include <unistd.h>
 
 #include "ConfigHelper.h"
@@ -421,6 +422,213 @@ namespace Profiles {
         if (!devices.is_open())
             throw Refused("cannot read /proc/bus/input/devices");
         return ReadConnectedMice(devices);
+    }
+
+    namespace {
+        std::string Unescape(const std::string &text) {
+            std::string plain;
+            for (std::size_t i = 0; i < text.size(); i++) {
+                if (text[i] == '\\' && i + 3 < text.size() &&
+                    std::all_of(text.begin() + static_cast<long>(i) + 1, text.begin() + static_cast<long>(i) + 4,
+                                [](char c) { return c >= '0' && c <= '7'; })) {
+                    plain += static_cast<char>((text[i + 1] - '0') * 64 + (text[i + 2] - '0') * 8 + (text[i + 3] - '0'));
+                    i += 3;
+                } else {
+                    plain += text[i];
+                }
+            }
+            return plain;
+        }
+
+        template<typename Number>
+        Number StatusNumber(const std::string &text, int base, const std::string &where) {
+            Number value{};
+            auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value, base);
+            if (error != std::errc() || end != text.data() + text.size() || text.empty())
+                throw Refused("the driver's status " + where + ": \"" + text + "\" is not a number");
+            return value;
+        }
+
+        std::pair<uint16_t, uint16_t> StatusId(const std::string &text, const std::string &where) {
+            std::pair<uint16_t, uint16_t> id;
+            try {
+                ParseDeviceId(text, id.first, id.second);
+            } catch (const Refused &refused) {
+                throw Refused("the driver's status " + where + ": " + refused.what());
+            }
+            return id;
+        }
+    }
+
+    LiveStatus ReadStatus(std::istream &text) {
+        LiveStatus status;
+        bool versioned = false, defaulted = false;
+        std::string line;
+        for (int number = 1; std::getline(text, line); number++) {
+            std::string where = "line " + std::to_string(number);
+            std::string tail;
+            for (const char *marker : {" name=", " reason="}) {
+                std::size_t at = line.find(marker);
+                if (at != std::string::npos) {
+                    tail = Unescape(line.substr(at + std::strlen(marker)));
+                    line.erase(at);
+                    break;
+                }
+            }
+            std::istringstream words(line);
+            std::string kind, word;
+            words >> kind;
+            std::map<std::string, std::string> keys;
+            std::vector<std::string> bare;
+            while (words >> word) {
+                std::size_t equals = word.find('=');
+                if (equals == std::string::npos)
+                    bare.push_back(word);
+                else
+                    keys[word.substr(0, equals)] = word.substr(equals + 1);
+            }
+            auto key = [&](const char *name) {
+                auto found = keys.find(name);
+                if (found == keys.end())
+                    throw Refused("the driver's status " + where + " has no " + name);
+                return found->second;
+            };
+            auto fixed = [&](const char *name) { return StatusNumber<int64_t>(key(name), 10, where); };
+
+            if (!versioned) {
+                if (kind != "version" || bare.size() != 1)
+                    throw Refused("the driver's status does not start with its version");
+                int version = StatusNumber<int>(bare[0], 10, where);
+                if (version != StatusVersion)
+                    throw Refused("the loaded driver reports status version " + std::to_string(version) +
+                                  " and these tools read version " + std::to_string(StatusVersion) +
+                                  "; reboot after updating so the driver and the tools match");
+                versioned = true;
+            } else if (kind == "generation" && bare.size() == 1) {
+                status.generation = StatusNumber<uint64_t>(bare[0], 10, where);
+            } else if (kind == "default" && bare.empty()) {
+                status.defaultDigest = StatusNumber<uint64_t>(key("digest"), 16, where);
+                status.preScale = fixed("pre_scale");
+                status.minTime = fixed("min_time");
+                status.maxTime = fixed("max_time");
+                status.fixedTime = fixed("fixed_time") != 0;
+                defaulted = true;
+            } else if (kind == "default" && bare == std::vector<std::string>{"refused"} && !tail.empty()) {
+                status.defaultRefused = tail;
+            } else if (kind == "profile" && bare.size() == 1) {
+                status.profiles[bare[0]] = StatusNumber<uint64_t>(key("digest"), 16, where);
+            } else if (kind == "device" && !bare.empty()) {
+                LiveDevice device;
+                std::tie(device.vendor, device.product) = StatusId(bare[0], where);
+                device.disabled = bare.size() == 2 && bare[1] == "disabled";
+                if (!device.disabled) {
+                    if (bare.size() != 1)
+                        throw Refused("the driver's status " + where + " is not a device line");
+                    device.profile = key("profile");
+                    device.preScale = fixed("pre_scale");
+                    device.minTime = fixed("min_time");
+                    device.maxTime = fixed("max_time");
+                    device.fixedTime = fixed("fixed_time") != 0;
+                }
+                status.devices.push_back(device);
+            } else if (kind == "claim" && bare.empty()) {
+                status.claims.push_back(key("profile"));
+            } else if (kind == "mouse" && !bare.empty()) {
+                LiveMouse mouse;
+                std::tie(mouse.vendor, mouse.product) = StatusId(bare[0], where);
+                if (keys.count("receiver"))
+                    mouse.receiver = StatusId(keys["receiver"], where);
+                if (keys.count("line"))
+                    mouse.line = StatusId(keys["line"], where);
+                bool use_default = false;
+                for (std::size_t i = 1; i < bare.size(); i++) {
+                    if (bare[i] == "disabled")
+                        mouse.disabled = true;
+                    else if (bare[i] == "default")
+                        use_default = true;
+                    else if (bare[i] == "claimed")
+                        mouse.claimed = true;
+                    else
+                        throw Refused("the driver's status " + where + " has the unknown word \"" + bare[i] + "\"");
+                }
+                if (keys.count("profile"))
+                    mouse.profile = keys["profile"];
+                if (mouse.disabled + use_default + !mouse.profile.empty() != 1)
+                    throw Refused("the driver's status " + where + " does not say which curve the mouse uses");
+                mouse.name = tail;
+                status.mice.push_back(mouse);
+            } else {
+                throw Refused("the driver's status " + where + " is not understood: \"" + line + "\"");
+            }
+        }
+        if (!versioned || !defaulted)
+            throw Refused("the driver's status is incomplete");
+        return status;
+    }
+
+    LiveStatus DriverStatus() {
+        int fd = open(DevicePath, O_RDONLY | O_CLOEXEC);
+        if (fd < 0) {
+            int error = errno;
+            if (error == ENOENT)
+                throw Refused("the yeetmouse driver is not loaded", error);
+            if (error == EACCES)
+                throw Refused(std::string("cannot read ") + DevicePath +
+                              ": join the yeetmouse group, then log out and back in", error);
+            throw Refused(std::string("cannot open ") + DevicePath + ": " + std::strerror(error), error);
+        }
+        std::string text;
+        char buffer[4096];
+        for (;;) {
+            ssize_t count = read(fd, buffer, sizeof(buffer));
+            if (count < 0 && errno == EINTR)
+                continue;
+            if (count <= 0) {
+                int error = count < 0 ? errno : 0;
+                close(fd);
+                if (error == EINVAL)
+                    throw Refused("the loaded yeetmouse driver is older than these tools; reboot to load the new one",
+                                  error);
+                if (error)
+                    throw Refused(std::string("cannot read ") + DevicePath + ": " + std::strerror(error), error);
+                break;
+            }
+            text.append(buffer, static_cast<std::size_t>(count));
+        }
+        std::istringstream stream(text);
+        return ReadStatus(stream);
+    }
+
+    std::optional<uint64_t> ProfileDigest(const Parameters &params, const std::string &name) {
+        yeetmouse_profile_args args;
+        if (!DriverHelper::ProfileArgs(params, name, args))
+            return std::nullopt;
+        return yeetmouse_digest(&args, sizeof(args));
+    }
+
+    bool DefaultIsLive(const LiveStatus &status, const Parameters &defaults) {
+        std::optional<uint64_t> digest = ProfileDigest(defaults, "default");
+        __s64 pre_scale = 0, min_time = 0, max_time = 0;
+        return digest && *digest == status.defaultDigest && !status.defaultRefused &&
+               DriverHelper::FixedPoint(defaults.preScale, pre_scale) && pre_scale == status.preScale &&
+               DriverHelper::FixedPoint(defaults.minTime, min_time) && min_time == status.minTime &&
+               DriverHelper::FixedPoint(defaults.maxTime, max_time) && max_time == status.maxTime &&
+               defaults.fixedTime == status.fixedTime;
+    }
+
+    bool DeviceIsLive(const LiveStatus &status, const DeviceLine &line) {
+        auto live = std::find_if(status.devices.begin(), status.devices.end(), [&](const LiveDevice &device) {
+            return device.vendor == line.vendor && device.product == line.product;
+        });
+        if (live == status.devices.end() || live->disabled != line.disabled())
+            return false;
+        if (line.disabled())
+            return true;
+        __s64 pre_scale = 0, min_time = 0, max_time = 0;
+        return live->profile == line.profile && DriverHelper::FixedPoint(line.preScale, pre_scale) &&
+               pre_scale == live->preScale && DriverHelper::FixedPoint(line.minTime, min_time) &&
+               min_time == live->minTime && DriverHelper::FixedPoint(line.maxTime, max_time) &&
+               max_time == live->maxTime && line.fixedTime == live->fixedTime;
     }
 
     AppliedLine LineFor(const std::vector<DeviceLine> &lines, const ConnectedMouse &mouse) {

@@ -3167,3 +3167,116 @@ bool Tests::IsCloseEnoughRelative(FP_LONG value1, float value2, float tolerance)
 float Tests::lerp(float a, float b, float t) {
     return a + t * (b - a);
 }
+
+bool Tests::TestDriverStatus() {
+    TestSupervisor supervisor{"Driver Status"};
+
+    auto read = [](const std::string &text) {
+        std::istringstream stream(text);
+        return Profiles::ReadStatus(stream);
+    };
+    auto refused = [&](const std::string &text) {
+        try {
+            read(text);
+            return false;
+        } catch (const Profiles::Refused &) {
+            return true;
+        }
+    };
+    const std::string head = "version 1\ngeneration 1\n"
+                             "default digest=1 pre_scale=1 min_time=0 max_time=1 fixed_time=0\n";
+    const std::string g502_line = "device 046d:c539 profile=power pre_scale=4294967296 min_time=268435456 "
+                                  "max_time=429496729600 fixed_time=0\n";
+
+    try {
+        supervisor.NextTest();
+        Profiles::LiveStatus status = read(
+            "version 1\n"
+            "generation 42\n"
+            "default digest=00000000000000ff pre_scale=5368709120 min_time=0 max_time=429496729600 fixed_time=1\n"
+            "default refused reason=LpNorm must be at least 1, the domain weights above 0\n"
+            "profile power digest=0123456789abcdef\n" + g502_line +
+            "device 045e:0040 disabled\n"
+            "claim profile=power\n"
+            "mouse 046d:407f receiver=046d:c539 line=046d:c539 profile=power claimed name=Logitech G502\n"
+            "mouse 1234:5678 default name=two\\012lines \\134 slash\n");
+        supervisor.Validate(status.generation == 42 && status.defaultDigest == 0xff &&
+                            status.preScale == 5368709120ll && status.maxTime == 429496729600ll && status.fixedTime);
+        supervisor.Validate(status.defaultRefused == std::string("LpNorm must be at least 1, the domain weights above 0"));
+        supervisor.Validate(status.profiles.size() == 1 && status.profiles.at("power") == 0x0123456789abcdefull);
+        supervisor.Validate(status.devices.size() == 2 && status.devices[0].profile == "power" &&
+                            status.devices[0].minTime == 268435456 && status.devices[1].disabled &&
+                            status.devices[1].vendor == 0x045e);
+        supervisor.Validate(status.claims == std::vector<std::string>{"power"});
+        supervisor.Validate(status.mice.size() == 2 &&
+                            status.mice[0].receiver == std::pair<uint16_t, uint16_t>{0x046d, 0xc539} &&
+                            status.mice[0].line == status.mice[0].receiver && status.mice[0].claimed &&
+                            status.mice[0].profile == "power" && status.mice[0].name == "Logitech G502");
+        supervisor.Validate(status.mice[1].profile.empty() && !status.mice[1].disabled && !status.mice[1].receiver &&
+                            !status.mice[1].line && status.mice[1].name == "two\nlines \\ slash");
+
+        supervisor.NextTest();
+        supervisor.Validate(!refused(head) && !read(head).defaultRefused);
+        for (const std::string &bad : {std::string("version 2\ngeneration 1\ndefault digest=1 pre_scale=1 min_time=0 "
+                                                   "max_time=1 fixed_time=0\n"),
+                                       std::string("generation 1\n"), std::string("version 1\ngeneration 1\n"),
+                                       head + "mouse 046d:c08b name=x\n",
+                                       head + "mouse 046d:c08b default disabled name=x\n",
+                                       head + "profile power digest=xyz\n",
+                                       head + "device 046d:c08b profile=power\n",
+                                       head + "device 46d:c08b disabled\n",
+                                       head + "surprise\n"})
+            supervisor.Validate(refused(bad));
+
+        supervisor.NextTest();
+        Parameters params;
+        std::optional<uint64_t> digest = Profiles::ProfileDigest(params, "default");
+        __s64 pre_scale = 0, min_time = 0, max_time = 0;
+        supervisor.Validate(digest && DriverHelper::FixedPoint(params.preScale, pre_scale) &&
+                            DriverHelper::FixedPoint(params.minTime, min_time) &&
+                            DriverHelper::FixedPoint(params.maxTime, max_time));
+        Profiles::LiveStatus live = read(head);
+        live.defaultDigest = digest.value_or(0);
+        live.preScale = pre_scale;
+        live.minTime = min_time;
+        live.maxTime = max_time;
+        live.fixedTime = params.fixedTime;
+        supervisor.Validate(Profiles::DefaultIsLive(live, params));
+        Parameters scaled = params;
+        scaled.preScale *= 2;
+        supervisor.Validate(!Profiles::DefaultIsLive(live, scaled));
+        Parameters curved = params;
+        curved.sens += 0.5f;
+        supervisor.Validate(!Profiles::DefaultIsLive(live, curved));
+        live.defaultRefused = "refused";
+        supervisor.Validate(!Profiles::DefaultIsLive(live, params));
+
+        supervisor.NextTest();
+        Profiles::LiveStatus devices = read(head + g502_line);
+        Profiles::DeviceLine line;
+        line.vendor = 0x046d;
+        line.product = 0xc539;
+        line.profile = "power";
+        line.preScale = 1;
+        line.minTime = 0.0625;
+        line.maxTime = 100;
+        supervisor.Validate(Profiles::DeviceIsLive(devices, line));
+        Profiles::DeviceLine changed = line;
+        changed.minTime = 0.125;
+        supervisor.Validate(!Profiles::DeviceIsLive(devices, changed));
+        changed = line;
+        changed.profile = "jump";
+        supervisor.Validate(!Profiles::DeviceIsLive(devices, changed));
+        changed = line;
+        changed.product = 0x1234;
+        supervisor.Validate(!Profiles::DeviceIsLive(devices, changed));
+        changed = line;
+        changed.profile = Profiles::Disabled;
+        supervisor.Validate(!Profiles::DeviceIsLive(devices, changed));
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during the driver status\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}

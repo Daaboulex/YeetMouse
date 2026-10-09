@@ -172,28 +172,106 @@ static int ProfileRemove(const std::string &name) {
     return 0;
 }
 
+static std::string MouseUse(const Profiles::LiveMouse &mouse) {
+    std::string use = mouse.disabled ? "disabled" : mouse.profile.empty() ? "default" : mouse.profile;
+    if (mouse.claimed)
+        use += " (a game's claim)";
+    else if (mouse.line && mouse.receiver && *mouse.line == *mouse.receiver)
+        use += " (receiver " + Profiles::DeviceId(mouse.receiver->first, mouse.receiver->second) + "'s line)";
+    return use;
+}
+
+static int Status() {
+    Profiles::LiveStatus status;
+    try {
+        status = Profiles::DriverStatus();
+    } catch (const Profiles::Refused &refused) {
+        return Failed(refused);
+    }
+    bool matches = true;
+    auto report = [&](bool fine, const std::string &line) {
+        matches &= fine;
+        std::cout << line << "\n";
+    };
+
+    std::cout << "driver: generation " << status.generation << "\n";
+    auto defaults = ReadConfig(DefaultConfigPath);
+    if (status.defaultRefused)
+        report(false, "default: the last set was refused (" + *status.defaultRefused + "); the one before is live");
+    else if (!defaults)
+        report(false, std::string("default: live, but ") + DefaultConfigPath + " cannot be read");
+    else
+        report(Profiles::DefaultIsLive(status, *defaults),
+               std::string("default: live, ") +
+                   (Profiles::DefaultIsLive(status, *defaults) ? "matches " : "differs from ") + DefaultConfigPath);
+
+    std::vector<std::string> names;
+    try {
+        names = Profiles::ProfileNames(Profiles::Root);
+    } catch (const Profiles::Refused &refused) {
+        report(false, refused.what());
+    }
+    for (const std::string &name : names) {
+        auto live = status.profiles.find(name);
+        if (live == status.profiles.end()) {
+            report(false, "profile " + name + ": file only, not loaded in the driver");
+            continue;
+        }
+        std::optional<uint64_t> digest;
+        try {
+            digest = Profiles::ProfileDigest(Profiles::LoadProfileFile(Profiles::Root, name), name);
+        } catch (const Profiles::Refused &refused) {
+            report(false, "profile " + name + ": " + refused.what());
+            continue;
+        }
+        bool same = digest && *digest == live->second;
+        report(same, "profile " + name + ": live, " + (same ? "matches its file" : "differs from its file"));
+    }
+    for (const auto &[name, digest] : status.profiles)
+        if (std::find(names.begin(), names.end(), name) == names.end())
+            report(false, "profile " + name + ": in the driver, no file");
+
+    try {
+        std::vector<Profiles::DeviceLine> lines = Profiles::LoadDevicesFile(Profiles::Root);
+        for (const Profiles::DeviceLine &line : lines)
+            if (!Profiles::DeviceIsLive(status, line))
+                report(false, "devices.conf: " + Profiles::DeviceId(line.vendor, line.product) + " differs from the driver");
+        for (const Profiles::LiveDevice &device : status.devices)
+            if (std::none_of(lines.begin(), lines.end(), [&](const Profiles::DeviceLine &line) {
+                    return line.vendor == device.vendor && line.product == device.product;
+                }))
+                report(false, "devices.conf: " + Profiles::DeviceId(device.vendor, device.product) +
+                                  " is in the driver but not in the file");
+    } catch (const Profiles::Refused &refused) {
+        report(false, refused.what());
+    }
+
+    if (!status.claims.empty())
+        std::cout << "game: " << status.claims.back() << " drives every mouse\n";
+    for (const Profiles::LiveMouse &mouse : status.mice)
+        std::cout << "mouse " << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name << "\": "
+                  << MouseUse(mouse) << "\n";
+    return matches ? 0 : 1;
+}
+
 static int DeviceList() {
     try {
         std::vector<Profiles::DeviceLine> lines = Profiles::LoadDevicesFile(Profiles::Root);
-        std::vector<Profiles::ConnectedMouse> mice = Profiles::ConnectedMice();
-        for (const Profiles::ConnectedMouse &mouse : mice) {
-            Profiles::AppliedLine applied = Profiles::LineFor(lines, mouse);
-            std::cout << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name << "\" ";
+        Profiles::LiveStatus status = Profiles::DriverStatus();
+        for (const Profiles::LiveMouse &mouse : status.mice)
+            std::cout << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name << "\" " << MouseUse(mouse)
+                      << "\n";
+        for (const Profiles::ConnectedMouse &mouse : Profiles::ConnectedMice())
             if (mouse.touchpad)
-                std::cout << "touchpad, curved through KWin with yeetmousectl touchpad";
-            else if (!applied.line)
-                std::cout << "default";
-            else if (applied.throughReceiver)
-                std::cout << applied.line->profile << " (through receiver "
-                          << Profiles::DeviceId(mouse.receiverVendor, mouse.receiverProduct) << ")";
-            else
-                std::cout << applied.line->profile;
-            std::cout << "\n";
-        }
-        for (const Profiles::DeviceLine &line : lines)
-            if (std::none_of(mice.begin(), mice.end(),
-                             [&](const Profiles::ConnectedMouse &mouse) { return mouse.covers(line); }))
+                std::cout << Profiles::DeviceId(mouse.vendor, mouse.product) << " \"" << mouse.name
+                          << "\" touchpad, curved through KWin with yeetmousectl touchpad\n";
+        for (const Profiles::DeviceLine &line : lines) {
+            std::pair<uint16_t, uint16_t> id{line.vendor, line.product};
+            if (std::none_of(status.mice.begin(), status.mice.end(), [&](const Profiles::LiveMouse &mouse) {
+                    return std::pair<uint16_t, uint16_t>{mouse.vendor, mouse.product} == id || mouse.receiver == id;
+                }))
                 std::cout << Profiles::DeviceId(line.vendor, line.product) << " (not connected) " << line.profile << "\n";
+        }
     } catch (const Profiles::Refused &refused) {
         return Failed(refused);
     }
@@ -415,6 +493,7 @@ int main(int argc, char **argv) {
                 "  yeetmousectl import-rawaccel <settings.json> [<device id> | --into <etc dir> | --merge]\n"
                 "  yeetmousectl export-rawaccel [<config> | --from <etc dir>]\n"
                 "  yeetmousectl load\n"
+                "  yeetmousectl status\n"
                 "  yeetmousectl check [<etc dir>]\n"
                 "  yeetmousectl profile list | save <name> <config> | remove <name>\n"
                 "  yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | remove <vendor:product>\n"
@@ -487,6 +566,9 @@ int main(int argc, char **argv) {
 
     if (cmd == "load" && argc == 2)
         return LoadAll();
+
+    if (cmd == "status" && argc == 2)
+        return Status();
 
     if (cmd == "check" && argc <= 3)
         return CheckSetup(argc == 3 ? argv[2] : "/etc");

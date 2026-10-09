@@ -60,6 +60,8 @@ public:
 
     static bool TestProfileFiles();
 
+    static bool TestDriverStatus();
+
     static bool TestRawAccelSetup();
 
 private:

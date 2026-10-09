@@ -121,6 +121,54 @@ namespace Profiles {
 
     std::vector<ConnectedMouse> ConnectedMice();
 
+    inline constexpr int StatusVersion = 1;
+
+    struct LiveDevice {
+        uint16_t vendor = 0;
+        uint16_t product = 0;
+        bool disabled = false;
+        std::string profile;
+        int64_t preScale = 0;
+        int64_t minTime = 0;
+        int64_t maxTime = 0;
+        bool fixedTime = false;
+    };
+
+    struct LiveMouse {
+        uint16_t vendor = 0;
+        uint16_t product = 0;
+        std::optional<std::pair<uint16_t, uint16_t>> receiver;
+        std::optional<std::pair<uint16_t, uint16_t>> line;
+        bool disabled = false;
+        std::string profile;
+        bool claimed = false;
+        std::string name;
+    };
+
+    struct LiveStatus {
+        uint64_t generation = 0;
+        uint64_t defaultDigest = 0;
+        int64_t preScale = 0;
+        int64_t minTime = 0;
+        int64_t maxTime = 0;
+        bool fixedTime = false;
+        std::optional<std::string> defaultRefused;
+        std::map<std::string, uint64_t> profiles;
+        std::vector<LiveDevice> devices;
+        std::vector<std::string> claims;
+        std::vector<LiveMouse> mice;
+    };
+
+    LiveStatus ReadStatus(std::istream &text);
+
+    LiveStatus DriverStatus();
+
+    std::optional<uint64_t> ProfileDigest(const Parameters &params, const std::string &name);
+
+    bool DefaultIsLive(const LiveStatus &status, const Parameters &defaults);
+
+    bool DeviceIsLive(const LiveStatus &status, const DeviceLine &line);
+
     struct Setup {
         Parameters defaults;
         std::vector<std::pair<std::string, Parameters>> profiles;
