@@ -1467,8 +1467,8 @@ static inline FP_LONG FP64_AtanFastest(FP_LONG x) {
 
 static inline FP_LONG FP64_Tanh(FP_LONG x) {
     // tanh(x) = 1 - 2 / (1 + exp(2x))
-    if (x >= 10 * One) return One;
-    if (x <= -10 * One) return -One;
+    if (x <= -12 * One) return -One;
+    if (x >= 11 * One || FP64_Mul(x * 2, RCP_LN2) >= 31 * One) return One;
     FP_LONG two_x = x * 2;
     FP_LONG denom = FP64_Add(One, FP64_Exp(two_x));
     return FP64_Sub(

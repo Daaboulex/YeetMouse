@@ -1204,7 +1204,8 @@ bool Tests::TestFixedPointArithmetic() {
             supervisor.Validate(IsCloseEnough(atan2(0, -1), std::atan2(0.f, -1.f), 1e-6f));
             supervisor.Validate(IsCloseEnough(atan2(-1, -1), std::atan2(-1.f, -1.f), 1e-6f));
         }
-        supervisor.Validate(FP64_Tanh(FP64_FromDouble(10.8)) == One && FP64_Tanh(FP64_FromDouble(-10.8)) == -One);
+        supervisor.Validate(FP64_Tanh(FP64_FromDouble(10.8)) == One && FP64_Tanh(FP64_FromDouble(10.5)) < One &&
+                            FP64_Tanh(FP64_FromDouble(-10.8)) > -One && FP64_Tanh(FP64_FromInt(-12)) == -One);
         supervisor.Validate(FP64_Exp2(FP64_FromDouble(31.5)) == MaxValue && FP64_Exp2Fast(FP64_FromDouble(31.5)) == MaxValue &&
                             Exp2Fastest(FP64_FromDouble(31.5)) == MaxValue);
         supervisor.Validate(IsCloseEnoughRelative(FP64_Exp2(FP64_FromDouble(30.5)), std::exp2(30.5f), 1e-4f));
