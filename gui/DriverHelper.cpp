@@ -132,6 +132,7 @@ namespace DriverHelper {
             return 0;
         }
 
+        out_size = std::min<size_t>(out_size, MAX_LUT_ARRAY_SIZE);
         std::stringstream ss(szUser_data);
         size_t idx = 0;
 

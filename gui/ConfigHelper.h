@@ -170,8 +170,11 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.yCurve.legacyCap = val;
         else if (name == "lutvelocityy" || name == "lut_velocity_y")
             params.yCurve.lutVelocity = val != 0;
-        else if (name == "lut_size_y")
+        else if (name == "lut_size_y") {
+            if (val < 0 || val > MAX_LUT_ARRAY_SIZE)
+                return std::nullopt;
             params.yCurve.lutSize = val;
+        }
         else if (name == "lut_data_y") {
             if (val_str.size() >= MAX_LUT_TEXT_LEN)
                 return std::nullopt;
@@ -186,8 +189,11 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.legacyCap = val;
         else if (name == "lutvelocity" || name == "lut_velocity")
             params.lutVelocity = val != 0;
-        else if (name == "lut_size")
+        else if (name == "lut_size") {
+            if (val < 0 || val > MAX_LUT_ARRAY_SIZE)
+                return std::nullopt;
             params.lutSize = val;
+        }
         else if (name == "lut_data") {
             if (val_str.size() >= MAX_LUT_TEXT_LEN)
                 return std::nullopt;

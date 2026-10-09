@@ -3060,6 +3060,20 @@ bool Tests::TestConfigFiles() {
                             shipped->maxTime == 100 && shipped->yCurve.lutSize == 0 && shipped->lutSize == 0);
 
         supervisor.NextTest();
+        std::string oversized;
+        for (int i = 1; i <= 300; i++)
+            oversized += std::to_string(i) + ",1;";
+        for (const char *key : {"LUT_size", "LUT_size_y"}) {
+            std::stringstream declared(std::string("accelMode=AccelMode_Lut\n") + key + "=1000\nLUT_data=" + oversized +
+                                       "\nLUT_data_y=" + oversized + "\n");
+            supervisor.Validate(!import(declared));
+        }
+        static double wide_x[MAX_LUT_ARRAY_SIZE], wide_y[MAX_LUT_ARRAY_SIZE];
+        std::vector<char> wide(oversized.begin(), oversized.end());
+        wide.push_back('\0');
+        supervisor.Validate(DriverHelper::ParseUserLutData(wide.data(), wide_x, wide_y, 1000) == 0);
+
+        supervisor.NextTest();
         Parameters written;
         written.accelMode = AccelMode_Lut;
         written.lutVelocity = true;
