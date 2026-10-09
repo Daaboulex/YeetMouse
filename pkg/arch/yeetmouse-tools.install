@@ -1,9 +1,12 @@
 post_install() {
   cat<<EOF
 
-You need to enable the YeetMouse systemd service:
+The YeetMouse service starts by itself whenever the driver loads.
+Add each user of the GUI to the 'yeetmouse' group, then log out and in:
 
-  sudo systemctl enable --now yeetmouse.service
+  sudo usermod -a -G yeetmouse <username>
+
+Load the driver now with 'sudo modprobe yeetmouse', or reboot.
 
 EOF
 }
