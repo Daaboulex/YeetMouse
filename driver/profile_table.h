@@ -49,6 +49,14 @@ struct table_choice {
     const struct accel_device *device;
 };
 
+struct accel_mouse {
+    struct accel_state state;
+    struct device_path path;
+    bool resolved;
+    __u64 generation;
+    struct table_choice choice;
+};
+
 const char *profile_from_args(struct accel_profile *profile, const struct yeetmouse_profile_args *args);
 
 int table_find(const struct profile_table *table, const char *name);
@@ -65,6 +73,10 @@ int table_set_devices(struct profile_table *table, const struct yeetmouse_device
 int table_claim(struct profile_table *table, __u64 id, const char *name);
 
 void table_release(struct profile_table *table, __u64 id);
+
+void accel_mouse_packet(struct accel_mouse *mouse, const struct profile_table *table, long long now_ns, int *x, int *y);
+
+bool accel_mouse_idle_clock(struct accel_mouse *mouse, const struct profile_table *table);
 
 #ifdef __cplusplus
 }

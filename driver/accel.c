@@ -106,11 +106,19 @@ PARAM_BYTE(ClockOnAnyReport, CLOCK_ON_ANY_REPORT, "Restart a device's packet clo
 PARAM_F(InputOffset,    INPUT_OFFSET,       "Classic only: speed at or below which the sensitivity is 1, inside the curve as in Raw Accel");
 PARAM_BYTE(LutVelocity, LUT_VELOCITY,       "LUT values are velocities divided by the speed, as Raw Accel's gain lookup tables");
 PARAM_F(LegacyCap,      LEGACY_CAP,         "Classic and Power without smoothing: sensitivity cap of the curve, below 1 the classic curve falls toward it; 0 is none");
+PARAM_BYTE(ExactMath,   EXACT_MATH,         "Raw Accel's precise square root and power instead of upstream's fast ones; Raw Accel conversions turn it on");
 
+
+static bool read_fixed(const char *text, __s64 *value)
+{
+    int used = FP64_FromString(text, value);
+
+    return used > 0 && text[used] == '\0';
+}
 
 #define READ_FIXED(param, field)                                        \
     do {                                                                \
-        if (!FP64_FromString(g_param_##param, &(field)))                \
+        if (!read_fixed(g_param_##param, &(field)))                     \
             return #param " is not a number";                           \
     } while (0)
 
@@ -185,6 +193,7 @@ static const char *default_args(struct yeetmouse_profile_args *args, struct acce
     READ_FIXED(RatioUD, args->ratio_ud);
     READ_FLAG(TruncateCarry, args->truncate_carry);
     READ_FLAG(ClockOnAnyReport, args->clock_on_any_report);
+    READ_FLAG(ExactMath, args->exact_math);
 
     READ_FIXED(PreScale, device->pre_scale);
     READ_FIXED(MinTime, device->min_time);
@@ -267,55 +276,21 @@ void accel_exit(void)
     kernel_param_unlock(THIS_MODULE);
 }
 
-static void follow_table(struct accel_mouse *mouse, const struct profile_table *table)
-{
-    if (mouse->generation == table->generation)
-        return;
-    mouse->generation = table->generation;
-    memset(mouse->state.input, 0, sizeof(mouse->state.input));
-    memset(mouse->state.scale, 0, sizeof(mouse->state.scale));
-    memset(mouse->state.output, 0, sizeof(mouse->state.output));
-}
-
-// Acceleration happens here
 void accelerate_idle(struct accel_mouse *mouse)
 {
-    struct table_choice choice;
-
     rcu_read_lock();
-    choice = table_resolve(profiles_current(), &mouse->path);
-    if (!choice.disabled)
-        accel_idle_report(choice.profile, &mouse->state, ktime_get());
+    if (accel_mouse_idle_clock(mouse, profiles_current()))
+        accel_report(&mouse->state, ktime_get());
     rcu_read_unlock();
 }
 
-int accelerate(struct accel_mouse *mouse, int *x, int *y)
+// Acceleration happens here
+void accelerate(struct accel_mouse *mouse, int *x, int *y)
 {
-    const struct profile_table *table;
-    struct table_choice choice;
-    FP_LONG delta_x, delta_y, ms;
-    ktime_t now;
-    int status = 0;
-
-    delta_x = FP64_FromInt(*x);
-    delta_y = FP64_FromInt(*y);
-
-    now = ktime_get();
+    ktime_t now = ktime_get();
 
     rcu_read_lock();
-    table = profiles_current();
-    choice = table_resolve(table, &mouse->path);
-    if (choice.disabled) {
-        rcu_read_unlock();
-        return status;
-    }
-    follow_table(mouse, table);
-
-    ms = accel_time(choice.device, accel_elapsed(&mouse->state, now));
-
-    accel_packet(choice.profile, choice.device, &mouse->state, &delta_x, &delta_y, ms);
-
-    accel_round(choice.profile, &mouse->state, delta_x, delta_y, x, y);
+    accel_mouse_packet(mouse, profiles_current(), now, x, y);
     rcu_read_unlock();
 
     // Used to very roughly estimate the performance, and 0.1% lows
@@ -331,6 +306,4 @@ int accelerate(struct accel_mouse *mouse, int *x, int *y)
     //     elapsed_time = 0;
     //     highest_elapsed_time = 0;
     // }
-
-    return status;
 }

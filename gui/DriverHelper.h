@@ -261,6 +261,7 @@ struct Parameters {
     bool fixedTime = false;
     bool truncateCarry = false;
     bool clockOnAnyReport = false;
+    bool exactMath = false;
     float lpNorm = 2;
     float domainX = 1;
     float domainY = 1;

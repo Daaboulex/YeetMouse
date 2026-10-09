@@ -363,6 +363,7 @@ namespace DriverHelper {
         res &= GetParameterB("FixedTime", params.fixedTime);
         res &= GetParameterB("TruncateCarry", params.truncateCarry);
         res &= GetParameterB("ClockOnAnyReport", params.clockOnAnyReport);
+        res &= GetParameterB("ExactMath", params.exactMath);
         res &= GetParameterF("LpNorm", params.lpNorm);
         res &= GetParameterF("DomainX", params.domainX);
         res &= GetParameterF("DomainY", params.domainY);
@@ -478,6 +479,7 @@ namespace DriverHelper {
         args.by_component = params.byComponent;
         args.truncate_carry = params.truncateCarry;
         args.clock_on_any_report = params.clockOnAnyReport;
+        args.exact_math = params.exactMath;
         return CurveArgs(HorizontalCurve(params), yeetmouse_mode_uses_lut(params.accelMode), args.x) &&
                CurveArgs(params.yCurve, params.byComponent && yeetmouse_mode_uses_lut(params.yCurve.accelMode), args.y) &&
                FixedPoint(params.sens, args.sensitivity) &&
@@ -540,6 +542,7 @@ bool Parameters::SaveAll(bool auto_update) {
     res &= SetParameterTy("FixedTime", fixedTime ? 1 : 0);
     res &= SetParameterTy("TruncateCarry", truncateCarry ? 1 : 0);
     res &= SetParameterTy("ClockOnAnyReport", clockOnAnyReport ? 1 : 0);
+    res &= SetParameterTy("ExactMath", exactMath ? 1 : 0);
     res &= SetParameterTy("LpNorm", lpNorm);
     res &= SetParameterTy("DomainX", domainX);
     res &= SetParameterTy("DomainY", domainY);

@@ -68,6 +68,7 @@ struct accel_curve_constants {
 struct accel_curve {
     char mode;
     char use_smoothing;
+    char exact_math;
     FP_LONG acceleration, exponent, midpoint, motivity, input_offset, legacy_cap;
     unsigned long lut_size;
     char lut_velocity;
@@ -99,8 +100,8 @@ struct accel_profile {
     char lp_mode;
     char truncate_carry;
     char clock_on_any_report;
-
-    bool is_init;
+    char exact_math;
+    char plain;
     unsigned long long digest;
 };
 
@@ -157,18 +158,52 @@ bool accel_half_lives_valid(FP_LONG input, FP_LONG scale, FP_LONG output);
 
 bool accel_snap_valid(FP_LONG axis_snap, FP_LONG speed_clamp, FP_LONG ratio_lr, FP_LONG ratio_ud);
 
-void accel_report(struct accel_state *s, long long now_ns);
+static inline void accel_report(struct accel_state *s, long long now_ns) {
+    s->last_report_ns = now_ns;
+}
 
-void accel_idle_report(const struct accel_profile *p, struct accel_state *s, long long now_ns);
+static inline FP_LONG accel_elapsed(struct accel_state *s, long long now_ns) {
+    long long elapsed = now_ns - s->last_report_ns;
+    accel_report(s, now_ns);
+    if (elapsed < 0)
+        elapsed = 0;
+    if (elapsed > MAX_ELAPSED_NS)
+        elapsed = MAX_ELAPSED_NS;
+    return ((FP_LONG) (elapsed / NS_PER_MS) << FP64_Shift) + ((elapsed % NS_PER_MS) << FP64_Shift) / NS_PER_MS;
+}
 
-FP_LONG accel_elapsed(struct accel_state *s, long long now_ns);
+static inline FP_LONG accel_time(const struct accel_device *d, FP_LONG ms) {
+    if (d->fixed_time)
+        return d->min_time;
+    if (ms < d->min_time)
+        ms = d->min_time;
+    if (ms > d->max_time)
+        ms = d->max_time;
+    return ms;
+}
 
-FP_LONG accel_time(const struct accel_device *d, FP_LONG ms);
+static inline int truncate_toward_zero(FP_LONG value) {
+    return (int) (value >= 0 ? (value >> FP64_Shift) : -((-value) >> FP64_Shift));
+}
+
+static inline void accel_round(const struct accel_profile *p, struct accel_state *s, FP_LONG delta_x, FP_LONG delta_y,
+                               int *out_x, int *out_y) {
+    delta_x = FP64_Add(delta_x, s->carry_x);
+    delta_y = FP64_Add(delta_y, s->carry_y);
+
+    if (p->truncate_carry) {
+        *out_x = truncate_toward_zero(delta_x);
+        *out_y = truncate_toward_zero(delta_y);
+    } else {
+        *out_x = FP64_RoundToInt(delta_x);
+        *out_y = FP64_RoundToInt(delta_y);
+    }
+
+    s->carry_x = FP64_Sub(delta_x, FP64_FromInt(*out_x));
+    s->carry_y = FP64_Sub(delta_y, FP64_FromInt(*out_y));
+}
 
 void accel_packet(const struct accel_profile *p, const struct accel_device *d, struct accel_state *s, FP_LONG *delta_x, FP_LONG *delta_y, FP_LONG ms);
-
-void accel_round(const struct accel_profile *p, struct accel_state *s, FP_LONG delta_x, FP_LONG delta_y,
-                 int *out_x, int *out_y);
 
 #ifdef __cplusplus
 }

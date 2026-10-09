@@ -304,7 +304,7 @@ namespace ProfilesGui {
             const Parameters plain;
             bool timing = EditingDefault() && (params.minTime != plain.minTime || params.maxTime != plain.maxTime ||
                                                params.fixedTime != plain.fixedTime);
-            return timing || params.truncateCarry || params.clockOnAnyReport || params.lpNorm != plain.lpNorm ||
+            return timing || params.truncateCarry || params.clockOnAnyReport || params.exactMath || params.lpNorm != plain.lpNorm ||
                    params.domainX != plain.domainX || params.domainY != plain.domainY ||
                    params.rangeX != plain.rangeX || params.rangeY != plain.rangeY ||
                    params.inputSmoothHalfLife != plain.inputSmoothHalfLife ||
@@ -665,6 +665,8 @@ namespace ProfilesGui {
         ImGui::SetItemTooltip("Truncate the carried fraction of a count toward zero, as Raw Accel does");
         change |= ImGui::Toggle("Clock on any report", &params.clockOnAnyReport);
         ImGui::SetItemTooltip("Restart a mouse's packet clock on every report, a click included, as Raw Accel does");
+        change |= ImGui::Toggle("Exact math", &params.exactMath);
+        ImGui::SetItemTooltip("Raw Accel's precise square root and power, a few nanoseconds slower per packet");
 
         ImGui::SeparatorText("Speed");
         change |= Slider("##LpNorm", &params.lpNorm, 1, 64, "Lp Norm %0.2f", true);

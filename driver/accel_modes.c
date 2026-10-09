@@ -1,10 +1,18 @@
 #include "accel_modes.h"
 
 #include "../shared_definitions.h"
+#include "profile_table.h"
 #include "FixedMath/Fixed64.h"
 #include "FixedMath/FixedUtil.h"
 
+#ifdef TEST_ENV
+#include <string.h>
+#else
+#include <linux/string.h>
+#endif
+
 #define EXP_ARG_THRESHOLD 16ll
+#define INLINE __attribute__((always_inline)) inline
 
 static void synchronous_build_lut(struct accel_curve *c);
 
@@ -345,6 +353,8 @@ static void smoothing_constants(struct accel_smoothing *k, FP_LONG half_life, FP
 const char *update_profile_constants(struct accel_profile *p) {
     const char *problem, *vertical = NULL;
 
+    p->x.exact_math = p->exact_math;
+    p->y.exact_math = p->exact_math;
     smoothing_constants(&p->input_k, p->input_half_life, C0NST_FP64_FromDouble(1.25));
     smoothing_constants(&p->scale_k, p->scale_half_life, 0);
     smoothing_constants(&p->output_k, p->output_half_life, C0NST_FP64_FromDouble(0.7));
@@ -364,7 +374,10 @@ const char *update_profile_constants(struct accel_profile *p) {
     p->as_sin = FP64_Sin(p->angle_snap_angle);
     p->as_half_threshold = FP64_DivPrecise(p->angle_snap_threshold, 2ll << FP64_Shift);
 
-    p->is_init = 1;
+    p->plain = !p->by_component && p->lp_mode == LP_EUCLIDEAN && p->domain_x == FP64_1 && p->domain_y == FP64_1 &&
+               p->range_x == FP64_1 && p->range_y == FP64_1 && p->input_half_life == 0 && p->scale_half_life == 0 &&
+               p->output_half_life == 0 && p->axis_snap == 0 && p->speed_clamp == 0 && p->ratio_lr == FP64_1 &&
+               p->ratio_ud == FP64_1;
     return problem ? problem : vertical;
 }
 
@@ -484,6 +497,10 @@ FP_LONG accel_linear(const struct accel_curve *c, FP_LONG speed) {
     return FP64_Add(FP64_1, speed);
 }
 
+static INLINE FP_LONG curve_pow(const struct accel_curve *c, FP_LONG x, FP_LONG exponent) {
+    return c->exact_math ? FP64_Pow(x, exponent) : FP64_PowFast(x, exponent);
+}
+
 FP_LONG accel_power(const struct accel_curve *c, FP_LONG speed) {
     if (speed <= c->k.offset_x)
         speed = c->midpoint;
@@ -491,9 +508,9 @@ FP_LONG accel_power(const struct accel_curve *c, FP_LONG speed) {
         if (c->use_smoothing) {
             if (speed < c->k.cap_x) {
                 if (c->k.power_constant == 0)
-                    speed = FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent);
+                    speed = curve_pow(c, FP64_Mul(speed, c->acceleration), c->exponent);
                 else
-                    speed = FP64_Add(FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
+                    speed = FP64_Add(curve_pow(c, FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
             } else {
                 if (c->k.cap_x == FP64_FromInt(0)) {
                     speed = c->k.cap_y;
@@ -503,9 +520,9 @@ FP_LONG accel_power(const struct accel_curve *c, FP_LONG speed) {
             }
         } else {
             if (c->k.power_constant == 0)
-                speed = FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent);
+                speed = curve_pow(c, FP64_Mul(speed, c->acceleration), c->exponent);
             else
-                speed = FP64_Add(FP64_Pow(FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
+                speed = FP64_Add(curve_pow(c, FP64_Mul(speed, c->acceleration), c->exponent), FP64_DivPrecise(c->k.power_constant, speed));
         }
     }
     if (!c->use_smoothing && c->legacy_cap != 0 && speed > c->legacy_cap)
@@ -520,7 +537,7 @@ FP_LONG accel_classic(const struct accel_curve *c, FP_LONG speed) {
     if (distance <= 0)
         return FP64_1;
 
-    base = FP64_Pow(FP64_Mul(distance, c->acceleration), c->k.exp_sub_1);
+    base = curve_pow(c, FP64_Mul(distance, c->acceleration), c->k.exp_sub_1);
     if (c->input_offset != 0)
         base = FP64_Mul(base, FP64_DivPrecise(distance, speed));
 
@@ -732,6 +749,11 @@ FP_LONG accel_curve_eval(const struct accel_curve *c, FP_LONG speed) {
     }
 }
 
+static INLINE FP_LONG euclidean_speed(const struct accel_profile *p, FP_LONG delta_x, FP_LONG delta_y) {
+    FP_LONG square = FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y));
+    return p->exact_math ? FP64_SqrtPrecise(square) : FP64_Sqrt(square);
+}
+
 static FP_LONG accel_speed(const struct accel_profile *p, FP_LONG delta_x, FP_LONG delta_y) {
     FP_LONG big, small;
 
@@ -741,7 +763,7 @@ static FP_LONG accel_speed(const struct accel_profile *p, FP_LONG delta_x, FP_LO
         delta_y = FP64_Mul(delta_y, p->domain_y);
 
     if (p->lp_mode == LP_EUCLIDEAN)
-        return FP64_SqrtPrecise(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));
+        return euclidean_speed(p, delta_x, delta_y);
 
     delta_x = FP64_Abs(delta_x);
     delta_y = FP64_Abs(delta_y);
@@ -811,9 +833,7 @@ static FP_LONG accel_axis_scale(const struct accel_profile *p, struct accel_stat
         speed = smooth_linear(&p->input_k, &s->input[axis], speed, ms);
     if (p->input_cap > 0 && FP64_Sub(speed, p->input_cap) > 0)
         speed = p->input_cap;
-    speed = FP64_Sub(speed, p->offset);
-
-    scale = speed > 0 ? accel_curve_eval(c, speed) : c->k.zero_scale;
+    scale = speed > p->offset ? accel_curve_eval(c, FP64_Sub(speed, p->offset)) : speed > 0 ? c->k.current_func_at_0 : c->k.zero_scale;
     if (range != FP64_1)
         scale = FP64_Add(FP64_1, FP64_Mul(FP64_Sub(scale, FP64_1), range));
     if (p->scale_half_life > 0)
@@ -871,10 +891,91 @@ static void accel_snap_and_clamp(const struct accel_profile *p, FP_LONG *x, FP_L
     }
 }
 
+static INLINE void apply_sensitivity(const struct accel_profile *p, FP_LONG speed, FP_LONG *delta_x, FP_LONG *delta_y) {
+    // Actually apply accelerated sensitivity, allow post-scaling and apply carry from previous round
+    // Like RawAccel, sensitivity will be a final multiplier:
+    if (p->ratio_yx == FP64_1) {
+        if(p->sensitivity != FP64_1)
+            speed = FP64_Mul(speed, p->sensitivity);
+
+        // Apply Output Limit
+        if(p->output_cap > 0)
+            speed = FP64_Min(p->output_cap, speed);
+
+        // Apply acceleration
+        *delta_x = FP64_Mul(*delta_x, speed);
+        *delta_y = FP64_Mul(*delta_y, speed);
+    } else {
+        speed = FP64_Mul(speed, p->sensitivity);
+        FP_LONG speed_Y = FP64_Mul(speed, p->ratio_yx);
+
+        // Apply Output Limit
+        if(p->output_cap > 0) {
+            speed = FP64_Min(p->output_cap, speed);
+            speed_Y = FP64_Min(p->output_cap, speed_Y);
+        }
+
+        // Apply acceleration
+        *delta_x = FP64_Mul(*delta_x, speed);
+        *delta_y = FP64_Mul(*delta_y, speed_Y);
+    }
+}
+
+static INLINE void snap_angle(const struct accel_profile *p, FP_LONG *delta_x, FP_LONG *delta_y) {
+    // Angle Snapping
+    if(p->as_half_threshold != 0) {
+        FP_LONG delta_mag = FP64_Sqrt(FP64_Add(FP64_Mul(*delta_x, *delta_x), FP64_Mul(*delta_y, *delta_y)));
+        if (delta_mag != 0) {
+            FP_LONG current_angle = FP64_Atan2(*delta_y, *delta_x);
+            FP_LONG angle_diff = FP64_Sub(p->angle_snap_angle, current_angle);
+            FP_LONG angle_diff_quarter = FP64_PI_2 - FP64_Abs(angle_diff);
+
+            int sign = FP64_Sign(angle_diff_quarter);
+            angle_diff_quarter = FP64_Abs(angle_diff_quarter) - FP64_PI_2;
+
+            if (FP64_Abs(angle_diff_quarter) <= p->as_half_threshold) {
+                *delta_x = FP64_Mul(p->as_cos, delta_mag) * sign;
+                *delta_y = FP64_Mul(p->as_sin, delta_mag) * sign;
+            }
+        }
+    }
+}
+
+static INLINE void accel_plain_packet(const struct accel_profile *p, const struct accel_device *d, FP_LONG *delta_x,
+                                      FP_LONG *delta_y, FP_LONG ms) {
+    FP_LONG speed;
+
+    if (d->pre_scale != FP64_1) {
+        *delta_x = FP64_Mul(*delta_x, d->pre_scale);
+        *delta_y = FP64_Mul(*delta_y, d->pre_scale);
+    }
+    speed = FP64_DivPrecise(euclidean_speed(p, *delta_x, *delta_y), ms);
+
+    if (p->input_cap > 0 && FP64_Sub(speed, p->input_cap) > 0)
+        speed = p->input_cap;
+    speed = FP64_Sub(speed, p->offset);
+
+    if (p->rotation_angle != 0) {
+        FP_LONG rotated_x = FP64_Mul(*delta_x, p->cos_a) - FP64_Mul(*delta_y, p->sin_a);
+        *delta_y = FP64_Mul(*delta_x, p->sin_a) + FP64_Mul(*delta_y, p->cos_a);
+        *delta_x = rotated_x;
+    }
+
+    speed = speed > 0 ? accel_curve_eval(&p->x, speed) : p->x.k.current_func_at_0;
+    apply_sensitivity(p, speed, delta_x, delta_y);
+    snap_angle(p, delta_x, delta_y);
+}
+
 void accel_packet(const struct accel_profile *p, const struct accel_device *d, struct accel_state *s, FP_LONG *delta_x_out, FP_LONG *delta_y_out, FP_LONG ms) {
     FP_LONG delta_x = *delta_x_out;
     FP_LONG delta_y = *delta_y_out;
     FP_LONG speed, rotated_x, rotated_y, output_factor = FP64_1;
+    bool still;
+
+    if (p->plain) {
+        accel_plain_packet(p, d, delta_x_out, delta_y_out, ms);
+        return;
+    }
 
     // Apply Pre-Scale
     if (d->pre_scale != FP64_1) {
@@ -916,6 +1017,7 @@ void accel_packet(const struct accel_profile *p, const struct accel_device *d, s
         }
     }
 
+    still = speed <= 0;
     speed = FP64_Sub(speed, p->offset);
 
     delta_x = rotated_x;
@@ -925,7 +1027,7 @@ void accel_packet(const struct accel_profile *p, const struct accel_device *d, s
     if (speed > 0)
         speed = accel_curve_eval(&p->x, speed);
     else
-        speed = p->input_half_life > 0 ? p->x.k.zero_scale : p->x.k.current_func_at_0;
+        speed = p->input_half_life > 0 && still ? p->x.k.zero_scale : p->x.k.current_func_at_0;
 
     if (p->range_x != FP64_1 || p->range_y != FP64_1)
         speed = FP64_Add(FP64_1, FP64_Mul(FP64_Sub(speed, FP64_1), accel_range_weight(p, delta_x, delta_y)));
@@ -939,33 +1041,7 @@ void accel_packet(const struct accel_profile *p, const struct accel_device *d, s
             output_factor = FP64_DivPrecise(smooth_linear(&p->output_k, &s->output[0], magnitude, ms), magnitude);
     }
 
-    // Actually apply accelerated sensitivity, allow post-scaling and apply carry from previous round
-    // Like RawAccel, sensitivity will be a final multiplier:
-    if (p->ratio_yx == FP64_1) {
-        if(p->sensitivity != FP64_1)
-            speed = FP64_Mul(speed, p->sensitivity);
-
-        // Apply Output Limit
-        if(p->output_cap > 0)
-            speed = FP64_Min(p->output_cap, speed);
-
-        // Apply acceleration
-        delta_x = FP64_Mul(delta_x, speed);
-        delta_y = FP64_Mul(delta_y, speed);
-    } else {
-        speed = FP64_Mul(speed, p->sensitivity);
-        FP_LONG speed_Y = FP64_Mul(speed, p->ratio_yx);
-
-        // Apply Output Limit
-        if(p->output_cap > 0) {
-            speed = FP64_Min(p->output_cap, speed);
-            speed_Y = FP64_Min(p->output_cap, speed_Y);
-        }
-
-        // Apply acceleration
-        delta_x = FP64_Mul(delta_x, speed);
-        delta_y = FP64_Mul(delta_y, speed_Y);
-    }
+    apply_sensitivity(p, speed, &delta_x, &delta_y);
 
     if (output_factor != FP64_1) {
         delta_x = FP64_Mul(delta_x, output_factor);
@@ -973,23 +1049,7 @@ void accel_packet(const struct accel_profile *p, const struct accel_device *d, s
     }
 
 snap:
-    // Angle Snapping
-    if(p->as_half_threshold != 0) {
-        FP_LONG delta_mag = FP64_Sqrt(FP64_Add(FP64_Mul(delta_x, delta_x), FP64_Mul(delta_y, delta_y)));
-        if (delta_mag != 0) {
-            FP_LONG current_angle = FP64_Atan2(delta_y, delta_x);
-            FP_LONG angle_diff = FP64_Sub(p->angle_snap_angle, current_angle);
-            FP_LONG angle_diff_quarter = FP64_PI_2 - FP64_Abs(angle_diff);
-
-            int sign = FP64_Sign(angle_diff_quarter);
-            angle_diff_quarter = FP64_Abs(angle_diff_quarter) - FP64_PI_2;
-
-            if (FP64_Abs(angle_diff_quarter) <= p->as_half_threshold) {
-                delta_x = FP64_Mul(p->as_cos, delta_mag) * sign;
-                delta_y = FP64_Mul(p->as_sin, delta_mag) * sign;
-            }
-        }
-    }
+    snap_angle(p, &delta_x, &delta_y);
 
     if (p->ratio_lr != FP64_1 && delta_x < 0)
         delta_x = FP64_Mul(delta_x, p->ratio_lr);
@@ -998,56 +1058,6 @@ snap:
 
     *delta_x_out = delta_x;
     *delta_y_out = delta_y;
-}
-
-void accel_report(struct accel_state *s, long long now_ns) {
-    s->last_report_ns = now_ns;
-}
-
-void accel_idle_report(const struct accel_profile *p, struct accel_state *s, long long now_ns) {
-    if (p->clock_on_any_report)
-        accel_report(s, now_ns);
-}
-
-FP_LONG accel_elapsed(struct accel_state *s, long long now_ns) {
-    long long elapsed = now_ns - s->last_report_ns;
-    accel_report(s, now_ns);
-    if (elapsed < 0)
-        elapsed = 0;
-    if (elapsed > MAX_ELAPSED_NS)
-        elapsed = MAX_ELAPSED_NS;
-    return ((FP_LONG) (elapsed / NS_PER_MS) << FP64_Shift) + ((elapsed % NS_PER_MS) << FP64_Shift) / NS_PER_MS;
-}
-
-FP_LONG accel_time(const struct accel_device *d, FP_LONG ms) {
-    if (d->fixed_time)
-        return d->min_time;
-    if (ms < d->min_time)
-        ms = d->min_time;
-    if (ms > d->max_time)
-        ms = d->max_time;
-    return ms;
-}
-
-static int truncate_toward_zero(FP_LONG value) {
-    return (int) (value >= 0 ? (value >> FP64_Shift) : -((-value) >> FP64_Shift));
-}
-
-void accel_round(const struct accel_profile *p, struct accel_state *s, FP_LONG delta_x, FP_LONG delta_y,
-                 int *out_x, int *out_y) {
-    delta_x = FP64_Add(delta_x, s->carry_x);
-    delta_y = FP64_Add(delta_y, s->carry_y);
-
-    if (p->truncate_carry) {
-        *out_x = truncate_toward_zero(delta_x);
-        *out_y = truncate_toward_zero(delta_y);
-    } else {
-        *out_x = FP64_RoundToInt(delta_x);
-        *out_y = FP64_RoundToInt(delta_y);
-    }
-
-    s->carry_x = FP64_Sub(delta_x, FP64_FromInt(*out_x));
-    s->carry_y = FP64_Sub(delta_y, FP64_FromInt(*out_y));
 }
 
 bool accel_angle_snap_valid(FP_LONG threshold) {
@@ -1065,4 +1075,37 @@ bool accel_half_lives_valid(FP_LONG input, FP_LONG scale, FP_LONG output) {
 bool accel_snap_valid(FP_LONG axis_snap, FP_LONG speed_clamp, FP_LONG ratio_lr, FP_LONG ratio_ud) {
     return axis_snap >= 0 && axis_snap <= FP64_Add(PiHalf >> 1, C0NST_FP64_FromDouble(1e-6)) && speed_clamp >= 0 &&
            ratio_lr > 0 && ratio_ud > 0;
+}
+static const struct table_choice *mouse_choice(struct accel_mouse *mouse, const struct profile_table *table) {
+    if (!mouse->resolved || mouse->generation != table->generation) {
+        mouse->resolved = true;
+        mouse->generation = table->generation;
+        mouse->choice = table_resolve(table, &mouse->path);
+        memset(mouse->state.input, 0, sizeof(mouse->state.input));
+        memset(mouse->state.scale, 0, sizeof(mouse->state.scale));
+        memset(mouse->state.output, 0, sizeof(mouse->state.output));
+    }
+    return &mouse->choice;
+}
+
+void accel_mouse_packet(struct accel_mouse *mouse, const struct profile_table *table, long long now_ns, int *x, int *y) {
+    const struct table_choice *choice = mouse_choice(mouse, table);
+    FP_LONG delta_x, delta_y, ms;
+
+    if (choice->disabled)
+        return;
+    delta_x = FP64_FromInt(*x);
+    delta_y = FP64_FromInt(*y);
+    ms = accel_time(choice->device, accel_elapsed(&mouse->state, now_ns));
+    if (choice->profile->plain)
+        accel_plain_packet(choice->profile, choice->device, &delta_x, &delta_y, ms);
+    else
+        accel_packet(choice->profile, choice->device, &mouse->state, &delta_x, &delta_y, ms);
+    accel_round(choice->profile, &mouse->state, delta_x, delta_y, x, y);
+}
+
+bool accel_mouse_idle_clock(struct accel_mouse *mouse, const struct profile_table *table) {
+    const struct table_choice *choice = mouse_choice(mouse, table);
+
+    return !choice->disabled && choice->profile->clock_on_any_report;
 }

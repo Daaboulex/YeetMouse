@@ -37,7 +37,6 @@ static void driver_events(struct input_handle *handle, const struct input_value 
     struct input_value *v_syn = NULL;
     struct input_value *end = vals;
     struct input_value *v;
-    int error;
     bool seen_x = false;
     bool seen_y = false;
 
@@ -74,7 +73,7 @@ static void driver_events(struct input_handle *handle, const struct input_value 
     if (x == NONE_EVENT_VALUE && y == NONE_EVENT_VALUE)
         goto unchanged_return;
 
-    error = accelerate(&state->accel, &x, &y);
+    accelerate(&state->accel, &x, &y);
     /* Reset state */
     state->x = NONE_EVENT_VALUE;
     state->y = NONE_EVENT_VALUE;
@@ -93,9 +92,6 @@ static void driver_events(struct input_handle *handle, const struct input_value 
             }
         }
     }
-
-    if (error)
-        goto unchanged_return;
 
     /* Apply updates after we've captured events for the next run */
     for (v = (struct input_value *) vals; v != vals + count; v++) {

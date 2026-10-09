@@ -18,6 +18,7 @@ maxTime=100
 fixedTime=0
 truncateCarry=0
 clockOnAnyReport=0
+exactMath=0
 lpNorm=2
 domainX=1
 domainY=1

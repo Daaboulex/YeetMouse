@@ -1253,6 +1253,19 @@ bool Tests::TestFixedPointArithmetic() {
         for (long i = 0; i < 200000 * scale; i++)
             check_division(static_cast<FP_LONG>(rng()) >> (rng() % 63), static_cast<FP_LONG>(rng()) >> (rng() % 63));
 
+        for (long i = 0; i < 20000 * scale; i++) {
+            FP_LONG b = static_cast<FP_LONG>(rng()) >> (32 + rng() % 31);
+            if (b == 0)
+                continue;
+            __int128 edge = static_cast<__int128>(b) * 2147483648;
+            for (int sign : {1, -1})
+                for (int step = -2; step <= 2; step++) {
+                    __int128 a = sign * edge + step;
+                    if (a >= INT64_MIN && a <= INT64_MAX)
+                        check_division(static_cast<FP_LONG>(a), b);
+                }
+        }
+
         for (long i = 0; i < 2000 * scale; i++) {
             for (int zeros = 0; zeros < 64; zeros++) {
                 FP_ULONG magnitude = (zeros == 0) ? (FP_ULONG) 1 << 63 : (rng() >> zeros) | ((FP_ULONG) 1 << (63 - zeros));
@@ -1335,6 +1348,7 @@ bool Tests::TestTimingAndRounding() {
         linear.range_y = FP64_1;
         linear.ratio_lr = FP64_1;
         linear.ratio_ud = FP64_1;
+        linear.exact_math = 1;
         update_profile_constants(&linear);
         accel_device unscaled{FP64_1, 0, 0, 0};
         for (int dx = -300; dx <= 300; dx += 7) {
@@ -1361,16 +1375,23 @@ bool Tests::TestTimingAndRounding() {
         accel_elapsed(&state, 1000000);
         accel_report(&state, 7000000);
         supervisor.Validate(accel_elapsed(&state, 7250000) == FP64_FromDouble(0.25));
-        accel_profile clock_profile{};
-        state = {};
-        accel_elapsed(&state, 1000000);
-        accel_idle_report(&clock_profile, &state, 7000000);
-        supervisor.Validate(accel_elapsed(&state, 7250000) == FP64_FromDouble(6.25));
+        static accel_profile clock_profile;
+        static profile_table clock_table;
+        static accel_mouse clock_mouse;
+        clock_profile = {};
+        clock_table = {};
+        clock_table.default_profile = &clock_profile;
+        clock_table.generation = 1;
+        auto idle = [&]() {
+            clock_mouse = {};
+            accel_elapsed(&clock_mouse.state, 1000000);
+            if (accel_mouse_idle_clock(&clock_mouse, &clock_table))
+                accel_report(&clock_mouse.state, 7000000);
+            return accel_elapsed(&clock_mouse.state, 7250000);
+        };
+        supervisor.Validate(idle() == FP64_FromDouble(6.25));
         clock_profile.clock_on_any_report = 1;
-        state = {};
-        accel_elapsed(&state, 1000000);
-        accel_idle_report(&clock_profile, &state, 7000000);
-        supervisor.Validate(accel_elapsed(&state, 7250000) == FP64_FromDouble(0.25));
+        supervisor.Validate(idle() == FP64_FromDouble(0.25));
         state = {};
         supervisor.Validate(accel_elapsed(&state, LLONG_MAX) == FP64_FromInt(INT_MAX));
 
@@ -2029,13 +2050,15 @@ bool Tests::TestRawAccelExport() {
     ready.minTime = static_cast<float>(RawAccel::DefaultMinimumTime);
     ready.truncateCarry = true;
     ready.clockOnAnyReport = true;
+    ready.exactMath = true;
 
     try {
         supervisor.NextTest();
         std::string upstream = refusal(Parameters{});
         supervisor.Validate(upstream.find("minTime") != std::string::npos &&
                             upstream.find("truncateCarry") != std::string::npos &&
-                            upstream.find("clockOnAnyReport") != std::string::npos);
+                            upstream.find("clockOnAnyReport") != std::string::npos &&
+                            upstream.find("exactMath") != std::string::npos);
         supervisor.Validate(!refused(ready) && exported_matches(ready, 21));
 
         supervisor.NextTest();
@@ -2375,8 +2398,9 @@ bool Tests::TestProfileTable() {
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.x.mode = AccelMode_Count; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.y.lut_size = YEETMOUSE_LUT_POINTS + 1; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.x.use_smoothing = 2; }));
-        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.reserved[4] = 1; }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.reserved[3] = 1; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.lp_norm = FP64_FromDouble(0.5); }));
+        supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.exact_math = 2; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.ratio_lr = 0; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.axis_snap = FP64_1; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.input_half_life = -FP64_1; }));
@@ -3422,6 +3446,166 @@ bool Tests::TestSetupWrites() {
         fs::remove_all(seed);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during setup writes\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
+bool Tests::TestPacketPath() {
+    TestSupervisor supervisor{"Packet Path"};
+
+    static accel_profile plain, general;
+    static accel_device device;
+    auto curve = [](accel_profile &p, int mode, bool exact) {
+        p = {};
+        p.x.mode = static_cast<char>(mode);
+        p.x.use_smoothing = mode == AccelMode_Synchronous;
+        p.x.acceleration = FP64_FromDouble(mode == AccelMode_Synchronous ? 1.6 : 0.05);
+        p.x.exponent = FP64_FromDouble(1.5);
+        p.x.midpoint = FP64_FromDouble(mode == AccelMode_Synchronous ? 0.5 : 1.6);
+        p.x.motivity = FP64_FromDouble(2);
+        p.sensitivity = FP64_FromDouble(0.7);
+        p.ratio_yx = FP64_FromDouble(1.3);
+        p.output_cap = FP64_FromDouble(4);
+        p.input_cap = FP64_FromDouble(90);
+        p.offset = FP64_FromDouble(0.5);
+        p.rotation_angle = FP64_FromDouble(0.3);
+        p.angle_snap_threshold = FP64_FromDouble(0.2);
+        p.lp_norm = FP64_FromInt(2);
+        p.domain_x = p.domain_y = p.range_x = p.range_y = p.ratio_lr = p.ratio_ud = FP64_1;
+        p.exact_math = exact;
+        return update_profile_constants(&p) == nullptr;
+    };
+
+    try {
+        supervisor.NextTest();
+        device = {};
+        device.pre_scale = FP64_FromDouble(0.8);
+        device.max_time = FP64_100;
+        std::mt19937 rng(20261009);
+        std::uniform_int_distribution<int> counts(-120, 120);
+        std::uniform_real_distribution<double> times(0.125, 5);
+        for (int mode = AccelMode_Linear; mode <= AccelMode_Jump; mode++)
+            for (bool exact : {false, true}) {
+                bool built = curve(plain, mode, exact) && curve(general, mode, exact);
+                general.plain = 0;
+                accel_state plain_state{}, general_state{};
+                bool same = built && plain.plain;
+                for (int i = 0; same && i < 5000; i++) {
+                    FP_LONG px = FP64_FromInt(counts(rng)), py = FP64_FromInt(counts(rng)), gx = px, gy = py;
+                    FP_LONG ms = FP64_FromDouble(times(rng));
+                    accel_packet(&plain, &device, &plain_state, &px, &py, ms);
+                    accel_packet(&general, &device, &general_state, &gx, &gy, ms);
+                    same = px == gx && py == gy;
+                }
+                supervisor.Validate(same);
+            }
+        curve(plain, AccelMode_Linear, false);
+        plain.lp_norm = FP64_FromInt(3);
+        update_profile_constants(&plain);
+        supervisor.Validate(!plain.plain);
+        curve(plain, AccelMode_Linear, false);
+        plain.by_component = 1;
+        update_profile_constants(&plain);
+        supervisor.Validate(!plain.plain);
+
+        supervisor.NextTest();
+        double fast_error = 0, exact_error = 0;
+        for (bool exact : {false, true}) {
+            curve(plain, AccelMode_Power, exact);
+            plain.x.acceleration = FP64_FromDouble(1.25);
+            plain.x.exponent = FP64_FromDouble(0.37);
+            plain.x.midpoint = 0;
+            update_profile_constants(&plain);
+            double worst = 0;
+            for (double speed = 0.05; speed < 200; speed *= 1.013) {
+                double truth = std::pow(speed * 1.25, 0.37);
+                double got = static_cast<double>(accel_power(&plain.x, FP64_FromDouble(speed))) / 4294967296.0;
+                worst = std::max(worst, std::fabs(got - truth) / truth);
+            }
+            (exact ? exact_error : fast_error) = worst;
+        }
+        supervisor.Validate(exact_error < 1e-6 && exact_error < fast_error / 4);
+
+        supervisor.NextTest();
+        static accel_profile table_curve;
+        table_curve = {};
+        table_curve.by_component = 1;
+        table_curve.offset = FP64_1;
+        table_curve.sensitivity = table_curve.ratio_yx = FP64_1;
+        table_curve.lp_norm = FP64_FromInt(2);
+        table_curve.domain_x = table_curve.domain_y = table_curve.range_x = table_curve.range_y = FP64_1;
+        table_curve.ratio_lr = table_curve.ratio_ud = FP64_1;
+        for (accel_curve *c : {&table_curve.x, &table_curve.y}) {
+            c->mode = AccelMode_Lut;
+            c->lut_size = 2;
+            c->lut_x[0] = FP64_FromInt(1);
+            c->lut_y[0] = FP64_FromDouble(0.5);
+            c->lut_x[1] = FP64_FromInt(50);
+            c->lut_y[1] = FP64_FromInt(2);
+        }
+        supervisor.Validate(update_profile_constants(&table_curve) == nullptr);
+        device = {};
+        device.pre_scale = FP64_1;
+        device.max_time = FP64_100;
+        accel_state table_state{};
+        FP_LONG slow_x = FP64_1, slow_y = -FP64_1;
+        accel_packet(&table_curve, &device, &table_state, &slow_x, &slow_y, FP64_1);
+        supervisor.Validate(slow_x == FP64_FromDouble(0.5) && slow_y == -FP64_FromDouble(0.5));
+        FP_LONG still_x = 0, still_y = 0;
+        accel_packet(&table_curve, &device, &table_state, &still_x, &still_y, FP64_1);
+        supervisor.Validate(still_x == 0 && still_y == 0);
+
+        supervisor.NextTest();
+        static profile_table table;
+        static accel_mouse mouse;
+        static accel_profile fast_curve, slow_curve;
+        curve(fast_curve, AccelMode_Current, false);
+        curve(slow_curve, AccelMode_Current, false);
+        fast_curve.sensitivity = FP64_FromInt(2);
+        slow_curve.sensitivity = FP64_FromDouble(0.5);
+        fast_curve.offset = slow_curve.offset = 0;
+        fast_curve.rotation_angle = slow_curve.rotation_angle = 0;
+        fast_curve.angle_snap_threshold = slow_curve.angle_snap_threshold = 0;
+        fast_curve.output_cap = slow_curve.output_cap = 0;
+        fast_curve.ratio_yx = slow_curve.ratio_yx = FP64_1;
+        update_profile_constants(&fast_curve);
+        update_profile_constants(&slow_curve);
+        table = {};
+        table.generation = 1;
+        table.default_profile = &slow_curve;
+        table.default_device.pre_scale = FP64_1;
+        table.default_device.max_time = FP64_100;
+        table.profiles[0].profile = &fast_curve;
+        std::strcpy(table.profiles[0].name, "fast");
+        mouse = {};
+        mouse.path = {0x046d, 0xc08b, false, 0, 0};
+        auto move = [&](long long now) {
+            int x = 10, y = 0;
+            accel_mouse_packet(&mouse, &table, now, &x, &y);
+            return x;
+        };
+        supervisor.Validate(move(1000000) == 5);
+        table.devices[0] = {0x046d, 0xc08b, false, 0, table.default_device};
+        table.device_count = 1;
+        supervisor.Validate(move(2000000) == 5);
+        table.generation = 2;
+        supervisor.Validate(move(3000000) == 20);
+        table.devices[0].disabled = true;
+        table.generation = 3;
+        supervisor.Validate(move(4000000) == 10 && mouse.state.last_report_ns == 3000000);
+        supervisor.Validate(!accel_mouse_idle_clock(&mouse, &table));
+
+        supervisor.NextTest();
+        supervisor.Validate(yeetmouse_times_problem(FP64_FromInt(5), FP64_FromInt(2), false) != nullptr &&
+                            yeetmouse_times_problem(FP64_FromInt(2), FP64_FromInt(2), true) == nullptr);
+        Parameters inverted;
+        inverted.minTime = 5;
+        inverted.maxTime = 2;
+        supervisor.Validate(Profiles::DefaultRefusal(inverted).value_or("").find("maxTime") != std::string::npos);
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during the packet path\n", ex.what());
         supervisor.result = false;
     }
 

@@ -64,6 +64,8 @@ public:
 
     static bool TestSetupWrites();
 
+    static bool TestPacketPath();
+
     static bool TestRawAccelSetup();
 
 private:

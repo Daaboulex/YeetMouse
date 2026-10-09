@@ -454,6 +454,12 @@ static inline bool FP64_DivOverflows(FP_LONG arg_a, FP_LONG arg_b) {
     return ((unsigned __int128) abs_a << FP64_Shift) >= limit * abs_b;
 }
 
+static inline bool FP64_DivSaturates(FP_LONG arg_a, FP_LONG arg_b) {
+    FP_ULONG abs_a = (arg_a < 0) ? (FP_ULONG) (-(arg_a + 1)) + 1 : (FP_ULONG) arg_a;
+    FP_ULONG abs_b = (arg_b < 0) ? (FP_ULONG) (-(arg_b + 1)) + 1 : (FP_ULONG) arg_b;
+    return (abs_a >> (63 - FP64_Shift)) >= abs_b;
+}
+
 static inline bool FP64_MulOverflows(FP_LONG a, FP_LONG b) {
     __int128 product = ((__int128) a * b) >> FP64_Shift;
     return product > LLONG_MAX || product < LLONG_MIN;
@@ -465,7 +471,7 @@ static inline bool FP64_MulOverflows(FP_LONG a, FP_LONG b) {
 /// </summary>
 static inline FP_LONG FP64_DivPrecise(FP_LONG arg_a, FP_LONG arg_b) {
 #ifdef FP64_DIV128_NATIVE
-    if (FP64_DivOverflows(arg_a, arg_b))
+    if (FP64_DivSaturates(arg_a, arg_b))
         return ((arg_a ^ arg_b) < 0) ? MinValue : MaxValue;
     return Div128_64(arg_a >> FP64_Shift, (FP_LONG) ((FP_ULONG) arg_a << FP64_Shift), arg_b);
 #else

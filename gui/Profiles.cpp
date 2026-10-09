@@ -902,6 +902,7 @@ namespace Profiles {
                 Parameters timing;
                 timing.truncateCarry = true;
                 timing.clockOnAnyReport = true;
+                timing.exactMath = true;
                 timing.preScale = static_cast<float>(line.preScale);
                 timing.minTime = static_cast<float>(line.minTime);
                 timing.maxTime = static_cast<float>(line.maxTime);

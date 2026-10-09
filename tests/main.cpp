@@ -67,6 +67,11 @@ int main() {
         bad_sum++;
     }
 
+    if (!Tests::TestPacketPath()) {
+        fprintf(stderr, "Test failed for the packet path\n");
+        bad_sum++;
+    }
+
     if (!Tests::TestRawAccelSetup()) {
         fprintf(stderr, "Test failed for the Raw Accel setup\n");
         bad_sum++;

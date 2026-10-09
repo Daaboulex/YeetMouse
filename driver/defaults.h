@@ -56,6 +56,7 @@
 #define INPUT_OFFSET 0
 #define LEGACY_CAP 0
 #define LUT_VELOCITY 0
+#define EXACT_MATH 0
 
 // LUT settings
 #define LUT_SIZE 0

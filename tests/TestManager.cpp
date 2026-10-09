@@ -244,6 +244,7 @@ void TestManager::ApplyParameters(const Parameters &params) {
     device.fixed_time = params.fixedTime;
     profile.truncate_carry = params.truncateCarry;
     profile.clock_on_any_report = params.clockOnAnyReport;
+    profile.exact_math = params.exactMath;
     profile.lp_norm = FP64_FromFloat(params.lpNorm);
     profile.domain_x = FP64_FromFloat(params.domainX);
     profile.domain_y = FP64_FromFloat(params.domainY);

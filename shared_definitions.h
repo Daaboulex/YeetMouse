@@ -44,7 +44,7 @@ struct yeetmouse_profile_args {
     __s64 sensitivity, ratio_yx, output_cap, input_cap, offset, rotation_angle, angle_snap_angle,
           angle_snap_threshold, lp_norm, domain_x, domain_y, range_x, range_y, input_half_life, scale_half_life,
           output_half_life, axis_snap, speed_clamp, ratio_lr, ratio_ud;
-    __u8 by_component, truncate_carry, clock_on_any_report, reserved[5];
+    __u8 by_component, truncate_carry, clock_on_any_report, exact_math, reserved[4];
 };
 
 struct yeetmouse_device_args {
@@ -83,6 +83,8 @@ static inline const char *yeetmouse_times_problem(__s64 min_time, __s64 max_time
         return "maxTime is not above 0";
     if (min_time < 0)
         return "minTime is below 0";
+    if (min_time > max_time)
+        return "minTime is above maxTime";
     if (fixed_time && min_time <= 0)
         return "fixedTime needs minTime above 0";
     return NULL;

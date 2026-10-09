@@ -4,13 +4,7 @@
 #include "accel_modes.h"
 #include "profile_table.h"
 
-struct accel_mouse {
-    struct accel_state state;
-    struct device_path path;
-    __u64 generation;
-};
-
-int accelerate(struct accel_mouse *mouse, int *x, int *y);
+void accelerate(struct accel_mouse *mouse, int *x, int *y);
 
 void accelerate_idle(struct accel_mouse *mouse);
 

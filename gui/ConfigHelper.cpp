@@ -87,6 +87,7 @@ namespace ConfigHelper {
             res_ss << "fixedTime=" << params.fixedTime << std::endl;
             res_ss << "truncateCarry=" << params.truncateCarry << std::endl;
             res_ss << "clockOnAnyReport=" << params.clockOnAnyReport << std::endl;
+            res_ss << "exactMath=" << params.exactMath << std::endl;
             res_ss << "lpNorm=" << params.lpNorm << std::endl;
             res_ss << "domainX=" << params.domainX << std::endl;
             res_ss << "domainY=" << params.domainY << std::endl;
@@ -164,6 +165,7 @@ namespace ConfigHelper {
             res_ss << "#define FIXED_TIME " << params.fixedTime << std::endl;
             res_ss << "#define TRUNCATE_CARRY " << params.truncateCarry << std::endl;
             res_ss << "#define CLOCK_ON_ANY_REPORT " << params.clockOnAnyReport << std::endl;
+            res_ss << "#define EXACT_MATH " << params.exactMath << std::endl;
             res_ss << "#define LP_NORM " << params.lpNorm << std::endl;
             res_ss << "#define DOMAIN_X " << params.domainX << std::endl;
             res_ss << "#define DOMAIN_Y " << params.domainY << std::endl;

@@ -45,7 +45,8 @@ const char *profile_from_args(struct accel_profile *profile, const struct yeetmo
     memset(profile, 0, sizeof(*profile));
     if (!yeetmouse_name_valid(args->name))
         return "the profile name is not valid";
-    if (args->by_component > 1 || args->truncate_carry > 1 || args->clock_on_any_report > 1)
+    if (args->by_component > 1 || args->truncate_carry > 1 || args->clock_on_any_report > 1 ||
+        args->exact_math > 1)
         return "a profile flag is not 0 or 1";
     for (i = 0; i < sizeof(args->reserved); i++)
         if (args->reserved[i] != 0)
@@ -79,6 +80,7 @@ const char *profile_from_args(struct accel_profile *profile, const struct yeetmo
     profile->ratio_ud = args->ratio_ud;
     profile->truncate_carry = (char) args->truncate_carry;
     profile->clock_on_any_report = (char) args->clock_on_any_report;
+    profile->exact_math = (char) args->exact_math;
 
     if (!accel_angle_snap_valid(profile->angle_snap_threshold))
         return "AngleSnap_Threshold must lie in [0, pi)";

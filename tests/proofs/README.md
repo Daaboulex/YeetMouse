@@ -63,6 +63,13 @@ quotient.
 bound is below 2^127, so neither overflows (div_defined.c), and it returns n >= bound. For b = 0
 the bound is 0, so the guard is true and the division saturates by the dividend's sign.
 
+`FP64_DivPrecise` itself asks the cheaper `FP64_DivSaturates`, |a| >> 31 >= |b|, which is n >= 2^63 * d.
+For a positive quotient that is the bound above. For a negative one it also takes
+2^63 * d <= n < (2^63 + 1) * d, where the exact truncated quotient is -2^63, the value saturation
+returns, so every result is the same. The unit test checks a = b * 2^31 and -b * 2^31, each plus
+or minus 0, 1 and 2, against 128-bit division. `FP64_DivOverflows` keeps the exact bound for
+the callers that refuse an out-of-range constant.
+
 ### Why the portable division is exact
 
 `FP64_DivPreciseSoft` is the 128-by-64 long division of Hacker's Delight (divlu), which is

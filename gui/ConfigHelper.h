@@ -128,6 +128,8 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
             params.truncateCarry = val != 0;
         else if (name == "clockonanyreport" || name == "clock_on_any_report")
             params.clockOnAnyReport = val != 0;
+        else if (name == "exactmath" || name == "exact_math")
+            params.exactMath = val != 0;
         else if (name == "lpnorm" || name == "lp_norm")
             params.lpNorm = val;
         else if (name == "domainx" || name == "domain_x")

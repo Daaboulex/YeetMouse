@@ -599,6 +599,7 @@ namespace RawAccel {
         out.maxTime = static_cast<float>(device.maximumTime);
         out.truncateCarry = true;
         out.clockOnAnyReport = true;
+        out.exactMath = true;
         out.lpNorm = static_cast<float>(profile.speed.lpNorm);
         out.axisSnap = static_cast<float>(profile.snap);
         out.speedClamp = static_cast<float>(profile.speedMax);
@@ -728,6 +729,7 @@ namespace RawAccel {
         out.Need(params.truncateCarry, "rounding the carry to the nearest count; Raw Accel truncates it (truncateCarry)");
         out.Need(params.clockOnAnyReport, "a clock that skips reports without motion; Raw Accel restarts it on every "
                                           "report (clockOnAnyReport)");
+        out.Need(params.exactMath, "upstream's fast square root and power; Raw Accel computes them exactly (exactMath)");
 
         double preScale = out.Decimal(params.preScale, "a pre-scale (preScale)");
         device.dpi = out.Whole(preScale > 0 ? RawAccelDpi / preScale : 0);

@@ -39,6 +39,11 @@ jobs:
 
       - name: Check the driver holds exactly the default written to it
         run: |
+          echo 1,5 | sudo tee /sys/module/yeetmouse/parameters/Sensitivity > /dev/null
+          if echo 1 | sudo tee /sys/module/yeetmouse/parameters/update > /dev/null; then
+            echo "the driver took 1,5 as a number"
+            exit 1
+          fi
           sudo cp tests/fixtures/distinct-default.conf /etc/yeetmouse/default.conf
           sudo yeetmousectl apply /etc/yeetmouse/default.conf
           sudo yeetmousectl status
