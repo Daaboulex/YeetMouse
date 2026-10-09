@@ -2,16 +2,12 @@ CXX = g++
 CXXFLAGS = -O2 -Wall -Wno-sign-compare -std=c++17 -isystem ../../gui/External -MMD -MP -DTEST_ENV -I ../..
 CFLAGS = -O2 -DTEST_ENV -funsigned-char -I ../.. -MMD -MP
 
-SRC = main.cpp  \
-      ../../gui/ConfigHelper.cpp \
-      ../../gui/DriverHelper.cpp \
-      ../../gui/CustomCurve.cpp \
-      ../../gui/FunctionHelper.cpp \
-      ../../gui/RawAccel.cpp \
-      ../../gui/ImGuiStubs.cpp \
-      ../../gui/Profiles.cpp
+GUI_SRC = ConfigHelper DriverHelper CustomCurve FunctionHelper RawAccel ImGuiStubs Profiles
 
-OBJ = $(SRC:.cpp=.o) driver_accel_modes.o driver_profile_table.o
+OBJ = main.o $(GUI_SRC:%=gui_%.o) driver_accel_modes.o driver_profile_table.o
+
+gui_%.o: ../../gui/%.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 driver_%.o: ../../driver/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
