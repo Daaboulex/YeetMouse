@@ -232,7 +232,8 @@ static const char *update_curve_constants(struct accel_curve *c) {
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         } else if (!classic_constants(c)) {
-            problem = "Classic's values are too large for the driver; lower Acceleration, Exponent or the cap";
+            problem = c->acceleration == 0 ? "Classic with Smooth cap needs an Acceleration other than 0"
+                                           : "Classic's values are too large for the driver; lower Acceleration, Exponent or the cap";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }

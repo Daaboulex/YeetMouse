@@ -564,6 +564,15 @@ bool Tests::TestAccelClassic(float range_min, float range_max) {
             fprintf(stderr, "Valid constants (should be invalid)\n");
             supervisor.result = false;
         }
+
+        supervisor.NextTest();
+        accel_profile still{};
+        still.x.mode = AccelMode_Classic;
+        still.x.use_smoothing = 1;
+        still.x.exponent = FP64_FromInt(2);
+        still.x.midpoint = FP64_FromInt(5);
+        const char *reason = update_profile_constants(&still);
+        supervisor.Validate(reason != nullptr && std::string(reason) == "Classic with Smooth cap needs an Acceleration other than 0");
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s, in Classic mode\n", ex.what());
         supervisor.result = false;
