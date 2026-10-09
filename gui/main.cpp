@@ -1150,6 +1150,7 @@ static int OnGui() {
         }
 
         ImPlotSpec scatter_point_spec;
+        scatter_point_spec.Flags = ImPlotItemFlags_NoFit;
         scatter_point_spec.Marker = ImPlotMarker_Circle;
         scatter_point_spec.MarkerSize = 4;
         scatter_point_spec.FillColor = ImVec4(200 / 255.f, 140 / 255.f, 110 / 255.f, 1);
@@ -1164,6 +1165,7 @@ static int OnGui() {
 
         if (hovered_mode != -1 && selected_mode != hovered_mode) {
             ImPlotSpec spec;
+            spec.Flags = ImPlotItemFlags_NoFit;
             spec.LineColor = ImVec4(0.7, 0.7, 0.3, 1);
             spec.LineWeight = 1;
             ImPlot::PlotLine("##Hovered Function", functions[hovered_mode].values, PLOT_POINTS,

@@ -108,6 +108,7 @@
    + The =Devices= menu lists each mouse the driver handles, with the line the driver resolved for it. Pick =Default= or the receiver's line, a profile or =Disabled=, give a mouse paired through a receiver its own line, or set a line's =DPI and timing=. Mice in =devices.conf= that are not connected appear under =Not connected=, where =Forget= removes their line. Touchpads are listed too, as described under Touchpads below.
    + The =File= menu imports and exports YeetMouse configs and config.h, and copies or pastes a config through the clipboard.
    + The =Raw Accel= menu imports and exports Raw Accel settings and has =Show features=, which shows the Raw Accel section even when the curve uses none of it: timing, exact math, lp norm, domain and range weights, smoothing, axis snap, speed cap, directional ratios and a separate vertical curve.
+   + The chart's right-click menu has ImPlot's =Auto-Fit= per axis, which follows the curves and ignores the mouse speed dots; double-clicking the chart fits it once.
 
 ** Arch
    For Arch based systems, a =PKGBUILD= has been written for seamless integration into pacman.
