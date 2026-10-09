@@ -29,17 +29,9 @@ namespace DriverHelper {
     bool GetParameterB(const std::string &param_name, bool &value);
     bool GetParameterS(const std::string &param_name, std::string &value);
 
-    bool WriteParameterF(const std::string &param_name, float value);
-    bool WriteParameterI(const std::string &param_name, float value);
-
     bool SaveParameters();
 
     int RunProgram(const std::vector<std::string> &args);
-
-    bool ValidateDirectory();
-
-    /// Converts the ugly FP64 representation of user parameters to nice floating point values
-    bool CleanParameters(int &fixed_num);
 
     /// Returns the number of parsed values
     size_t ParseUserLutData(char *user_data, double *out_x, double *out_y, size_t out_size);
@@ -140,65 +132,6 @@ inline std::string AccelMode2EnumString(AccelMode mode) {
     }
 }
 
-inline std::string AccelMode2String_CAPS(AccelMode mode) {
-    static_assert(AccelMode_Count == 10);
-
-    switch (mode) {
-        case AccelMode_Current:
-            return "CURRENT";
-        case AccelMode_Linear:
-            return "LINEAR";
-        case AccelMode_Power:
-            return "POWER";
-        case AccelMode_Classic:
-            return "CLASSIC";
-        case AccelMode_Motivity:
-            return "MOTIVITY";
-        case AccelMode_Natural:
-            return "NATURAL";
-        case AccelMode_Synchronous:
-            return "SYNCHRONOUS";
-        case AccelMode_Jump:
-            return "JUMP";
-        case AccelMode_Lut:
-            return "LUT";
-        case AccelMode_CustomCurve:
-            return "CUSTOM CURVE";
-        default:
-            return "Unknown";
-    }
-}
-
-inline AccelMode AccelMode_From_String(std::string mode_text) {
-    static_assert(AccelMode_Count == 10);
-
-    // Bring text to lowercase
-    std::transform(mode_text.begin(), mode_text.end(), mode_text.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-
-    if (mode_text == "current")
-        return AccelMode_Current;
-    if (mode_text == "linear")
-        return AccelMode_Linear;
-    if (mode_text == "power")
-        return AccelMode_Power;
-    if (mode_text == "classic")
-        return AccelMode_Classic;
-    if (mode_text == "motivity")
-        return AccelMode_Motivity;
-    if (mode_text == "synchronous")
-        return AccelMode_Synchronous;
-    if (mode_text == "natural")
-        return AccelMode_Natural;
-    if (mode_text == "jump")
-        return AccelMode_Jump;
-    if (mode_text == "lut")
-        return AccelMode_Lut;
-    if (mode_text == "custom curve")
-        return AccelMode_CustomCurve;
-    return AccelMode_Current;
-}
-
 inline AccelMode AccelMode_From_EnumString(const std::string &mode_text) {
     static_assert(AccelMode_Count == 10);
 
@@ -294,7 +227,7 @@ struct Parameters {
     //Parameters(float sens, float sensCap, float speedCap, float offset, float accel, float exponent, float midpoint,
     //           float scrollAccel, int accelMode);
 
-    bool SaveAll(bool auto_update = true);
+    bool SaveAll();
 };
 
 namespace DriverHelper {

@@ -15,7 +15,7 @@ namespace ConfigHelper {
     std::string ExportConfig(Parameters params, bool save_to_file);
 
     template<typename StreamType>
-    std::optional<Parameters> ImportAny(StreamType &stream, char *lut_data, bool &is_config_h, bool *is_old_config = nullptr);
+    std::optional<Parameters> ImportAny(StreamType &stream, char *lut_data, bool &is_config_h);
 
     bool ImportFile(char *lut_data, Parameters &params);
 
@@ -25,8 +25,7 @@ namespace ConfigHelper {
 #define STRING_2_LOWERCASE(s) std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
 
 template<typename StreamType>
-std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_data, bool &is_config_h,
-                                    bool *is_old_config) {
+std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_data, bool &is_config_h) {
     static_assert(std::is_base_of<std::istream, StreamType>::value, "StreamType must be derived from std::istream");
 
     Parameters params;
@@ -101,13 +100,9 @@ std::optional<Parameters> ConfigHelper::ImportAny(StreamType &stream, char *lut_
         else if (name == "accelmode" || name == "acceleration_mode") {
             if (!std::isnan(val)) {
                 // val +2 below for backward compatibility
-                if (is_old_config)
-                    *is_old_config = true;
                 params.accelMode = static_cast<AccelMode>(std::clamp(
                     (int) val + (val > 4 ? 2 : 0), 0, (int) AccelMode_Count - 1));
             } else {
-                if (is_old_config)
-                    *is_old_config = false;
                 params.accelMode = AccelMode_From_EnumString(val_str);
             }
         } else if (name == "usesmoothing" || name == "use_smoothing")

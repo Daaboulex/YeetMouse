@@ -375,7 +375,7 @@ namespace RawAccel {
             return std::pow(args.cap.y, 1 / n) / args.cap.x;
         }
 
-        void MapPower(const AccelArgs &args, const Profile &profile, Parameters &out) {
+        void MapPower(const AccelArgs &args, Parameters &out) {
             double n = args.exponentPower;
             double scale = PowerScale(args);
             bool legacyInOut = !args.gain && args.capMode == CapMode::InOut;
@@ -542,7 +542,7 @@ namespace RawAccel {
                     out.accelMode = AccelMode_Current;
                     break;
                 case Mode::Power:
-                    MapPower(args, profile, out);
+                    MapPower(args, out);
                     break;
                 case Mode::Classic:
                     MapClassic(args, out);

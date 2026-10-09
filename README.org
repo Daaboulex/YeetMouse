@@ -101,10 +101,13 @@
    The GUI should not need =sudo=, provided your user session already has the =yeetmouse= group.
 
 *** Profiles and devices
-   + The =Profile= picker at the top of the parameters panel switches the editor between the default config and a named profile. With a profile selected, =Apply= and =Apply + Save= save that profile and load it into the driver. =Save as profile=, =Delete profile= and =Use as default config= sit below it.
-   + The =Devices= menu lists each mouse the driver handles. For each one, pick =Default config=, a profile or =Disabled (raw input)=, or set its =DPI and timing=. Mice in =devices.conf= that are not connected appear under =Not connected=, where =Forget= removes their line. Touchpads are listed too, as described under Touchpads below.
-   + The =File= menu adds =Import Raw Accel profile=, =Add Raw Accel profiles and devices=, =Export as Raw Accel profile= and =Export all as Raw Accel=.
-   + The =Raw Accel features= section holds the timing switches, lp norm, domain and range weights, smoothing, axis snap, speed cap, directional ratios and a separate vertical curve.
+   + The picker at the top of the parameters panel chooses what the editor changes: the default config or a named profile, each labelled with the connected mice it drives, as the driver reports them. The GUI opens on the profile those mice share.
+   + Under each curve type in the mode column sit the saved profiles that use it; clicking one opens it. Clicking the curve type shows that curve with its defaults, or what was changed this session, keeping the sensitivity.
+   + =Apply= uses the edited settings now and leaves the file alone. =Save= writes the file, then applies it. =Reset= puts the saved file back, on screen and in the driver. =Defaults= sets the current curve to its defaults. The line under the picker says =Edited=, =Applied, not saved= or =Saved=, read back from the driver, and switching away from unsaved changes asks first.
+   + =Save as new profile=, =Delete profile= and =Copy into default= sit below the picker. A running game's profile shows as =Game running: <profile>=.
+   + The =Devices= menu lists each mouse the driver handles, with the line the driver resolved for it. Pick =Default= or the receiver's line, a profile or =Disabled=, give a mouse paired through a receiver its own line, or set a line's =DPI and timing=. Mice in =devices.conf= that are not connected appear under =Not connected=, where =Forget= removes their line. Touchpads are listed too, as described under Touchpads below.
+   + The =File= menu imports and exports YeetMouse configs and config.h, and copies or pastes a config through the clipboard.
+   + The =Raw Accel= menu imports and exports Raw Accel settings and has =Show features=, which shows the Raw Accel section even when the curve uses none of it: timing, exact math, lp norm, domain and range weights, smoothing, axis snap, speed cap, directional ratios and a separate vertical curve.
 
 ** Arch
    For Arch based systems, a =PKGBUILD= has been written for seamless integration into pacman.
@@ -317,7 +320,7 @@
   yeetmousectl save my-config.conf
   #+end_src
 
-** Why does the GUI say it is running without yeetmouse group privileges?
+** Why does the GUI say it cannot read /dev/yeetmouse?
 - Your user was likely added to the =yeetmouse= group during installation.
 - Group changes usually apply only to a new login session.
 - Log out and log back in, or reboot if necessary.

@@ -2715,49 +2715,23 @@ bool Tests::TestProfileFiles() {
                             mice[1].name == "Magic Mouse" && !mice[1].touchpad);
         supervisor.Validate(mice.size() == 3 && mice[2].name == "Apple SPI Trackpad" && mice[2].product == 0x0343 &&
                             mice[2].touchpad);
-        supervisor.Validate(!mice[0].throughReceiver && !mice[1].throughReceiver);
-
-        std::istringstream paired_proc(
-            "I: Bus=0003 Vendor=046d Product=407f Version=0111\n"
-            "N: Name=\"Logitech G502\"\n"
-            "P: Phys=usb-0000:7c:00.4-2/input2:1\n"
-            "S: Sysfs=/devices/pci0000:00/0000:00:08.1/0000:7c:00.4/usb7/7-2/7-2:1.2/0003:046D:C539.0007/"
-            "0003:046D:407F.000A/input/input15\n"
-            "H: Handlers=sysrq yeetmouse kbd leds event5 \n"
-            "\n"
-            "I: Bus=0003 Vendor=046d Product=c08d Version=0111\n"
-            "N: Name=\"Logitech G502 HERO Gaming Mouse\"\n"
-            "S: Sysfs=/devices/pci0000:00/0000:00:08.1/0000:7c:00.4/usb7/7-1/7-1:1.0/0003:046D:C08D.0003/input/input9\n"
-            "H: Handlers=mouse2 event9 yeetmouse \n");
-        std::vector<Profiles::ConnectedMouse> paired = Profiles::ReadConnectedMice(paired_proc);
-        supervisor.Validate(paired.size() == 2 && paired[0].product == 0x407f && paired[0].throughReceiver &&
-                            paired[0].receiverVendor == 0x046d && paired[0].receiverProduct == 0xc539 &&
-                            !paired[1].throughReceiver);
-        std::vector<Profiles::DeviceLine> receiver_lines(2);
-        receiver_lines[0].vendor = 0x046d;
-        receiver_lines[0].product = 0xc539;
-        receiver_lines[0].profile = "power";
-        receiver_lines[1].vendor = 0x046d;
-        receiver_lines[1].product = 0xc08d;
-        receiver_lines[1].profile = "jump";
-        Profiles::AppliedLine through_receiver = Profiles::LineFor(receiver_lines, paired[0]);
-        Profiles::AppliedLine wired = Profiles::LineFor(receiver_lines, paired[1]);
-        supervisor.Validate(through_receiver.line == &receiver_lines[0] && through_receiver.throughReceiver &&
-                            wired.line == &receiver_lines[1] && !wired.throughReceiver);
-        receiver_lines.push_back(receiver_lines[1]);
-        receiver_lines[2].product = 0x407f;
-        Profiles::AppliedLine own = Profiles::LineFor(receiver_lines, paired[0]);
-        supervisor.Validate(own.line == &receiver_lines[2] && !own.throughReceiver &&
-                            paired[0].covers(receiver_lines[0]) && !paired[1].covers(receiver_lines[0]));
-
-        receiver_lines.pop_back();
-        std::vector<Profiles::ConnectedMouse> g502_only(paired.begin(), paired.begin() + 1);
-        supervisor.Validate(Profiles::LaunchTarget(receiver_lines, g502_only) == "power");
-        supervisor.Validate(Profiles::LaunchTarget(receiver_lines, paired).empty());
-        supervisor.Validate(Profiles::LaunchTarget({}, paired).empty());
-        supervisor.Validate(Profiles::MiceUsing("power", receiver_lines, paired) ==
-                            std::vector<std::string>{"Logitech G502"});
-        supervisor.Validate(Profiles::MiceUsing("", {}, paired).size() == 2);
+        std::istringstream live_text(
+            "version 1\ngeneration 3\ndefault digest=1 pre_scale=1 min_time=0 max_time=1 fixed_time=0\n"
+            "mouse 046d:407f receiver=046d:c539 line=046d:c539 profile=power name=Logitech G502\n"
+            "mouse 046d:c08d line=046d:c08d profile=jump name=Logitech G502 HERO Gaming Mouse\n"
+            "mouse 045e:0040 line=045e:0040 disabled name=Microsoft Mouse\n");
+        Profiles::LiveStatus live = Profiles::ReadStatus(live_text);
+        Profiles::LiveStatus g502_only = live;
+        g502_only.mice.resize(1);
+        supervisor.Validate(Profiles::LaunchTarget(g502_only) == "power" && Profiles::LaunchTarget(live).empty());
+        Profiles::LiveStatus claimed = g502_only;
+        claimed.mice[0].claimed = true;
+        supervisor.Validate(Profiles::LaunchTarget(claimed).empty());
+        supervisor.Validate(Profiles::MiceUsing(live, "power") == std::vector<std::string>{"Logitech G502"} &&
+                            Profiles::MiceUsing(live, "").empty());
+        live.mice[1].profile.clear();
+        supervisor.Validate(Profiles::MiceUsing(live, "") ==
+                            std::vector<std::string>{"Logitech G502 HERO Gaming Mouse"});
 
         Parameters from;
         from.sens = 0.3f;

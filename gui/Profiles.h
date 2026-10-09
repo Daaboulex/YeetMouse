@@ -45,27 +45,7 @@ namespace Profiles {
         std::string name;
         bool touchpad = false;
         std::string event;
-        bool throughReceiver = false;
-        uint16_t receiverVendor = 0;
-        uint16_t receiverProduct = 0;
-
-        bool covers(const DeviceLine &line) const {
-            return (line.vendor == vendor && line.product == product) ||
-                   (throughReceiver && line.vendor == receiverVendor && line.product == receiverProduct);
-        }
     };
-
-    struct AppliedLine {
-        const DeviceLine *line = nullptr;
-        bool throughReceiver = false;
-    };
-
-    AppliedLine LineFor(const std::vector<DeviceLine> &lines, const ConnectedMouse &mouse);
-
-    std::string LaunchTarget(const std::vector<DeviceLine> &lines, const std::vector<ConnectedMouse> &mice);
-
-    std::vector<std::string> MiceUsing(const std::string &target, const std::vector<DeviceLine> &lines,
-                                       const std::vector<ConnectedMouse> &mice);
 
     void CarryGlobals(const Parameters &from, Parameters &to);
 
@@ -189,6 +169,10 @@ namespace Profiles {
     bool DefaultIsLive(const LiveStatus &status, const Parameters &defaults);
 
     bool DeviceIsLive(const LiveStatus &status, const DeviceLine &line);
+
+    std::string LaunchTarget(const LiveStatus &status);
+
+    std::vector<std::string> MiceUsing(const LiveStatus &status, const std::string &target);
 
     struct Setup {
         Parameters defaults;

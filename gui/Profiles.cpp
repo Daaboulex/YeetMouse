@@ -434,23 +434,10 @@ namespace Profiles {
         std::vector<ConnectedMouse> mice;
         ConnectedMouse mouse;
         bool handled = false;
-        std::string line, properties, keys, sysfs;
+        std::string line, properties, keys;
         auto finish = [&] {
             mouse.touchpad = !handled && BitSet(properties, PropPointer) &&
                              BitSet(keys, ToolFinger) && !BitSet(keys, ToolPen);
-            std::istringstream parts(sysfs);
-            std::string part;
-            while (!mouse.throughReceiver && std::getline(parts, part, '/')) {
-                unsigned bus = 0, vendor = 0, product = 0, index = 0;
-                char rest = 0;
-                if (part.size() == 19 &&
-                    std::sscanf(part.c_str(), "%4x:%4x:%4x.%4x%c", &bus, &vendor, &product, &index, &rest) == 4 &&
-                    (vendor != mouse.vendor || product != mouse.product)) {
-                    mouse.throughReceiver = true;
-                    mouse.receiverVendor = static_cast<uint16_t>(vendor);
-                    mouse.receiverProduct = static_cast<uint16_t>(product);
-                }
-            }
             if ((handled || mouse.touchpad) && std::none_of(mice.begin(), mice.end(), [&](const ConnectedMouse &seen) {
                     return seen.vendor == mouse.vendor && seen.product == mouse.product && seen.name == mouse.name;
                 }))
@@ -459,7 +446,6 @@ namespace Profiles {
             handled = false;
             properties.clear();
             keys.clear();
-            sysfs.clear();
         };
         while (std::getline(devices, line)) {
             if (line.empty()) {
@@ -472,8 +458,6 @@ namespace Profiles {
                 }
             } else if (line.rfind("N: Name=\"", 0) == 0) {
                 mouse.name = line.substr(9, line.size() > 10 ? line.size() - 10 : 0);
-            } else if (line.rfind("S: Sysfs=", 0) == 0) {
-                sysfs = line.substr(9);
             } else if (line.rfind("B: PROP=", 0) == 0) {
                 properties = line.substr(8);
             } else if (line.rfind("B: KEY=", 0) == 0) {
@@ -706,16 +690,6 @@ namespace Profiles {
                max_time == live->maxTime && line.fixedTime == live->fixedTime;
     }
 
-    AppliedLine LineFor(const std::vector<DeviceLine> &lines, const ConnectedMouse &mouse) {
-        for (const DeviceLine &line : lines)
-            if (line.vendor == mouse.vendor && line.product == mouse.product)
-                return {&line, false};
-        if (mouse.throughReceiver)
-            for (const DeviceLine &line : lines)
-                if (line.vendor == mouse.receiverVendor && line.product == mouse.receiverProduct)
-                    return {&line, true};
-        return {};
-    }
 }
 
 namespace Profiles {
@@ -1156,29 +1130,23 @@ namespace Profiles {
         return std::nullopt;
     }
 
-    std::string LaunchTarget(const std::vector<DeviceLine> &lines, const std::vector<ConnectedMouse> &mice) {
+    std::string LaunchTarget(const LiveStatus &status) {
         std::optional<std::string> chosen;
-        for (const ConnectedMouse &mouse : mice) {
-            AppliedLine applied = LineFor(lines, mouse);
-            if (mouse.touchpad || !applied.line || applied.line->disabled())
+        for (const LiveMouse &mouse : status.mice) {
+            if (mouse.disabled || mouse.claimed)
                 continue;
-            if (chosen && *chosen != applied.line->profile)
+            if (chosen && *chosen != mouse.profile)
                 return "";
-            chosen = applied.line->profile;
+            chosen = mouse.profile;
         }
         return chosen.value_or("");
     }
 
-    std::vector<std::string> MiceUsing(const std::string &target, const std::vector<DeviceLine> &lines,
-                                       const std::vector<ConnectedMouse> &mice) {
+    std::vector<std::string> MiceUsing(const LiveStatus &status, const std::string &target) {
         std::vector<std::string> names;
-        for (const ConnectedMouse &mouse : mice) {
-            AppliedLine applied = LineFor(lines, mouse);
-            if (mouse.touchpad || (applied.line && applied.line->disabled()))
-                continue;
-            if ((applied.line ? applied.line->profile : std::string()) == target)
+        for (const LiveMouse &mouse : status.mice)
+            if (!mouse.disabled && !mouse.claimed && mouse.profile == target)
                 names.push_back(mouse.name);
-        }
         return names;
     }
 

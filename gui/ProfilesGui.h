@@ -14,17 +14,19 @@ namespace ProfilesGui {
 
     bool EditingDefault();
 
-    Parameters LiveDefault();
-
     void Start(const Load &load);
 
-    const Parameters &Live();
+    void Frame(const Parameters &edited);
+
+    const std::optional<Parameters> &Live();
 
     unsigned LiveVersion();
 
+    std::string Unavailable();
+
     std::optional<std::string> Refusal(const Parameters &edited);
 
-    bool Applied(const Parameters &edited);
+    bool Applied();
 
     bool Saved();
 
@@ -34,11 +36,17 @@ namespace ProfilesGui {
 
     void ResetEdited(const Load &load);
 
+    void Banner();
+
     void RawAccelMenu(const Parameters &current, const Load &load);
 
     void DevicesMenu();
 
-    bool ProfilePicker(const Parameters &current, const Load &load);
+    void ProfilePicker(const Parameters &current, const Load &load);
+
+    void ModeProfiles(AccelMode mode, const Load &load);
+
+    const char *CurveTip(const char *label);
 
     bool ModeExtras(Parameters &params);
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -16,12 +17,35 @@
 
 namespace ProfilesGui {
     namespace {
+        using Clock = std::chrono::steady_clock;
+
+        struct View {
+            Clock::time_point read;
+            std::optional<Profiles::LiveStatus> status;
+            std::string problem;
+            std::vector<std::string> names;
+            std::map<std::string, Parameters> files;
+            std::map<std::string, std::string> broken;
+            std::optional<Parameters> defaults;
+            std::string defaults_problem;
+            std::optional<Parameters> parameters;
+            std::vector<Profiles::DeviceLine> lines;
+            std::string lines_problem;
+            std::vector<Profiles::ConnectedMouse> touchpads;
+        };
+
+        View view;
+        bool view_read = false;
         std::string pending_message;
         std::string editing_profile;
-        Parameters saved_params;
-        Parameters live_params;
+        std::map<std::string, Parameters> applied;
+        std::optional<Parameters> live;
+        std::string live_text;
         unsigned live_version = 0;
-        std::map<std::string, Parameters> session_live;
+        Clock::time_point edited_checked;
+        bool edited_applied = false;
+        bool edited_saved = false;
+        bool edited_dirty = false;
         struct PendingSwitch {
             std::string target;
             std::optional<Parameters> curve;
@@ -37,74 +61,104 @@ namespace ProfilesGui {
         bool confirm_overwrite = false;
         std::string save_as_problem;
         Profiles::DeviceLine device_settings;
+        std::string device_settings_title;
         char profile_name[YEETMOUSE_NAME_LEN] = {};
         char vertical_table[MAX_LUT_TEXT_LEN] = {};
 
-        std::optional<Parameters> DefaultConfig() {
-            try {
-                return Profiles::LoadDefaultFile(Profiles::DefaultPath);
-            } catch (const Profiles::Refused &refused) {
-                Message(refused.what());
-                return std::nullopt;
-            }
-        }
+        const ImVec4 Warning = ImVec4(1, 0.45f, 0.45f, 1);
+        const ImVec4 Notice = ImVec4(1, 0.75f, 0.3f, 1);
 
-        Parameters WithDeviceSettings(Parameters curve, const Parameters &device) {
-            curve.preScale = device.preScale;
-            curve.minTime = device.minTime;
-            curve.maxTime = device.maxTime;
-            curve.fixedTime = device.fixedTime;
-            return curve;
-        }
-
-        void SaveText(const std::string &title, const std::string &text) {
-            auto path = ConfigHelper::ChooseFile(title, true);
-            if (!path)
+        void Refresh(bool force) {
+            Clock::time_point now = Clock::now();
+            if (view_read && !force && now - view.read < std::chrono::seconds(1))
                 return;
-            std::ofstream out(*path, std::ios::trunc);
-            out << text;
-            out.flush();
-            if (!out)
-                Message("Cannot write " + *path);
-        }
-
-        void ApplyDevices(const std::vector<Profiles::DeviceLine> &lines) {
+            View next;
+            next.read = now;
             try {
-                Profiles::DriverApplyDevices(Profiles::Root, lines);
+                next.status = Profiles::DriverStatus();
             } catch (const Profiles::Refused &refused) {
-                Message(std::string("devices.conf is saved, but the driver did not take it: ") + refused.what());
+                next.problem = refused.what();
             }
-        }
-
-        void Assign(uint16_t vendor, uint16_t product, const std::string &profile,
-                    const std::vector<std::string> &settings) {
-            auto defaults = DefaultConfig();
-            if (!defaults)
-                return;
             try {
-                ApplyDevices(Profiles::AssignDevice(Profiles::Root, *defaults, vendor, product, profile, settings));
+                next.names = Profiles::ProfileNames(Profiles::Root);
             } catch (const Profiles::Refused &refused) {
-                Message(refused.what());
+                next.lines_problem = refused.what();
             }
-        }
-
-        void Forget(uint16_t vendor, uint16_t product) {
+            for (const std::string &name : next.names) {
+                try {
+                    next.files.emplace(name, Profiles::LoadProfileFile(Profiles::Root, name));
+                } catch (const Profiles::Refused &refused) {
+                    next.broken.emplace(name, refused.what());
+                }
+            }
             try {
-                ApplyDevices(Profiles::ForgetDevice(Profiles::Root, vendor, product));
+                next.defaults = Profiles::LoadDefaultFile(Profiles::DefaultPath);
             } catch (const Profiles::Refused &refused) {
-                Message(refused.what());
+                next.defaults_problem = refused.what();
             }
+            try {
+                next.lines = Profiles::LoadDevicesFile(Profiles::Root);
+            } catch (const Profiles::Refused &refused) {
+                next.lines_problem = refused.what();
+            }
+            try {
+                for (const Profiles::ConnectedMouse &mouse : Profiles::ConnectedMice())
+                    if (mouse.touchpad)
+                        next.touchpads.push_back(mouse);
+            } catch (const Profiles::Refused &refused) {
+                next.lines_problem = refused.what();
+            }
+            if (next.status) {
+                Parameters params;
+                static char lut_data[MAX_LUT_TEXT_LEN];
+                if (DriverHelper::ParseAllParameters(params, lut_data))
+                    next.parameters = params;
+            }
+            view = std::move(next);
+            view_read = true;
+            edited_checked = {};
         }
 
-        bool Slider(const char *id, float *value, float min, float max, const char *format, bool logarithmic = false) {
-            return ImGui::SliderFloat(id, value, min, max, format,
-                                      logarithmic ? ImGuiSliderFlags_Logarithmic : ImGuiSliderFlags_None);
+        std::string TargetName() {
+            return EditingDefault() ? "default" : editing_profile;
+        }
+
+        const Parameters *SavedFile() {
+            if (EditingDefault())
+                return view.defaults ? &*view.defaults : nullptr;
+            auto found = view.files.find(editing_profile);
+            return found != view.files.end() ? &found->second : nullptr;
+        }
+
+        bool IsLive(const Parameters &params) {
+            if (!view.status)
+                return false;
+            if (EditingDefault()) {
+                Profiles::LiveStatus status = *view.status;
+                status.defaultRefused.reset();
+                return Profiles::DefaultIsLive(status, params);
+            }
+            auto found = view.status->profiles.find(editing_profile);
+            std::optional<uint64_t> digest = Profiles::ProfileDigest(params, editing_profile);
+            return found != view.status->profiles.end() && digest && *digest == found->second;
+        }
+
+        std::string Canonical(Parameters params) {
+            if (!params.useAnisotropy)
+                params.ratioYX = 1;
+            return EditingDefault() ? ConfigHelper::ExportPlainText(params, false) : Profiles::WriteProfile(params);
+        }
+
+        bool Slider(const char *id, float *value, float min, float max, const char *format, const char *tip,
+                    bool logarithmic = false) {
+            bool change = ImGui::SliderFloat(id, value, min, max, format,
+                                             logarithmic ? ImGuiSliderFlags_Logarithmic : ImGuiSliderFlags_None);
+            ImGui::SetItemTooltip("%s", tip);
+            return change;
         }
 
         bool SensCap(const char *id, float *value) {
-            bool change = Slider(id, value, 0, 10, "Sens Cap %0.2f");
-            ImGui::SetItemTooltip("Sensitivity cap of the curve without smoothing; 0 is off");
-            return change;
+            return Slider(id, value, 0, 10, "Sens Cap %0.2f", "Highest sensitivity of the curve; 0 is off");
         }
 
         bool VerticalCurve(CurveParameters &curve) {
@@ -134,95 +188,83 @@ namespace ProfilesGui {
                     }
                 ImGui::EndCombo();
             }
+            ImGui::SetItemTooltip("Curve for vertical movement");
 
             const Labels &label = labels[curve.accelMode];
             if (label.accel)
-                change |= Slider("##VerticalAccel", &curve.accel, 0.0001f, 20, label.accel, true);
+                change |= Slider("##VerticalAccel", &curve.accel, 0.0001f, 20, label.accel, CurveTip(label.accel), true);
             if (label.exponent)
-                change |= Slider("##VerticalExponent", &curve.exponent, 0.01f, 10, label.exponent);
+                change |= Slider("##VerticalExponent", &curve.exponent, 0.01f, 10, label.exponent, CurveTip(label.exponent));
             bool capped_midpoint = curve.accelMode == AccelMode_Linear || curve.accelMode == AccelMode_Classic;
             if (label.midpoint && (!capped_midpoint || curve.useSmoothing))
-                change |= Slider("##VerticalMidpoint", &curve.midpoint, 0, 50, label.midpoint);
+                change |= Slider("##VerticalMidpoint", &curve.midpoint, 0, 50, label.midpoint, CurveTip(label.midpoint));
             bool capped_motivity = curve.accelMode == AccelMode_Power;
             if (label.motivity && (!capped_motivity || curve.useSmoothing))
-                change |= Slider("##VerticalMotivity", &curve.motivity, 0.1f, 10, label.motivity);
+                change |= Slider("##VerticalMotivity", &curve.motivity, 0.1f, 10, label.motivity, CurveTip(label.motivity));
             if (curve.accelMode != AccelMode_Current && curve.accelMode != AccelMode_Motivity &&
-                curve.accelMode != AccelMode_Lut)
+                curve.accelMode != AccelMode_Lut) {
                 change |= ImGui::Toggle("Smoothing / gain", &curve.useSmoothing);
+                ImGui::SetItemTooltip("Smooth cap, or Raw Accel's gain, for this curve");
+            }
             if (curve.accelMode == AccelMode_Classic)
-                change |= Slider("##VerticalInputOffset", &curve.inputOffset, 0, 50, "Input Offset %0.2f");
+                change |= Slider("##VerticalInputOffset", &curve.inputOffset, 0, 50, "Input Offset %0.2f",
+                                 "Speed below which sensitivity stays 1");
             if ((curve.accelMode == AccelMode_Classic || curve.accelMode == AccelMode_Power) && !curve.useSmoothing)
                 change |= SensCap("##VerticalLegacyCap", &curve.legacyCap);
             if (curve.accelMode == AccelMode_Lut) {
                 change |= ImGui::Toggle("Velocity values", &curve.lutVelocity);
+                ImGui::SetItemTooltip("y is output speed, not sensitivity");
                 ImGui::InputTextWithHint("##VerticalTable", "x1,y1;x2,y2;x3,y3...", vertical_table,
                                          sizeof(vertical_table), ImGuiInputTextFlags_AutoSelectAll);
+                ImGui::SetItemTooltip("Points as speed,value pairs");
                 if (ImGui::Button("Use this table", {-1, 0})) {
                     curve.lutSize = static_cast<int>(DriverHelper::ParseUserLutData(
                         vertical_table, curve.lutDataX, curve.lutDataY, std::size(curve.lutDataX)));
                     change = true;
                 }
-                ImGui::Text("%d points in use", curve.lutSize);
+                ImGui::SetItemTooltip("Load the points above");
+                ImGui::Text("%d points", curve.lutSize);
             }
             return change;
         }
-    }
 
-    void Message(const std::string &text) {
-        pending_message = text;
-    }
-
-    bool EditingDefault() {
-        return editing_profile.empty();
-    }
-
-    Parameters LiveDefault() {
-        Parameters params;
-        static char lut_data[MAX_LUT_TEXT_LEN];
-        DriverHelper::ParseAllParameters(params, lut_data);
-        return params;
-    }
-
-    namespace {
-        std::string Canonical(Parameters params, bool profile) {
-            if (!params.useAnisotropy)
-                params.ratioYX = 1;
-            return profile ? Profiles::WriteProfile(params) : ConfigHelper::ExportPlainText(params, false);
+        Parameters WithDeviceSettings(Parameters curve, const Parameters &device) {
+            curve.preScale = device.preScale;
+            curve.minTime = device.minTime;
+            curve.maxTime = device.maxTime;
+            curve.fixedTime = device.fixedTime;
+            return curve;
         }
 
-        std::string Canonical(const Parameters &params) {
-            return Canonical(params, !EditingDefault());
-        }
-
-        std::vector<Profiles::DeviceLine> DeviceLines() {
+        void SaveText(const std::string &title, const std::string &text) {
+            auto path = ConfigHelper::ChooseFile(title, true);
+            if (!path)
+                return;
             try {
-                return Profiles::LoadDevicesFile(Profiles::Root);
-            } catch (const Profiles::Refused &) {
-                return {};
+                Profiles::SaveFile(*path, text);
+            } catch (const Profiles::Refused &refused) {
+                Message(refused.what());
             }
         }
 
-        std::vector<Profiles::ConnectedMouse> Mice() {
-            try {
-                return Profiles::ConnectedMice();
-            } catch (const Profiles::Refused &) {
-                return {};
-            }
+        const Profiles::DeviceLine *FileLine(uint16_t vendor, uint16_t product) {
+            for (const Profiles::DeviceLine &line : view.lines)
+                if (line.vendor == vendor && line.product == product)
+                    return &line;
+            return nullptr;
         }
 
         Parameters DeviceSettingsFor(const std::string &profile) {
-            std::vector<Profiles::DeviceLine> lines = DeviceLines();
+            Parameters settings = view.defaults.value_or(Parameters{});
             const Profiles::DeviceLine *chosen = nullptr;
-            for (const Profiles::ConnectedMouse &mouse : Mice()) {
-                Profiles::AppliedLine applied = Profiles::LineFor(lines, mouse);
-                if (!chosen && !mouse.touchpad && applied.line && applied.line->profile == profile)
-                    chosen = applied.line;
-            }
-            for (const Profiles::DeviceLine &line : lines)
+            if (view.status)
+                for (const Profiles::LiveMouse &mouse : view.status->mice)
+                    if (!chosen && !mouse.claimed && mouse.profile == profile && mouse.line)
+                        chosen = FileLine(mouse.line->first, mouse.line->second);
+            for (const Profiles::DeviceLine &line : view.lines)
                 if (!chosen && line.profile == profile)
                     chosen = &line;
-            Parameters settings = LiveDefault();
-            if (chosen) {
+            if (chosen && !chosen->disabled()) {
                 settings.preScale = static_cast<float>(chosen->preScale);
                 settings.minTime = static_cast<float>(chosen->minTime);
                 settings.maxTime = static_cast<float>(chosen->maxTime);
@@ -237,64 +279,61 @@ namespace ProfilesGui {
             return params;
         }
 
-        void SetLive(const Parameters &params) {
-            live_params = params;
-            if (!EditingDefault())
-                session_live[editing_profile] = params;
-            live_version++;
+        std::string DefaultRefusalReason() {
+            Refresh(true);
+            if (view.status && view.status->defaultRefused)
+                return "the driver refused it: " + *view.status->defaultRefused;
+            return view.status ? "the driver's parameters could not be written" : view.problem;
         }
 
         void MakeLive(const Parameters &params) {
             if (EditingDefault()) {
                 Parameters copy = params;
                 if (!copy.SaveAll())
-                    throw Profiles::Refused("the driver's parameters could not be written");
+                    throw Profiles::Refused(DefaultRefusalReason());
             } else {
                 Profiles::DriverLoad(editing_profile, params);
             }
-            SetLive(params);
+            applied[TargetName()] = params;
         }
 
         void SwitchTo(const std::string &target, const Load &load) {
             editing_profile = target;
-            if (EditingDefault()) {
-                live_params = LiveDefault();
-                std::optional<Parameters> file = DefaultConfig();
-                saved_params = file ? *file : live_params;
-            } else {
-                saved_params = Profiles::LoadProfileFile(Profiles::Root, target);
-                auto found = session_live.find(target);
-                live_params = found != session_live.end() ? found->second : saved_params;
-            }
-            live_version++;
-            load(Shown(live_params));
+            Refresh(true);
+            const Parameters *file = SavedFile();
+            auto cached = applied.find(TargetName());
+            if (cached != applied.end() && IsLive(cached->second))
+                load(Shown(cached->second));
+            else if (file)
+                load(Shown(*file));
+            else if (EditingDefault() && view.parameters)
+                load(*view.parameters);
+            else
+                throw Profiles::Refused(EditingDefault() ? view.defaults_problem
+                                                         : "profile \"" + target + "\" cannot be read");
         }
 
-        bool Dirty(const Parameters &edited) {
-            std::string saved = Canonical(saved_params);
-            return Canonical(edited) != saved || Canonical(live_params) != saved;
-        }
-
-        void RequestSwitch(const std::string &target, const Parameters &edited, const Load &load,
-                           std::optional<Parameters> curve = std::nullopt) {
-            if (Dirty(edited)) {
+        void RequestSwitch(const std::string &target, const Load &load, std::optional<Parameters> curve = std::nullopt) {
+            if (edited_dirty) {
                 pending_switch = PendingSwitch{target, curve};
                 open_unsaved = true;
                 return;
             }
             try {
                 SwitchTo(target, load);
-                if (curve)
-                    load(WithDeviceSettings(*curve, live_params));
+                if (curve && SavedFile())
+                    load(WithDeviceSettings(*curve, *SavedFile()));
             } catch (const Profiles::Refused &refused) {
                 Message(refused.what());
             }
         }
 
-        std::string TargetLabel(const std::string &target, const std::vector<Profiles::DeviceLine> &lines,
-                                const std::vector<Profiles::ConnectedMouse> &mice) {
-            std::string label = target.empty() ? "Default config" : target;
-            std::vector<std::string> users = Profiles::MiceUsing(target, lines, mice);
+        std::string TargetLabel(const std::string &target) {
+            std::string label = target.empty() ? "Default" : target;
+            if (!target.empty() && view.broken.count(target))
+                label += " (unreadable)";
+            std::vector<std::string> users =
+                view.status ? Profiles::MiceUsing(*view.status, target) : std::vector<std::string>{};
             for (std::size_t i = 0; i < users.size(); i++)
                 label += (i ? ", " : ": ") + users[i];
             return label;
@@ -304,39 +343,173 @@ namespace ProfilesGui {
             const Parameters plain;
             bool timing = EditingDefault() && (params.minTime != plain.minTime || params.maxTime != plain.maxTime ||
                                                params.fixedTime != plain.fixedTime);
-            return timing || params.truncateCarry || params.clockOnAnyReport || params.exactMath || params.lpNorm != plain.lpNorm ||
-                   params.domainX != plain.domainX || params.domainY != plain.domainY ||
-                   params.rangeX != plain.rangeX || params.rangeY != plain.rangeY ||
-                   params.inputSmoothHalfLife != plain.inputSmoothHalfLife ||
+            return timing || params.truncateCarry || params.clockOnAnyReport || params.exactMath ||
+                   params.lpNorm != plain.lpNorm || params.domainX != plain.domainX ||
+                   params.domainY != plain.domainY || params.rangeX != plain.rangeX ||
+                   params.rangeY != plain.rangeY || params.inputSmoothHalfLife != plain.inputSmoothHalfLife ||
                    params.scaleSmoothHalfLife != plain.scaleSmoothHalfLife ||
                    params.outputSmoothHalfLife != plain.outputSmoothHalfLife || params.axisSnap != plain.axisSnap ||
                    params.speedClamp != plain.speedClamp || params.ratioLR != plain.ratioLR ||
                    params.ratioUD != plain.ratioUD || params.byComponent;
         }
-    }
 
-    void Start(const Load &load) {
-        std::string target = Profiles::LaunchTarget(DeviceLines(), Mice());
-        try {
-            SwitchTo(target, load);
-        } catch (const Profiles::Refused &refused) {
-            Message(refused.what());
-            SwitchTo("", load);
+        void ApplyDevices(const std::vector<Profiles::DeviceLine> &lines) {
+            try {
+                Profiles::DriverApplyDevices(Profiles::Root, lines);
+            } catch (const Profiles::Refused &refused) {
+                Message(std::string("devices.conf is saved, but the driver did not take it: ") + refused.what());
+            }
+        }
+
+        void Assign(uint16_t vendor, uint16_t product, const std::string &profile,
+                    const std::vector<std::string> &settings) {
+            if (!view.defaults) {
+                Message(view.defaults_problem);
+                return;
+            }
+            try {
+                Profiles::SetupLock lock(Profiles::Root);
+                ApplyDevices(Profiles::AssignDevice(Profiles::Root, *view.defaults, vendor, product, profile, settings));
+            } catch (const Profiles::Refused &refused) {
+                Message(refused.what());
+            }
+            Refresh(true);
+        }
+
+        void Forget(uint16_t vendor, uint16_t product) {
+            try {
+                Profiles::SetupLock lock(Profiles::Root);
+                ApplyDevices(Profiles::ForgetDevice(Profiles::Root, vendor, product));
+            } catch (const Profiles::Refused &refused) {
+                Message(refused.what());
+            }
+            Refresh(true);
+        }
+
+        std::vector<std::string> LineSettings(const Profiles::DeviceLine &line) {
+            return {"preScale=" + DriverHelper::FormatDriverNumber(line.preScale),
+                    "minTime=" + DriverHelper::FormatDriverNumber(line.minTime),
+                    "maxTime=" + DriverHelper::FormatDriverNumber(line.maxTime),
+                    std::string("fixedTime=") + (line.fixedTime ? "1" : "0")};
+        }
+
+        void TouchpadMenu(const Profiles::ConnectedMouse &mouse, const std::string &id) {
+            static std::map<std::string, std::pair<bool, std::optional<double>>> known;
+            if (!ImGui::BeginMenu((mouse.name + " (" + id + "): touchpad").c_str()))
+                return;
+            if (ImGui::IsWindowAppearing() || !known.count(mouse.event))
+                known[mouse.event] = {Profiles::KWinTakesTouchpadCurves(mouse.event),
+                                      Profiles::TouchpadResolution(mouse.vendor, mouse.product)};
+            const auto &[kwin, resolution] = known[mouse.event];
+            if (!kwin) {
+                ImGui::TextDisabled("KWin cannot take touchpad curves yet");
+                ImGui::SetItemTooltip("Needs KWin 6.9, or merge request 6937");
+            } else if (!resolution) {
+                ImGui::TextDisabled("Resolution not recorded yet");
+                ImGui::SetItemTooltip("Recorded at boot");
+            } else {
+                for (const auto &[name, params] : view.files) {
+                    if (ImGui::MenuItem((name + " curve").c_str())) {
+                        try {
+                            Profiles::SetTouchpadCurve(mouse.event, Profiles::SampleTouchpadCurve(params, *resolution));
+                        } catch (const Profiles::Refused &refused) {
+                            Message(refused.what());
+                        }
+                    }
+                    ImGui::SetItemTooltip("Give the touchpad this profile's curve through KWin");
+                }
+            }
+            ImGui::EndMenu();
         }
     }
 
-    const Parameters &Live() {
-        return live_params;
+    const char *CurveTip(const char *label) {
+        static const std::pair<const char *, const char *> tips[] = {
+            {"Acceleration", "How fast sensitivity grows with speed"},
+            {"Exponent", "How steep the curve is"},
+            {"Output Offset", "Sensitivity added at the start"},
+            {"Output Limit", "Sensitivity the curve levels off at"},
+            {"Midpoint", "Speed the curve is centred on"},
+            {"Motivity", "Highest sensitivity relative to the lowest"},
+            {"SyncSpeed", "Speed where sensitivity is 1"},
+            {"Gamma", "How sharp the rise is"},
+            {"Smoothness", "How wide the transition is"},
+            {"Decay Rate", "How fast it approaches the limit"},
+            {"Limit", "Highest sensitivity"},
+        };
+        for (const auto &[prefix, tip] : tips)
+            if (std::string(label).rfind(prefix, 0) == 0)
+                return tip;
+        return "";
+    }
+
+    void Message(const std::string &text) {
+        pending_message = text;
+    }
+
+    bool EditingDefault() {
+        return editing_profile.empty();
+    }
+
+    void Start(const Load &load) {
+        Refresh(true);
+        try {
+            SwitchTo(view.status ? Profiles::LaunchTarget(*view.status) : std::string(), load);
+        } catch (const Profiles::Refused &refused) {
+            Message(refused.what());
+            try {
+                SwitchTo("", load);
+            } catch (const Profiles::Refused &again) {
+                Message(again.what());
+            }
+        }
+    }
+
+    void Frame(const Parameters &edited) {
+        Refresh(false);
+        Clock::time_point now = Clock::now();
+        if (now - edited_checked < std::chrono::milliseconds(100))
+            return;
+        edited_checked = now;
+        const Parameters *file = SavedFile();
+        edited_applied = IsLive(edited);
+        edited_saved = file && IsLive(*file);
+        edited_dirty = !file || !edited_saved || Canonical(edited) != Canonical(*file);
+
+        std::optional<Parameters> found;
+        auto cached = applied.find(TargetName());
+        if (edited_applied)
+            found = edited;
+        else if (cached != applied.end() && IsLive(cached->second))
+            found = cached->second;
+        else if (file && edited_saved)
+            found = *file;
+        else if (EditingDefault() && view.parameters && IsLive(*view.parameters))
+            found = view.parameters;
+        std::string text = found ? Canonical(Shown(*found)) : std::string();
+        if (text != live_text) {
+            live_text = text;
+            live = found ? std::optional<Parameters>(Shown(*found)) : std::nullopt;
+            live_version++;
+        }
+    }
+
+    const std::optional<Parameters> &Live() {
+        return live;
     }
 
     unsigned LiveVersion() {
         return live_version;
     }
 
+    std::string Unavailable() {
+        return view.status ? std::string() : view.problem;
+    }
+
     std::optional<std::string> Refusal(const Parameters &edited) {
         static std::string checked;
         static std::optional<std::string> result;
-        std::string text = Canonical(edited, false);
+        std::string text = Canonical(edited) + TargetName();
         if (text != checked) {
             checked = text;
             result = EditingDefault() ? Profiles::DefaultRefusal(edited) : Profiles::DriverRefusal(edited, editing_profile);
@@ -344,20 +517,22 @@ namespace ProfilesGui {
         return result;
     }
 
-    bool Applied(const Parameters &edited) {
-        return Canonical(edited) == Canonical(live_params);
+    bool Applied() {
+        return edited_applied;
     }
 
     bool Saved() {
-        return Canonical(live_params) == Canonical(saved_params);
+        return !edited_dirty;
     }
 
     void ApplyEdited(const Parameters &edited) {
         try {
+            Profiles::SetupLock lock(Profiles::Root);
             MakeLive(edited);
         } catch (const Profiles::Refused &refused) {
             Message(std::string("Not applied: ") + refused.what());
         }
+        Refresh(true);
     }
 
     void SaveEdited(const Parameters &edited) {
@@ -369,36 +544,61 @@ namespace ProfilesGui {
                 Profiles::SaveFile(Profiles::DefaultPath, ConfigHelper::ExportPlainText(edited, false));
             else
                 Profiles::SaveProfile(Profiles::Root, editing_profile, edited);
-            saved_params = edited;
+            try {
+                MakeLive(edited);
+            } catch (const Profiles::Refused &refused) {
+                Message(std::string("Saved, but the driver did not take it: ") + refused.what());
+            }
         } catch (const Profiles::Refused &refused) {
             Message(std::string("Not saved: ") + refused.what());
-            return;
         }
-        try {
-            MakeLive(edited);
-        } catch (const Profiles::Refused &refused) {
-            Message(std::string("Saved, but the driver did not take it: ") + refused.what());
-        }
+        Refresh(true);
     }
 
     void ResetEdited(const Load &load) {
+        const Parameters *file = SavedFile();
+        if (!file) {
+            Message(EditingDefault() ? view.defaults_problem : "this profile's file cannot be read");
+            return;
+        }
+        Parameters saved = *file;
         try {
-            if (Canonical(live_params) != Canonical(saved_params))
-                MakeLive(saved_params);
+            Profiles::SetupLock lock(Profiles::Root);
+            if (!IsLive(saved))
+                MakeLive(saved);
         } catch (const Profiles::Refused &refused) {
             Message(std::string("The saved version is back on screen, but the driver did not take it: ") +
                     refused.what());
         }
-        load(Shown(saved_params));
+        load(Shown(saved));
+        Refresh(true);
+    }
+
+    void Banner() {
+        if (!view.status) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextColored(Warning, "%s", view.problem.c_str());
+            ImGui::PopTextWrapPos();
+            return;
+        }
+        if (!view.status->claims.empty()) {
+            ImGui::TextColored(Notice, "Game running: %s", view.status->claims.back().c_str());
+            ImGui::SetItemTooltip("Its profile drives every mouse until the game exits");
+        }
+        if (EditingDefault() && view.status->defaultRefused) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextColored(Warning, "Refused: %s", view.status->defaultRefused->c_str());
+            ImGui::PopTextWrapPos();
+        }
     }
 
     void RawAccelMenu(const Parameters &current, const Load &load) {
         if (!ImGui::BeginMenu("Raw Accel"))
             return;
-        ImGui::MenuItem("Show Raw Accel features", nullptr, &show_raw_accel);
-        ImGui::SetItemTooltip("They show anyway while the curve uses one, so nothing in use is hidden");
+        ImGui::Toggle("Show features", &show_raw_accel);
+        ImGui::SetItemTooltip("Show Raw Accel's settings even when unused");
         ImGui::Separator();
-        if (ImGui::MenuItem("Import Raw Accel profile...")) {
+        if (ImGui::MenuItem("Import profile...")) {
             if (auto path = ConfigHelper::ChooseFile("Select a Raw Accel settings.json", false)) {
                 try {
                     std::ifstream stream(*path);
@@ -414,11 +614,12 @@ namespace ProfilesGui {
                 }
             }
         }
-        ImGui::SetItemTooltip("Loads one Raw Accel profile into the editor, with a mouse's DPI and timing");
+        ImGui::SetItemTooltip("Load one profile from a settings.json into the editor");
 
-        if (ImGui::MenuItem("Add Raw Accel profiles and devices...")) {
+        if (ImGui::MenuItem("Add profiles and devices...")) {
             if (auto path = ConfigHelper::ChooseFile("Select a Raw Accel settings.json", false)) {
                 try {
+                    Profiles::SetupLock lock(Profiles::Root);
                     std::ifstream stream(*path);
                     Profiles::Setup setup = Profiles::FromRawAccel(RawAccel::Read(stream));
                     Profiles::MergeSetup(Profiles::Root, setup);
@@ -426,22 +627,21 @@ namespace ProfilesGui {
                     try {
                         Profiles::DriverLoadAll(Profiles::Root);
                     } catch (const Profiles::Refused &refused) {
-                        loaded = std::string("\nThe driver did not take them yet: ") + refused.what();
+                        loaded = std::string("\nNot all of it reached the driver: ") + refused.what();
                     }
                     Message("Added " + std::to_string(setup.profiles.size()) + " profiles and " +
-                            std::to_string(setup.devices.size()) + " devices. Raw Accel used \"" +
-                            setup.profiles.front().first + "\" for unlisted mice: pick it in the profile list and "
-                            "use it as the default to do the same." + loaded);
+                            std::to_string(setup.devices.size()) + " devices." + loaded);
                 } catch (const RawAccel::Refused &refused) {
                     Message(std::string("Not added: ") + refused.what());
                 } catch (const Profiles::Refused &refused) {
                     Message(std::string("Not added: ") + refused.what());
                 }
+                Refresh(true);
             }
         }
-        ImGui::SetItemTooltip("Adds every profile and device of a Raw Accel file to /etc/yeetmouse");
+        ImGui::SetItemTooltip("Add every profile and mouse of a settings.json");
 
-        if (ImGui::MenuItem("Export as Raw Accel profile...")) {
+        if (ImGui::MenuItem("Export profile...")) {
             try {
                 Parameters exported =
                     EditingDefault() ? current : WithDeviceSettings(current, DeviceSettingsFor(editing_profile));
@@ -450,9 +650,9 @@ namespace ProfilesGui {
                 Message(std::string("Not exported: ") + refused.what());
             }
         }
-        ImGui::SetItemTooltip("Writes the curve in the editor as a Raw Accel 1.7 file");
+        ImGui::SetItemTooltip("Write the editor's curve as a settings.json");
 
-        if (ImGui::MenuItem("Export all as Raw Accel...")) {
+        if (ImGui::MenuItem("Export all...")) {
             try {
                 std::vector<std::string> skipped;
                 std::string json = RawAccel::Write(Profiles::ToRawAccel(Profiles::ReadSetup("/etc"), skipped));
@@ -467,163 +667,155 @@ namespace ProfilesGui {
                 Message(std::string("Not exported: ") + refused.what());
             }
         }
-        ImGui::SetItemTooltip("The default, every profile and every mouse as one Raw Accel file");
+        ImGui::SetItemTooltip("Write the default, every profile and every mouse as one settings.json");
         ImGui::EndMenu();
-    }
-
-    namespace {
-        void TouchpadMenu(const Profiles::ConnectedMouse &mouse, const std::string &id,
-                          const std::vector<std::string> &names) {
-            static std::map<std::string, std::pair<bool, std::optional<double>>> known;
-            if (!ImGui::BeginMenu((mouse.name + " (" + id + "): touchpad").c_str()))
-                return;
-            if (ImGui::IsWindowAppearing() || !known.count(mouse.event))
-                known[mouse.event] = {Profiles::KWinTakesTouchpadCurves(mouse.event),
-                                      Profiles::TouchpadResolution(mouse.vendor, mouse.product)};
-            const auto &[kwin, resolution] = known[mouse.event];
-            if (!kwin) {
-                ImGui::TextDisabled("KWin cannot take touchpad curves yet");
-                ImGui::SetItemTooltip("A touchpad sends finger positions; KWin's libinput turns them into motion, "
-                                      "so its curve has to be set there, which needs KWin merge request 6937");
-            } else if (!resolution) {
-                ImGui::TextDisabled("Resolution not recorded yet");
-            } else {
-                for (const std::string &name : names)
-                    if (ImGui::MenuItem((name + " curve").c_str())) {
-                        try {
-                            Profiles::SetTouchpadCurve(mouse.event,
-                                                       Profiles::SampleTouchpadCurve(
-                                                           Profiles::LoadProfileFile(Profiles::Root, name), *resolution));
-                        } catch (const Profiles::Refused &refused) {
-                            Message(refused.what());
-                        }
-                    }
-            }
-            ImGui::EndMenu();
-        }
     }
 
     void DevicesMenu() {
         if (!ImGui::BeginMenu("Devices"))
             return;
-        try {
-            std::vector<Profiles::DeviceLine> lines = Profiles::LoadDevicesFile(Profiles::Root);
-            std::vector<std::string> names = Profiles::ProfileNames(Profiles::Root);
-            std::vector<Profiles::ConnectedMouse> mice = Profiles::ConnectedMice();
-            if (std::none_of(mice.begin(), mice.end(), [](const Profiles::ConnectedMouse &mouse) { return !mouse.touchpad; }))
-                ImGui::TextDisabled("No mouse is using the YeetMouse driver");
-            for (const Profiles::ConnectedMouse &mouse : mice) {
-                Profiles::AppliedLine applied = Profiles::LineFor(lines, mouse);
-                const Profiles::DeviceLine *line = applied.throughReceiver ? nullptr : applied.line;
-                std::string id = Profiles::DeviceId(mouse.vendor, mouse.product);
-                if (mouse.touchpad) {
-                    TouchpadMenu(mouse, id, names);
-                    continue;
-                }
-                std::string current = line ? line->profile : "";
-                if (!ImGui::BeginMenu((mouse.name + " (" + id + ")").c_str()))
-                    continue;
-                std::string fallback = applied.throughReceiver
-                                           ? "Receiver " + Profiles::DeviceId(mouse.receiverVendor, mouse.receiverProduct) +
-                                                 ": " + applied.line->profile
-                                           : std::string("Default config");
-                if (ImGui::MenuItem(fallback.c_str(), nullptr, current.empty()) && line)
-                    Forget(mouse.vendor, mouse.product);
-                for (const std::string &name : names)
-                    if (ImGui::MenuItem(name.c_str(), nullptr, current == name))
-                        Assign(mouse.vendor, mouse.product, name, {});
-                if (ImGui::MenuItem("Disabled (raw input)", nullptr, current == Profiles::Disabled))
-                    Assign(mouse.vendor, mouse.product, Profiles::Disabled, {});
-                ImGui::Separator();
-                ImGui::BeginDisabled(!applied.line || applied.line->disabled());
-                if (ImGui::MenuItem("DPI and timing...")) {
-                    device_settings = *applied.line;
-                    open_device_settings = true;
-                }
-                ImGui::EndDisabled();
+        if (!view.status) {
+            ImGui::TextDisabled("%s", view.problem.c_str());
+            ImGui::EndMenu();
+            return;
+        }
+        if (!view.lines_problem.empty())
+            ImGui::TextColored(Warning, "%s", view.lines_problem.c_str());
+        if (view.status->mice.empty() && view.touchpads.empty())
+            ImGui::TextDisabled("No mouse connected");
+        for (const Profiles::LiveMouse &mouse : view.status->mice) {
+            std::string id = Profiles::DeviceId(mouse.vendor, mouse.product);
+            if (!ImGui::BeginMenu((mouse.name + " (" + id + ")").c_str()))
+                continue;
+            const Profiles::DeviceLine *own = FileLine(mouse.vendor, mouse.product);
+            const Profiles::DeviceLine *shared =
+                mouse.receiver ? FileLine(mouse.receiver->first, mouse.receiver->second) : nullptr;
+            std::string current = own ? own->profile : "";
+            std::string fallback =
+                shared ? "Receiver " + Profiles::DeviceId(mouse.receiver->first, mouse.receiver->second) + ": " +
+                             shared->profile
+                       : std::string("Default");
+            if (ImGui::MenuItem(fallback.c_str(), nullptr, current.empty()) && own)
+                Forget(mouse.vendor, mouse.product);
+            ImGui::SetItemTooltip(shared ? "Share the receiver's settings with its other mice"
+                                         : "Use the default settings");
+            for (const auto &[name, params] : view.files) {
+                if (ImGui::MenuItem(name.c_str(), nullptr, current == name))
+                    Assign(mouse.vendor, mouse.product, name, own && !own->disabled() ? LineSettings(*own)
+                                                                                    : std::vector<std::string>{});
+                ImGui::SetItemTooltip("Use this profile");
+            }
+            if (ImGui::MenuItem("Disabled", nullptr, current == Profiles::Disabled))
+                Assign(mouse.vendor, mouse.product, Profiles::Disabled, {});
+            ImGui::SetItemTooltip("Driver leaves this mouse alone");
+            ImGui::Separator();
+            if (!own && shared && !shared->disabled()) {
+                if (ImGui::MenuItem("Give this mouse its own line"))
+                    Assign(mouse.vendor, mouse.product, shared->profile, LineSettings(*shared));
+                ImGui::SetItemTooltip("Stop sharing the receiver's settings");
+            }
+            const Profiles::DeviceLine *timed = own ? own : shared;
+            ImGui::BeginDisabled(!timed || timed->disabled());
+            if (ImGui::MenuItem("DPI and timing...")) {
+                device_settings = *timed;
+                device_settings_title = own ? id : "Receiver " + Profiles::DeviceId(timed->vendor, timed->product) +
+                                                       ", shared by its mice";
+                open_device_settings = true;
+            }
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("Pre-scale and packet timing of this line");
+            ImGui::EndMenu();
+        }
+        for (const Profiles::ConnectedMouse &mouse : view.touchpads)
+            TouchpadMenu(mouse, Profiles::DeviceId(mouse.vendor, mouse.product));
+
+        bool header = false;
+        for (const Profiles::DeviceLine &line : view.lines) {
+            std::pair<uint16_t, uint16_t> id{line.vendor, line.product};
+            if (std::any_of(view.status->mice.begin(), view.status->mice.end(), [&](const Profiles::LiveMouse &mouse) {
+                    return std::pair<uint16_t, uint16_t>{mouse.vendor, mouse.product} == id || mouse.receiver == id;
+                }))
+                continue;
+            if (!header) {
+                ImGui::SeparatorText("Not connected");
+                header = true;
+            }
+            std::string label = Profiles::DeviceId(line.vendor, line.product) + ": " + line.profile;
+            if (ImGui::BeginMenu(label.c_str())) {
+                if (ImGui::MenuItem("Forget"))
+                    Forget(line.vendor, line.product);
+                ImGui::SetItemTooltip("Remove this mouse's line");
                 ImGui::EndMenu();
             }
-
-            bool header = false;
-            for (const Profiles::DeviceLine &line : lines) {
-                if (std::any_of(mice.begin(), mice.end(),
-                                [&](const Profiles::ConnectedMouse &mouse) { return mouse.covers(line); }))
-                    continue;
-                if (!header) {
-                    ImGui::SeparatorText("Not connected");
-                    header = true;
-                }
-                std::string label = Profiles::DeviceId(line.vendor, line.product) + ": " + line.profile;
-                if (ImGui::BeginMenu(label.c_str())) {
-                    if (ImGui::MenuItem("Forget"))
-                        Forget(line.vendor, line.product);
-                    ImGui::EndMenu();
-                }
-            }
-        } catch (const Profiles::Refused &refused) {
-            ImGui::TextDisabled("%s", refused.what());
         }
         ImGui::EndMenu();
     }
 
-    bool ProfilePicker(const Parameters &current, const Load &load) {
-        ImGui::SeparatorText("Profile");
-        std::vector<Profiles::DeviceLine> lines = DeviceLines();
-        std::vector<Profiles::ConnectedMouse> mice = Mice();
-        std::string preview = TargetLabel(editing_profile, lines, mice);
+    void ProfilePicker(const Parameters &current, const Load &load) {
+        Banner();
+        std::string preview = TargetLabel(editing_profile);
         if (ImGui::BeginCombo("##Profile", preview.c_str())) {
-            try {
-                if (ImGui::Selectable(TargetLabel("", lines, mice).c_str(), EditingDefault()) && !EditingDefault())
-                    RequestSwitch("", current, load);
-                for (const std::string &name : Profiles::ProfileNames(Profiles::Root))
-                    if (ImGui::Selectable(TargetLabel(name, lines, mice).c_str(), name == editing_profile) &&
-                        name != editing_profile)
-                        RequestSwitch(name, current, load);
-            } catch (const Profiles::Refused &refused) {
-                Message(refused.what());
-            }
+            if (ImGui::Selectable(TargetLabel("").c_str(), EditingDefault()) && !EditingDefault())
+                RequestSwitch("", load);
+            for (const std::string &name : view.names)
+                if (ImGui::Selectable(TargetLabel(name).c_str(), name == editing_profile) && name != editing_profile)
+                    RequestSwitch(name, load);
             ImGui::EndCombo();
         }
-        ImGui::SetItemTooltip("What the editor changes: the default config, used by mice devices.conf does not "
-                              "list, or a named profile. Each entry names the connected mice it drives.");
+        ImGui::SetItemTooltip("What you edit: the default or a saved profile");
 
-        std::vector<std::string> users = Profiles::MiceUsing(editing_profile, lines, mice);
-        const char *state = !Applied(current) ? "Edited, not applied yet"
-                            : !Saved()        ? "Applied, not saved"
-                                              : "Saved";
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        if (users.empty())
-            ImGui::TextWrapped(EditingDefault() ? "No connected mouse uses the default config."
-                                                : "No connected mouse uses this profile.");
-        ImGui::TextWrapped("%s", state);
-        ImGui::PopStyleColor();
+        if (view.status) {
+            bool loaded = EditingDefault() || view.status->profiles.count(editing_profile);
+            const char *state = !loaded         ? "Not in the driver"
+                                : !edited_applied ? "Edited"
+                                : edited_dirty  ? "Applied, not saved"
+                                                : "Saved";
+            ImGui::TextDisabled("%s", state);
+        }
 
         if (ImGui::Button("Save as new profile...", {-1, 0})) {
-            if (Saved()) {
+            if (!edited_dirty) {
                 profile_name[0] = '\0';
                 save_as_problem.clear();
                 confirm_overwrite = false;
                 open_new_profile = true;
             } else {
-                Message("Save or reset the applied changes first, so the current target's file and the driver agree");
+                Message("Save or reset first, so this target's file and the driver agree");
             }
         }
+        ImGui::SetItemTooltip("Save these settings under a new name");
         if (!EditingDefault()) {
             if (ImGui::Button("Delete profile...", {-1, 0}))
                 open_delete = true;
-            if (ImGui::Button("Copy into default config", {-1, 0}))
-                RequestSwitch("", current, load, current);
-            ImGui::SetItemTooltip("Opens the default config with this curve; Apply or Save to use it");
+            ImGui::SetItemTooltip("Delete this profile and its file");
+            if (ImGui::Button("Copy into default", {-1, 0}))
+                RequestSwitch("", load, current);
+            ImGui::SetItemTooltip("Edit the default with this curve");
         }
-        return false;
+    }
+
+    void ModeProfiles(AccelMode mode, const Load &load) {
+        bool listed = false;
+        for (const auto &[name, params] : view.files) {
+            if (params.accelMode != mode)
+                continue;
+            listed = true;
+            ImGui::Indent();
+            if (ImGui::Selectable(name.c_str(), name == editing_profile) && name != editing_profile)
+                RequestSwitch(name, load);
+            ImGui::SetItemTooltip("Open this saved profile");
+            ImGui::Unindent();
+        }
+        if (listed)
+            ImGui::Dummy(ImVec2(0, 6));
     }
 
     bool ModeExtras(Parameters &params) {
         bool change = false;
         switch (params.accelMode) {
             case AccelMode_Classic:
-                change |= Slider("##InputOffset_Param", &params.inputOffset, 0, 50, "Input Offset %0.2f");
-                ImGui::SetItemTooltip("Speed at or below which the sensitivity stays 1, as in Raw Accel");
+                change |= Slider("##InputOffset_Param", &params.inputOffset, 0, 50, "Input Offset %0.2f",
+                                 "Speed below which sensitivity stays 1");
                 if (!params.useSmoothing)
                     change |= SensCap("##LegacyCap_Param", &params.legacyCap);
                 break;
@@ -634,7 +826,7 @@ namespace ProfilesGui {
             case AccelMode_Lut:
             case AccelMode_CustomCurve:
                 change |= ImGui::Toggle("Values are velocities", &params.lutVelocity);
-                ImGui::SetItemTooltip("As Raw Accel's gain tables: y is the output speed, divided by the input speed");
+                ImGui::SetItemTooltip("y is output speed, not sensitivity, as Raw Accel's gain tables");
                 break;
             default:
                 break;
@@ -643,54 +835,52 @@ namespace ProfilesGui {
     }
 
     bool RawAccelFeatures(Parameters &params) {
-        bool in_use = UsesRawAccelFeatures(params);
-        if (!show_raw_accel && !in_use)
+        if (!show_raw_accel && !UsesRawAccelFeatures(params))
             return false;
         bool change = false;
 
-        ImGui::SeparatorText("Raw Accel features");
-        if (!show_raw_accel)
-            ImGui::TextWrapped("Shown because this curve uses them; the Raw Accel menu shows them always.");
-
-        ImGui::SeparatorText("Timing");
+        ImGui::SeparatorText("Raw Accel");
         if (EditingDefault()) {
-            change |= Slider("##MinTime", &params.minTime, 0, 10, "Min Time %0.4f ms");
-            change |= Slider("##MaxTime", &params.maxTime, 1, 1000, "Max Time %0.1f ms", true);
+            change |= Slider("##MinTime", &params.minTime, 0, 10, "Min Time %0.4f ms", "Shortest time one packet spans");
+            change |= Slider("##MaxTime", &params.maxTime, 1, 1000, "Max Time %0.1f ms", "Longest time one packet spans",
+                             true);
             change |= ImGui::Toggle("Fixed time", &params.fixedTime);
-            ImGui::SetItemTooltip("Take every packet to span exactly Min Time");
-        } else {
-            ImGui::TextWrapped("DPI and timing are set per mouse in the Devices menu.");
+            ImGui::SetItemTooltip("Every packet spans Min Time");
         }
         change |= ImGui::Toggle("Truncate carry", &params.truncateCarry);
-        ImGui::SetItemTooltip("Truncate the carried fraction of a count toward zero, as Raw Accel does");
+        ImGui::SetItemTooltip("Drop leftover fractions toward zero");
         change |= ImGui::Toggle("Clock on any report", &params.clockOnAnyReport);
-        ImGui::SetItemTooltip("Restart a mouse's packet clock on every report, a click included, as Raw Accel does");
+        ImGui::SetItemTooltip("Clicks restart the packet clock too");
         change |= ImGui::Toggle("Exact math", &params.exactMath);
-        ImGui::SetItemTooltip("Raw Accel's precise square root and power, a few nanoseconds slower per packet");
+        ImGui::SetItemTooltip("Precise square root and power, a few nanoseconds slower");
 
         ImGui::SeparatorText("Speed");
-        change |= Slider("##LpNorm", &params.lpNorm, 1, 64, "Lp Norm %0.2f", true);
-        ImGui::SetItemTooltip("Speed from the lp norm: 2 is the length, 16 or more the larger axis");
-        change |= Slider("##DomainX", &params.domainX, 0.01f, 10, "Domain X %0.2f", true);
-        change |= Slider("##DomainY", &params.domainY, 0.01f, 10, "Domain Y %0.2f", true);
-        change |= Slider("##RangeX", &params.rangeX, 0, 10, "Range X %0.2f");
-        change |= Slider("##RangeY", &params.rangeY, 0, 10, "Range Y %0.2f");
+        change |= Slider("##LpNorm", &params.lpNorm, 1, 64, "Lp Norm %0.2f", "How both axes combine: 2 is the length",
+                         true);
+        change |= Slider("##DomainX", &params.domainX, 0.01f, 10, "Domain X %0.2f", "Weight of horizontal speed", true);
+        change |= Slider("##DomainY", &params.domainY, 0.01f, 10, "Domain Y %0.2f", "Weight of vertical speed", true);
+        change |= Slider("##RangeX", &params.rangeX, 0, 10, "Range X %0.2f", "Share of the curve horizontal movement gets");
+        change |= Slider("##RangeY", &params.rangeY, 0, 10, "Range Y %0.2f", "Share of the curve vertical movement gets");
 
         ImGui::SeparatorText("Smoothing half-life");
-        change |= Slider("##InputHalfLife", &params.inputSmoothHalfLife, 0, 1000, "Input %0.2f ms", true);
-        change |= Slider("##ScaleHalfLife", &params.scaleSmoothHalfLife, 0, 1000, "Scale %0.2f ms", true);
-        change |= Slider("##OutputHalfLife", &params.outputSmoothHalfLife, 0, 1000, "Output %0.2f ms", true);
+        change |= Slider("##InputHalfLife", &params.inputSmoothHalfLife, 0, 1000, "Input %0.2f ms",
+                         "Smooths the input speed; 0 is off", true);
+        change |= Slider("##ScaleHalfLife", &params.scaleSmoothHalfLife, 0, 1000, "Scale %0.2f ms",
+                         "Smooths the sensitivity; 0 is off", true);
+        change |= Slider("##OutputHalfLife", &params.outputSmoothHalfLife, 0, 1000, "Output %0.2f ms",
+                         "Smooths the output speed; 0 is off", true);
 
         ImGui::SeparatorText("Snapping and limits");
-        change |= Slider("##AxisSnap", &params.axisSnap, 0, 45, "Axis Snap %0.1f deg");
-        change |= Slider("##SpeedClamp", &params.speedClamp, 0, 1000, "Speed Cap %0.1f", true);
-        ImGui::SetItemTooltip("Raw Accel's input speed cap: faster movement is scaled down to it; 0 is off");
-        change |= Slider("##RatioLR", &params.ratioLR, 0.01f, 10, "Left/Right %0.2f", true);
-        change |= Slider("##RatioUD", &params.ratioUD, 0.01f, 10, "Up/Down %0.2f", true);
+        change |= Slider("##AxisSnap", &params.axisSnap, 0, 45, "Axis Snap %0.1f deg", "Puts near-axis movement on the axis");
+        change |= Slider("##SpeedClamp", &params.speedClamp, 0, 1000, "Speed Cap %0.1f", "Fastest input speed; 0 is off",
+                         true);
+        change |= Slider("##RatioLR", &params.ratioLR, 0.01f, 10, "Left/Right %0.2f", "Multiplier for leftward movement",
+                         true);
+        change |= Slider("##RatioUD", &params.ratioUD, 0.01f, 10, "Up/Down %0.2f", "Multiplier for upward movement", true);
 
         ImGui::SeparatorText("By component");
         change |= ImGui::Toggle("Own vertical curve", &params.byComponent);
-        ImGui::SetItemTooltip("Give vertical movement its own speed and its own curve, as Raw Accel's by-component mode");
+        ImGui::SetItemTooltip("Vertical movement gets its own speed and curve");
         if (params.byComponent)
             change |= VerticalCurve(params.yCurve);
         return change;
@@ -702,7 +892,7 @@ namespace ProfilesGui {
             open_import = false;
         }
         if (ImGui::BeginPopupModal("Raw Accel import", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Which mouse's settings should the editor take?");
+            ImGui::Text("Which mouse's settings?");
             std::optional<std::string> chosen;
             if (import_settings) {
                 if (ImGui::Selectable(("Unlisted mice: " + import_settings->profiles.front().name).c_str()))
@@ -739,35 +929,24 @@ namespace ProfilesGui {
                 save_as_problem.clear();
             }
             if (!save_as_problem.empty())
-                ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", save_as_problem.c_str());
+                ImGui::TextColored(Warning, "%s", save_as_problem.c_str());
             if (confirm_overwrite)
-                ImGui::TextWrapped("A profile named \"%s\" exists. Save again to overwrite it.", profile_name);
+                ImGui::TextWrapped("\"%s\" exists. Save again to overwrite it.", profile_name);
             if (ImGui::Button(confirm_overwrite ? "Overwrite" : "Save", {120, 0})) {
                 std::string name = profile_name;
-                std::vector<std::string> names;
-                try {
-                    names = Profiles::ProfileNames(Profiles::Root);
-                } catch (const Profiles::Refused &refused) {
-                    save_as_problem = refused.what();
-                }
-                bool exists = std::find(names.begin(), names.end(), name) != names.end();
+                bool exists = std::find(view.names.begin(), view.names.end(), name) != view.names.end();
                 if (!yeetmouse_name_valid(name.c_str()) || name == Profiles::Disabled) {
-                    save_as_problem = "A name uses letters, digits, '.', '_' or '-', starts with a letter or digit, "
-                                      "has at most 31 characters and is not \"disabled\"";
+                    save_as_problem = "Letters, digits, '.', '_' or '-', starting with a letter or digit, at most 31";
                 } else if (exists && !confirm_overwrite) {
                     confirm_overwrite = true;
-                } else if (save_as_problem.empty()) {
+                } else {
                     try {
-                        std::string previous = editing_profile;
-                        editing_profile = name;
-                        try {
-                            Profiles::DriverLoad(name, current);
-                            Profiles::SaveProfile(Profiles::Root, name, current);
-                        } catch (const Profiles::Refused &) {
-                            editing_profile = previous;
-                            throw;
-                        }
-                        session_live[name] = current;
+                        Profiles::SetupLock lock(Profiles::Root);
+                        if (auto refusal = Profiles::DriverRefusal(current, name))
+                            throw Profiles::Refused("the curve " + *refusal);
+                        Profiles::SaveProfile(Profiles::Root, name, current);
+                        Profiles::DriverLoad(name, current);
+                        applied[name] = current;
                         SwitchTo(name, load);
                         ImGui::CloseCurrentPopup();
                     } catch (const Profiles::Refused &refused) {
@@ -786,33 +965,35 @@ namespace ProfilesGui {
             open_unsaved = false;
         }
         if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextWrapped("%s has changes that are not saved.",
-                               EditingDefault() ? "The default config" : ("Profile \"" + editing_profile + "\"").c_str());
+            ImGui::TextWrapped("%s has unsaved changes.",
+                               EditingDefault() ? "The default" : ("\"" + editing_profile + "\"").c_str());
             bool done = false;
             if (ImGui::Button("Save", {120, 0})) {
                 SaveEdited(current);
-                done = Canonical(saved_params) == Canonical(current);
+                Frame(current);
+                done = !edited_dirty;
             }
-            ImGui::SetItemTooltip("Save the edits to this target's file, then switch");
+            ImGui::SetItemTooltip("Save, then switch");
             ImGui::SameLine();
             if (ImGui::Button("Discard", {120, 0})) {
                 ResetEdited(load);
                 done = true;
             }
-            ImGui::SetItemTooltip("Put the saved version back, on screen and in the driver, then switch");
+            ImGui::SetItemTooltip("Back to the saved file, then switch");
             ImGui::SameLine();
             if (ImGui::Button("Cancel", {120, 0})) {
                 pending_switch.reset();
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::SetItemTooltip("Stay here");
             if (done && pending_switch) {
                 PendingSwitch next = *pending_switch;
                 pending_switch.reset();
                 ImGui::CloseCurrentPopup();
                 try {
                     SwitchTo(next.target, load);
-                    if (next.curve)
-                        load(WithDeviceSettings(*next.curve, live_params));
+                    if (next.curve && SavedFile())
+                        load(WithDeviceSettings(*next.curve, *SavedFile()));
                 } catch (const Profiles::Refused &refused) {
                     Message(refused.what());
                 }
@@ -825,9 +1006,10 @@ namespace ProfilesGui {
             open_delete = false;
         }
         if (ImGui::BeginPopupModal("Delete profile", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextWrapped("Delete profile \"%s\" and its file in /etc/yeetmouse/profiles?", editing_profile.c_str());
+            ImGui::TextWrapped("Delete \"%s\" and its file?", editing_profile.c_str());
             if (ImGui::Button("Delete", {120, 0})) {
                 try {
+                    Profiles::SetupLock lock(Profiles::Root);
                     std::vector<std::string> users =
                         Profiles::ProfileUsers(Profiles::LoadDevicesFile(Profiles::Root), editing_profile);
                     if (!users.empty())
@@ -836,11 +1018,11 @@ namespace ProfilesGui {
                     try {
                         Profiles::DriverDrop(editing_profile);
                     } catch (const Profiles::Refused &refused) {
-                        if (refused.code == EBUSY)
+                        if (refused.code != ENOENT)
                             throw;
                     }
                     Profiles::RemoveProfileFile(Profiles::Root, editing_profile);
-                    session_live.erase(editing_profile);
+                    applied.erase(editing_profile);
                     SwitchTo("", load);
                 } catch (const Profiles::Refused &refused) {
                     Message(refused.what());
@@ -858,18 +1040,18 @@ namespace ProfilesGui {
             open_device_settings = false;
         }
         if (ImGui::BeginPopupModal("DPI and timing", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("%s", Profiles::DeviceId(device_settings.vendor, device_settings.product).c_str());
+            ImGui::Text("%s", device_settings_title.c_str());
             ImGui::InputDouble("Pre-Scale", &device_settings.preScale, 0.01, 0.1, "%.4f");
-            ImGui::SetItemTooltip("1000 / DPI matches Raw Accel's DPI setting");
+            ImGui::SetItemTooltip("1000 / DPI, as Raw Accel's DPI");
             ImGui::InputDouble("Min Time (ms)", &device_settings.minTime, 0.01, 0.1, "%.4f");
+            ImGui::SetItemTooltip("Shortest time one packet spans");
             ImGui::InputDouble("Max Time (ms)", &device_settings.maxTime, 1, 10, "%.1f");
+            ImGui::SetItemTooltip("Longest time one packet spans");
             ImGui::Toggle("Fixed time", &device_settings.fixedTime);
+            ImGui::SetItemTooltip("Every packet spans Min Time");
             if (ImGui::Button("Save", {120, 0})) {
                 Assign(device_settings.vendor, device_settings.product, device_settings.profile,
-                       {"preScale=" + DriverHelper::FormatDriverNumber(device_settings.preScale),
-                        "minTime=" + DriverHelper::FormatDriverNumber(device_settings.minTime),
-                        "maxTime=" + DriverHelper::FormatDriverNumber(device_settings.maxTime),
-                        std::string("fixedTime=") + (device_settings.fixedTime ? "1" : "0")});
+                       LineSettings(device_settings));
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
