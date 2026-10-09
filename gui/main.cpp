@@ -1300,7 +1300,8 @@ void DroppedFilesCallback(GLFWwindow* /*window*/, int path_count, const char* pa
 }
 
 int main() {
-    GUI::Setup(OnGui);
+    if (GUI::Setup(OnGui) != 0)
+        return 1;
     ImPlot::CreateContext();
 
     ImGui::GetIO().IniFilename = nullptr;
