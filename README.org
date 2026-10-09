@@ -348,6 +348,21 @@
 If you have any issues / questions regarding this project, feel free to ask them either directly through GitHub or on the [[https://discord.gg/z2qCD2zNTa][Discord server]].
 
 * Fixed-Point Performance Analysis
+  Per mouse packet, this fork against upstream 78dcd0d, measured 2026-10-09 at fork be7bcd6 on one core of a Ryzen 9 9950X3D: each driver's packet code built in userspace with clang -O2, best of 3 runs of 4 million packets at 1000 Hz. The output is identical to upstream's in every curve. Exact math, which only an imported Raw Accel profile turns on, uses the precise power and square root.
+
+  | Curve       | Upstream ns | Fork ns | Fork with exact math ns |
+  |-------------+-------------+---------+-------------------------|
+  | No curve    |        13.1 |     8.0 |                     7.9 |
+  | Linear      |        17.2 |    20.5 |                    23.4 |
+  | Power       |        35.5 |    39.8 |                    48.2 |
+  | Classic     |        35.2 |    39.1 |                    47.5 |
+  | Motivity    |        18.9 |    20.9 |                    23.7 |
+  | Synchronous |        25.0 |    28.6 |                    33.3 |
+  | Natural     |        31.1 |    35.6 |                    40.4 |
+  | Jump        |        17.9 |    19.5 |                    22.5 |
+
+  The chart and table below are upstream's measurements of upstream's fixed-point functions. This fork replaced FP64_SqrtPrecise, and its FP64_DivPrecise checks the divisor before the hardware divide and divides in portable C on ARM64, so those rows describe upstream's code.
+
   #+CAPTION: Functions Performance Comparison
    [[media/InstructionPerformance.png]]
 
