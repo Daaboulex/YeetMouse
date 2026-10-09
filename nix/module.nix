@@ -733,6 +733,46 @@ in
         ${yeetmouse}/bin/yeetmousectl setup /etc --seed ${etc}/yeetmouse
         chgrp yeetmouse ${parameterBasePath}/*
       '';
+      reload = pkgs.writeShellApplication {
+        name = "yeetmouse-reload";
+        runtimeInputs = [
+          pkgs.coreutils
+          pkgs.diffutils
+          pkgs.kmod
+          config.systemd.package
+        ];
+        text = ''
+          booted=$(readlink -ev /run/booted-system/kernel)
+          current=$(readlink -ev /run/current-system/kernel)
+          if [ "$booted" != "$current" ]; then
+            echo "the kernel changed, so the new yeetmouse driver loads at the next boot"
+            exit 0
+          fi
+          export MODULE_DIR=/run/current-system/kernel-modules/lib/modules
+          built_is_loaded() {
+            differs=0
+            cmp ${yeetmouse}/share/yeetmouse/driver-build-id /sys/module/yeetmouse/notes/.note.gnu.build-id > /dev/null || differs=$?
+            [ "$differs" -le 1 ] || exit 1
+            [ "$differs" -eq 0 ]
+          }
+          if [ -d /sys/module/yeetmouse ]; then
+            if built_is_loaded; then
+              exit 0
+            fi
+            if ! modprobe -r yeetmouse; then
+              echo "could not unload the old yeetmouse driver, so the new one loads at the next boot" >&2
+              exit 1
+            fi
+          fi
+          modprobe yeetmouse
+          udevadm settle
+          if ! built_is_loaded; then
+            echo "the booted system's yeetmouse driver loaded first; systemctl restart yeetmouse-reload loads the new one" >&2
+            exit 1
+          fi
+          echo "loaded the rebuilt yeetmouse driver"
+        '';
+      };
     in
     {
       assertions = [
@@ -750,10 +790,25 @@ in
       services.udev.extraRules = ''
         ACTION=="add", SUBSYSTEM=="misc", KERNEL=="yeetmouse", GROUP="yeetmouse", MODE="0660", TAG+="systemd", ENV{SYSTEMD_WANTS}+="yeetmouse.service"
       '';
+      systemd.services.yeetmouse-reload = {
+        description = "Load a rebuilt YeetMouse driver while the kernel stays the same";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "systemd-modules-load.service" ];
+        unitConfig.ConditionCapability = "CAP_SYS_MODULE";
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          ExecStart = getExe reload;
+        };
+      };
       systemd.services.yeetmouse = {
         description = "Apply YeetMouse configuration, profiles and devices";
         bindsTo = [ "dev-yeetmouse.device" ];
-        after = [ "dev-yeetmouse.device" ];
+        wants = [ "yeetmouse-reload.service" ];
+        after = [
+          "dev-yeetmouse.device"
+          "yeetmouse-reload.service"
+        ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;

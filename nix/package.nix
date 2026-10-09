@@ -60,6 +60,10 @@ stdenv.mkDerivation rec {
         --prefix PATH : ${lib.makeBinPath PATH}
       install -Dm644 $sourceRoot/media/yeetmouse.png \
         $out/share/icons/hicolor/256x256/apps/yeetmouse.png
+      install -d $out/share/yeetmouse
+      $OBJCOPY -O binary --only-section=.note.gnu.build-id \
+        $sourceRoot/driver/yeetmouse.ko $out/share/yeetmouse/driver-build-id
+      test -s $out/share/yeetmouse/driver-build-id
     '';
 
   buildFlags = [ "modules" ];
