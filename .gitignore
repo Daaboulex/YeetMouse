@@ -16,3 +16,4 @@ driver/config.h
 pkg/build
 .directory
 __pycache__
+tools/bench/build.*
