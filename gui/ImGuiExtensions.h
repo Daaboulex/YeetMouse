@@ -9,6 +9,8 @@
 namespace ImGui {
     bool ModeSelectable(const char *label, bool is_selected = false, ImGuiSelectableFlags flags = 0,
                         const ImVec2 &size = ImVec2(0, 0));
+
+    bool Toggle(const char *label, bool *value);
 }
 
 namespace ImPlot {

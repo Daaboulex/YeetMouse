@@ -8,6 +8,7 @@
 #include "ImGuiExtensions.h"
 #include "ConfigHelper.h"
 #include "ProfilesGui.h"
+#include "Profiles.h"
 #include <chrono>
 #include <fstream>
 #include <vector>
@@ -38,14 +39,13 @@ static_assert(sizeof(AccelModes) / sizeof(char *) == AccelMode_Count);
 
 Parameters params[NUM_MODES]; // Driver parameters for each mode
 CachedFunction functions[NUM_MODES]; // Driver parameters for each mode
-AccelMode used_mode = AccelMode_Linear;
 bool was_initialized = false;
 bool has_privilege = false;
 
 static char LUT_user_data[MAX_LUT_TEXT_LEN];
 
-void ResetParameters();
-void ApplyImportedParameters(Parameters cur_params[NUM_MODES], const Parameters& imported_params);
+static void RecacheMode(int mode);
+void LoadIntoEditor(const Parameters &imported);
 void DroppedFilesCallback(GLFWwindow* window, int path_count, const char* paths[]);
 
 #define RefreshDevices() {devices = DriverHelper::DiscoverDevices(); \
@@ -62,9 +62,18 @@ static int OnGui() {
     static bool show_custom_curve_control_points = true, move_control_points_along = false, show_custom_curve_LUT_points
             = false;
 
-    const ProfilesGui::Apply load_into_editor = [](const Parameters &imported) {
-        ApplyImportedParameters(params, imported);
+    const ProfilesGui::Load load_into_editor = [](const Parameters &imported) {
+        LoadIntoEditor(imported);
     };
+
+    static unsigned shown_live = ~0u;
+    if (ProfilesGui::LiveVersion() != shown_live) {
+        shown_live = ProfilesGui::LiveVersion();
+        params[0] = ProfilesGui::Live();
+        if (!ProfilesGui::EditingDefault())
+            params[0].preScale = params[selected_mode].preScale;
+        RecacheMode(0);
+    }
 
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
@@ -115,11 +124,11 @@ static int OnGui() {
             }
 
             if (changed) {
-                ApplyImportedParameters(params, imported_params);
+                LoadIntoEditor(imported_params);
             }
-            ProfilesGui::FileMenuItems(params[selected_mode], load_into_editor);
             ImGui::EndMenu();
         }
+        ProfilesGui::RawAccelMenu(params[selected_mode], load_into_editor);
         ProfilesGui::DevicesMenu();
         ImGui::EndMainMenuBar();
     }
@@ -137,8 +146,11 @@ static int OnGui() {
         ImGui::SeparatorText("Mode Selection");
         for (int i = 1; i < NUM_MODES; i++) {
             const char *accel = AccelModes[i];
-            if (ImGui::ModeSelectable(accel, i == selected_mode, 0, {-1, 0}))
+            if (ImGui::ModeSelectable(accel, i == selected_mode, 0, {-1, 0}) && i != selected_mode) {
+                Profiles::CarryGlobals(params[selected_mode], params[i]);
+                RecacheMode(i);
                 selected_mode = static_cast<AccelMode>(i);
+            }
             if (ImGui::IsItemHovered())
                 hovered_mode = i;
         }
@@ -165,7 +177,7 @@ static int OnGui() {
 
         change |= ProfilesGui::ProfilePicker(params[selected_mode], load_into_editor);
 
-        change |= ImGui::Checkbox("Use anisotropy", &params[selected_mode].useAnisotropy);
+        change |= ImGui::Toggle("Use anisotropy", &params[selected_mode].useAnisotropy);
         ImGui::SetItemTooltip("Separate X/Y sensitivity values");
 
         // Display Global Parameters First
@@ -200,7 +212,7 @@ static int OnGui() {
         }
         if (ProfilesGui::EditingDefault() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip) && ImGui::BeginTooltip()) {
             ImGui::Text(
-                "Used to adjust for different DPI values (Set to 800/DPI)");
+                "Adjusts for the mouse's DPI: 1000 / DPI, as Raw Accel's DPI setting");
             float item_width = ImGui::GetItemRectSize().x;
             static const float text_width{ImGui::CalcTextSize("Currently configured for 100 DPI").x};
 
@@ -209,7 +221,7 @@ static int OnGui() {
             ImGui::Text("Currently configured for %i DPI",
                         params[selected_mode].preScale == 0
                             ? 0
-                            : static_cast<int>(800 / params[selected_mode].preScale));
+                            : static_cast<int>(1000 / params[selected_mode].preScale));
 
             ImGui::EndTooltip();
         }
@@ -227,13 +239,12 @@ static int OnGui() {
 #ifdef USE_INPUT_DRAG
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.0001, 0.0005, 1, "Acceleration %0.4f", ImGuiSliderFlags_Logarithmic);
 #else
-                change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.0, 1,
+                change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.0001, 1,
                                              "Acceleration %0.4f", ImGuiSliderFlags_Logarithmic);
                 ImGui::SetItemTooltip("Ctrl+LMB to input any value you want");
 #endif
-                change |= ImGui::Checkbox("##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SameLine();
-                ImGui::Text("Use Smooth Capping");
+                change |= ImGui::Toggle("Smooth cap##Smoothing_Param", &params[selected_mode].useSmoothing);
+                ImGui::SetItemTooltip("Cap the curve smoothly at the output limit instead of with a hard sensitivity cap");
                 if (params[selected_mode].useSmoothing) {
 #ifdef USE_INPUT_DRAG
                     change |= ImGui::DragFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.02, 0.1, 10, "Output Limit %0.2f");
@@ -252,15 +263,14 @@ static int OnGui() {
                 change |= ImGui::DragFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 0.01, 1,
                                            "Exponent %0.2f");
 #else
-                change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.001, 5,
-                                             "Acceleration %0.3f");
-                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 1, "Exponent %0.2f");
-                change |= ImGui::SliderFloat("##OutOffset_Param", &params[selected_mode].midpoint, 0, 5,
+                change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.001, 50,
+                                             "Acceleration %0.3f", ImGuiSliderFlags_Logarithmic);
+                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 5, "Exponent %0.2f");
+                change |= ImGui::SliderFloat("##OutOffset_Param", &params[selected_mode].midpoint, 0, 50,
                                              "Output Offset %0.2f");
 #endif
-                change |= ImGui::Checkbox("##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SameLine();
-                ImGui::Text("Use Smooth Capping");
+                change |= ImGui::Toggle("Smooth cap##Smoothing_Param", &params[selected_mode].useSmoothing);
+                ImGui::SetItemTooltip("Cap the curve smoothly at the output limit instead of with a hard sensitivity cap");
                 if (params[selected_mode].useSmoothing) {
 #ifdef USE_INPUT_DRAG
                     change |= ImGui::DragFloat("##Motivity_Param", &params[selected_mode].motivity, 0.02, 0.1, 10, "Output Limit %0.2f");
@@ -277,13 +287,12 @@ static int OnGui() {
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.001, 0.001, 2, "Acceleration %0.3f");
                 change |= ImGui::DragFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 2.01, 5, "Exponent %0.2f");
 #else
-                change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.001, 2,
-                                             "Acceleration %0.3f");
-                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 2.01, 5, "Exponent %0.2f");
+                change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.0001, 10,
+                                             "Acceleration %0.4f", ImGuiSliderFlags_Logarithmic);
+                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 1.01, 10, "Exponent %0.2f");
 #endif
-                change |= ImGui::Checkbox("##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SameLine();
-                ImGui::Text("Use Smooth Capping");
+                change |= ImGui::Toggle("Smooth cap##Smoothing_Param", &params[selected_mode].useSmoothing);
+                ImGui::SetItemTooltip("Cap the curve smoothly at the output limit instead of with a hard sensitivity cap");
                 if (params[selected_mode].useSmoothing) {
 #ifdef USE_INPUT_DRAG
                     change |= ImGui::DragFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.02, 0.1, 10, "Output Limit %0.2f");
@@ -316,18 +325,17 @@ static int OnGui() {
                 change |= ImGui::DragFloat("##Motivity_Param", &params[selected_mode].motivity, 0.01, 1, 10, "Motivity %0.2f");
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.05, 0.01, 20, "SyncSpeed %0.2f");
 #else
-                change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].exponent, 0.1, 20,
-                                             "Gamma %0.2f");
-                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].midpoint, 0.1, 20,
-                                             "Smoothness %0.2f", ImGuiSliderFlags_Logarithmic);
-                change |= ImGui::SliderFloat("##Motivity_Param", &params[selected_mode].motivity, 1, 10,
-                                             "Motivity %0.2f");
-                change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.01, 10,
-                                             "SyncSpeed %0.2f");
+                change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].exponent, 0.01, 20,
+                                             "Gamma %0.2f", ImGuiSliderFlags_Logarithmic);
+                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].midpoint, 0, 1,
+                                             "Smoothness %0.2f");
+                change |= ImGui::SliderFloat("##Motivity_Param", &params[selected_mode].motivity, 1.01, 50,
+                                             "Motivity %0.2f", ImGuiSliderFlags_Logarithmic);
+                change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.01, 100,
+                                             "SyncSpeed %0.2f", ImGuiSliderFlags_Logarithmic);
 #endif
-                change |= ImGui::Checkbox("##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SameLine();
-                ImGui::Text("Use Smoothing");
+                change |= ImGui::Toggle("Gain##Smoothing_Param", &params[selected_mode].useSmoothing);
+                ImGui::SetItemTooltip("Raw Accel's Gain: the curve sets how the output speed grows, not the sensitivity itself");
                 break;
             }
             case AccelMode_Natural: // Natural
@@ -344,12 +352,11 @@ static int OnGui() {
                                              "Decay Rate %0.3f");
                 change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0, 50,
                                              "Midpoint %0.2f");
-                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 8,
+                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 10,
                                              "Limit %0.2f");
 #endif
-                change |= ImGui::Checkbox("##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SameLine();
-                ImGui::Text("Use Smoothing");
+                change |= ImGui::Toggle("Gain##Smoothing_Param", &params[selected_mode].useSmoothing);
+                ImGui::SetItemTooltip("Raw Accel's Gain: the curve sets how the output speed grows, not the sensitivity itself");
                 break;
             }
             case AccelMode_Jump: // Jump
@@ -364,14 +371,13 @@ static int OnGui() {
 #else
                 change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0, 10,
                                              "Acceleration %0.2f");
-                change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.1, 50,
-                                             "Midpoint %0.2f");
+                change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.1, 100,
+                                             "Midpoint %0.2f", ImGuiSliderFlags_Logarithmic);
                 change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 0.0, 1,
                                              "Smoothness %0.2f");
 #endif
-                change |= ImGui::Checkbox("##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SameLine();
-                ImGui::Text("Use Smoothing");
+                change |= ImGui::Toggle("Gain##Smoothing_Param", &params[selected_mode].useSmoothing);
+                ImGui::SetItemTooltip("Raw Accel's Gain: the curve sets how the output speed grows, not the sensitivity itself");
                 break;
             }
             case AccelMode_Lut: {
@@ -381,7 +387,7 @@ static int OnGui() {
                 ImGui::SetItemTooltip("Format: x1,y1;x2,y2;x3,y3... (commas and semicolons are treated equally)");
                 //change |= ImGui::DragFloat("##LUT_Stride_Param", &params[selected_mode].LUT_stride, 0.05, 0.05, 10, "Stride %0.2f");
                 //ImGui::SetItemTooltip("Gap between each 'y' value");
-                if (ImGui::Button("Save", {-1, 0})) {
+                if (ImGui::Button("Use table", {-1, 0})) {
                     change = true;
 
                     // Needs to be converted to int, because the kernel parameters don't deal too well with unsigned long longs
@@ -398,9 +404,9 @@ static int OnGui() {
                 }
                 ImGui::SetItemTooltip("Applies smoothing to the curve without moving the base (yellow) points");
 
-                ImGui::Checkbox("Show Control Points", &show_custom_curve_control_points);
+                ImGui::Toggle("Show Control Points", &show_custom_curve_control_points);
 
-                ImGui::Checkbox("Link Control Points", &move_control_points_along);
+                ImGui::Toggle("Link Control Points", &move_control_points_along);
                 ImGui::SetItemTooltip("Moves control points along with it's parent curve point");
 
                 auto &points = params[selected_mode].customCurve.points;
@@ -452,7 +458,7 @@ static int OnGui() {
                                 change |= ImGui::DragFloat("##pos2x", &p1.x, 0.5, p_min, p_max, "%.3f x");
                                 ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
                                 change |= ImGui::DragFloat("##pos2y", &p1.y, 0.01, 0, 10, "%.3f y");
-                                change |= ImGui::Checkbox("Enable", &p1.enabled);
+                                change |= ImGui::Toggle("Enable", &p1.enabled);
                                 ImGui::PopItemWidth();
                                 ImGui::PopItemWidth();
                                 ImGui::EndGroup();
@@ -466,7 +472,7 @@ static int OnGui() {
                 ImGui::Indent();
 
                 ImGui::SeparatorText("LUT Export");
-                ImGui::Checkbox("Show LUT Points", &show_custom_curve_LUT_points);
+                ImGui::Toggle("Show LUT Points", &show_custom_curve_LUT_points);
 
                 if (change) {
                     params[selected_mode].customCurve.ApplyCurveConstraints();
@@ -665,7 +671,7 @@ static int OnGui() {
                         ImGui::SeparatorText(buf);
                         bool drag_changed = false;
                         ImVec2 p_before = p;
-                        ImGui::Checkbox("Lock control", &p.is_locked);
+                        ImGui::Toggle("Lock control", &p.is_locked);
                         ImGui::SetItemTooltip("Control points won't be updated when smoothing");
                         ImGui::BeginGroup();
                         ImGui::PushMultiItemsWidths(2, ImGui::GetContentRegionAvail().x);
@@ -703,7 +709,7 @@ static int OnGui() {
                             all_right_disabled = !is_end_point && (!control_points[i][0].enabled && !control_points[i][1].enabled);
                             all_left_disabled = !is_start_point && (!control_points[i - 1][0].enabled && !control_points[i - 1][1].enabled);
                             ImGui::SeparatorText("Control points");
-                            ImGui::Checkbox("Polar coordinates", &p.use_polar_coordinates);
+                            ImGui::Toggle("Polar coordinates", &p.use_polar_coordinates);
                             ImGui::SetItemTooltip("Use polar coordinates for the control points");
 
                             // Begin grouping to from a grid of widgets
@@ -1125,58 +1131,59 @@ static int OnGui() {
 
         ImGui::SetWindowFontScale(1.2f);
 
+        const Parameters &edited = params[selected_mode];
+        std::optional<std::string> refusal = ProfilesGui::Refusal(edited);
+        std::string blocked = !has_privilege ? "You are not in the yeetmouse group yet: log out and in again"
+                              : !was_initialized ? "The driver's parameters could not be read"
+                              : selected_mode == AccelMode_Lut && edited.lutSize == 0
+                                  ? "The lookup table is empty: enter its points and press Use table"
+                              : !functions[selected_mode].isValid ? "These values do not make a valid curve"
+                              : refusal ? "This curve " + *refusal
+                                        : std::string();
+        bool throttled = ProfilesGui::EditingDefault() &&
+                         duration_cast<milliseconds>(steady_clock::now() - last_apply_clicked).count() < 1100;
+        bool applied = ProfilesGui::Applied(edited);
+        auto explain = [&](const char *done) {
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("%s", !blocked.empty() ? blocked.c_str() : done);
+        };
+        float third = avail.x / 3 - (ImGui::GetStyle().ItemSpacing.x * 2);
+
         ImGui::PushStyleColor(ImGuiCol_Button, ImColor::HSV(0.975, 0.82, 0.8).Value);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImColor::HSV(0.975, 0.75, 0.8).Value);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImColor::HSV(0.975, 0.7, 0.8).Value);
-        if (ImGui::Button("Reset", {avail.x / 3 - (ImGui::GetStyle().ItemSpacing.x * 2), -1})) {
-            ResetParameters();
-        }
+        ImGui::BeginDisabled(applied && ProfilesGui::Saved());
+        if (ImGui::Button("Reset", {third, -1}))
+            ProfilesGui::ResetEdited(LoadIntoEditor);
+        ImGui::EndDisabled();
         ImGui::PopStyleColor(3);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Back to the saved version, on screen and in the driver");
 
         ImGui::SameLine();
 
-        // Disable Apply button for 1.1 second after clicking it (this is a driver "limitation")
-        ImGui::BeginDisabled(!has_privilege || !was_initialized ||
-                             duration_cast<milliseconds>(steady_clock::now() - last_apply_clicked).count() < 1100 ||
-                             (selected_mode == AccelMode_Lut /* LUT */ && params[selected_mode].lutSize == 0) ||
-                             !functions[selected_mode].isValid);
-
-        if (ImGui::Button("Apply", {avail.x / 3 - (ImGui::GetStyle().ItemSpacing.x * 2), -1})) {
-            if (!ProfilesGui::SaveEdited(params[selected_mode])) {
-                params[selected_mode].SaveAll();
-                functions[0] = functions[selected_mode];
-                params[0] = params[selected_mode];
-                used_mode = selected_mode;
-            }
+        ImGui::BeginDisabled(!blocked.empty() || throttled || applied);
+        if (ImGui::Button("Apply", {third, -1})) {
+            ProfilesGui::ApplyEdited(edited);
             last_apply_clicked = steady_clock::now();
         }
+        ImGui::EndDisabled();
+        explain("Use the edited curve now, on the mice this target drives; nothing on disk changes");
 
         ImGui::SameLine();
 
         ImGui::PushStyleColor(ImGuiCol_Button, ImColor::HSV(0.3, 0.75, 0.76).Value);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImColor::HSV(0.3, 0.7, 0.8).Value);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImColor::HSV(0.3, 0.67, 0.83).Value);
-        if (ImGui::Button("Apply + Save", {-1, -1}) && !ProfilesGui::SaveEdited(params[selected_mode])) {
-            params[selected_mode].SaveAll(false);
-            if (!DriverHelper::SavePersistentParameters())
-                fprintf(stderr, "Failed to save parameters in /etc/yeetmouse.conf\n");
-            else {
-                DriverHelper::SaveParameters();
-                functions[0] = functions[selected_mode];
-                params[0] = params[selected_mode];
-                used_mode = selected_mode;
-                last_apply_clicked = steady_clock::now();
-            }
+        ImGui::BeginDisabled(!blocked.empty() || throttled || (applied && ProfilesGui::Saved()));
+        if (ImGui::Button("Save", {-1, -1})) {
+            ProfilesGui::SaveEdited(edited);
+            last_apply_clicked = steady_clock::now();
         }
-        ImGui::PopStyleColor(3);
-
-        ImGui::SetItemTooltip("Saves config across reboots");
-
         ImGui::EndDisabled();
-
-        if (!functions[selected_mode].isValid) {
-            ImGui::SetItemTooltip("Invalid parameters");
-        }
+        ImGui::PopStyleColor(3);
+        explain(ProfilesGui::EditingDefault() ? "Apply, then write /etc/yeetmouse.conf so it holds across reboots"
+                                              : "Apply, then write this profile's file so it holds across reboots");
 
         ImGui::SetWindowFontScale(1.f);
     } else
@@ -1201,72 +1208,40 @@ static int OnGui() {
     return 0;
 }
 
-Parameters start_params;
-
-void ResetParameters(void) {
-    for (int mode = 0; mode < NUM_MODES; mode++) {
-        params[mode] = start_params;
-        params[mode].accelMode = static_cast<AccelMode>(mode == 0 ? used_mode : mode);
-
-        if (mode == AccelMode_Lut) {
-            memcpy(params[mode].lutDataX, start_params.lutDataX,
-                   start_params.lutSize * sizeof(params[selected_mode].lutDataX[0]));
-            memcpy(params[mode].lutDataY, start_params.lutDataY,
-                   start_params.lutSize * sizeof(params[selected_mode].lutDataY[0]));
-        }
-
-        if (mode == AccelMode_Linear)
-            params[mode].accel = fminf(1.0, params[mode].accel);
-
-        if (mode == AccelMode_Classic)
-            params[mode].exponent = fmaxf(fminf(params[mode].exponent, 5), 2.1);
-
-        if (mode == AccelMode_Natural)
-            params[mode].exponent = fmaxf(params[mode].exponent, 0.01);
-
-        if (mode == AccelMode_Jump)
-            params[mode].exponent = fmaxf(fminf(params[mode].exponent, 1), 0.01);
-
-        if (mode == AccelMode_Power)
-            params[mode].exponent = fmaxf(fminf(params[mode].exponent, 1), 0.1);
-
-        if (mode == AccelMode_CustomCurve) {
-            params->customCurve.ApplyCurveConstraints();
-            params[mode].lutSize = params[mode].customCurve.ExportCurveToLUT(
-                params[mode].lutDataX, params[mode].lutDataY);
-            params[mode].customCurve.UpdateLUT();
-        }
-
-        functions[mode] = CachedFunction(((float) PLOT_X_RANGE) / PLOT_POINTS, &params[mode]);
-        //printf("stride = %f\n", functions[mode].x_stride);
-        bool old_use_ani = functions[mode].params->useAnisotropy;
-        functions[mode].params->useAnisotropy = true;
-        functions[mode].PreCacheFunc();
-        functions[mode].params->useAnisotropy = old_use_ani;
-    }
+static void RecacheMode(int mode) {
+    functions[mode] = CachedFunction(((float) PLOT_X_RANGE) / PLOT_POINTS, &params[mode]);
+    bool use_anisotropy = params[mode].useAnisotropy;
+    params[mode].useAnisotropy = true;
+    functions[mode].PreCacheFunc();
+    params[mode].useAnisotropy = use_anisotropy;
 }
 
-void ApplyImportedParameters(Parameters cur_params[NUM_MODES], const Parameters& imported_params) {
-    for (int i = 1; i < NUM_MODES; i++) {
-        if (i == AccelMode_CustomCurve) {
-            // Preserve the custom curve points when copying
-            CustomCurve curve = cur_params[AccelMode_CustomCurve].customCurve;
-            cur_params[i] = imported_params;
-            if (imported_params.customCurve.points.size() <= 1)
-                cur_params[i].customCurve = curve;
-
-            cur_params[i].lutSize = cur_params[i].customCurve.ExportCurveToLUT(
-                cur_params[i].lutDataX, cur_params[i].lutDataY);
-            cur_params[i].customCurve.ApplyCurveConstraints();
-            cur_params[i].customCurve.UpdateLUT();
-        } else
-            cur_params[i] = imported_params;
-
-        cur_params[i].accelMode = static_cast<AccelMode>(i == 0 ? used_mode : i);
-        functions[i] = CachedFunction(PLOT_X_RANGE / PLOT_POINTS, &cur_params[i]);
-        functions[i].PreCacheFunc();
+void LoadIntoEditor(const Parameters &imported) {
+    PLOT_X_RANGE = PLOT_X_DEFAULT_RANGE / (imported.preScale > 0 ? imported.preScale : 1);
+    for (int mode = 1; mode < NUM_MODES; mode++) {
+        Parameters base = mode == AccelMode_CustomCurve ? params[mode]
+                                                        : Profiles::CurveDefaults(static_cast<AccelMode>(mode));
+        base.accelMode = static_cast<AccelMode>(mode);
+        Profiles::CarryGlobals(imported, base);
+        params[mode] = base;
     }
-    selected_mode = imported_params.accelMode;
+    if (imported.accelMode > AccelMode_Current && imported.accelMode < NUM_MODES) {
+        Parameters own = imported;
+        if (imported.accelMode == AccelMode_CustomCurve && imported.customCurve.points.size() <= 1)
+            own.customCurve = params[AccelMode_CustomCurve].customCurve;
+        params[imported.accelMode] = own;
+        selected_mode = imported.accelMode;
+    }
+    Parameters &custom = params[AccelMode_CustomCurve];
+    custom.customCurve.ApplyCurveConstraints();
+    custom.lutSize = custom.customCurve.ExportCurveToLUT(custom.lutDataX, custom.lutDataY);
+    custom.customCurve.UpdateLUT();
+    const Parameters &table = params[AccelMode_Lut];
+    std::string text = table.lutSize > 0 ? DriverHelper::EncodeLutData(table.lutDataX, table.lutDataY, table.lutSize)
+                                         : std::string();
+    std::snprintf(LUT_user_data, sizeof(LUT_user_data), "%s", text.c_str());
+    for (int mode = 1; mode < NUM_MODES; mode++)
+        RecacheMode(mode);
 }
 
 void DroppedFilesCallback(GLFWwindow* /*window*/, int path_count, const char* paths[]) {
@@ -1286,7 +1261,7 @@ void DroppedFilesCallback(GLFWwindow* /*window*/, int path_count, const char* pa
     bool is_header_file = first_file[file_name_len - 1] == 'h' && first_file[file_name_len - 2] == '.';
     const auto imported_params = ConfigHelper::ImportAny(file_stream, LUT_user_data, is_header_file, nullptr);
     if (imported_params.has_value()) {
-        ApplyImportedParameters(params, imported_params.value());
+        LoadIntoEditor(imported_params.value());
     }
 }
 
@@ -1319,18 +1294,10 @@ int main() {
     if (!DriverHelper::CleanParameters(fixed_num) && fixed_num != 0 && !has_privilege) {
         fprintf(stderr, "Could not setup driver params\n");
     } else {
-        // Read driver parameters to a dummy aggregate
-        DriverHelper::ParseAllParameters(start_params, LUT_user_data);
-
-        used_mode = start_params.accelMode;
-
-        selected_mode = static_cast<AccelMode>(start_params.accelMode % NUM_MODES);
-
         was_initialized = true;
     }
 
-
-    ResetParameters();
+    ProfilesGui::Start(LoadIntoEditor);
 
 
     while (true) {

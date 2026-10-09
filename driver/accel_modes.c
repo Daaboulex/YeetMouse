@@ -4,6 +4,10 @@
 #include "FixedMath/Fixed64.h"
 #include "FixedMath/FixedUtil.h"
 
+#ifdef TEST_ENV
+char yeetmouse_driver_message[256];
+#endif
+
 #define EXP_ARG_THRESHOLD 16ll
 
 static void synchronous_build_lut(struct accel_curve *c);

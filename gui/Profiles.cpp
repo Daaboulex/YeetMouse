@@ -791,16 +791,100 @@ namespace Profiles {
 }
 
 namespace Profiles {
-    namespace {
-        std::optional<std::string> DriverRefusal(const Parameters &params, const std::string &name) {
-            yeetmouse_profile_args args;
-            if (!DriverHelper::ProfileArgs(params, name, args))
-                return "holds a value out of the driver's range";
-            auto profile = std::make_unique<accel_profile>();
-            if (profile_from_args(profile.get(), &args) != 0)
-                return "is refused by the driver";
+    std::optional<std::string> DriverRefusal(const Parameters &params, const std::string &name) {
+        yeetmouse_profile_args args;
+        if (!DriverHelper::ProfileArgs(params, name, args))
+            return "holds a value out of the driver's range";
+        auto profile = std::make_unique<accel_profile>();
+        yeetmouse_driver_message[0] = '\0';
+        if (profile_from_args(profile.get(), &args) == 0)
             return std::nullopt;
+        std::string reason = yeetmouse_driver_message;
+        const std::string prefix = "YeetMouse: Error: ";
+        if (reason.rfind(prefix, 0) == 0)
+            reason.erase(0, prefix.size());
+        while (!reason.empty() && std::isspace(static_cast<unsigned char>(reason.back())))
+            reason.pop_back();
+        return reason.empty() ? std::string("is refused by the driver") : "is refused by the driver: " + reason;
+    }
+
+    std::string LaunchTarget(const std::vector<DeviceLine> &lines, const std::vector<ConnectedMouse> &mice) {
+        std::optional<std::string> chosen;
+        for (const ConnectedMouse &mouse : mice) {
+            AppliedLine applied = LineFor(lines, mouse);
+            if (mouse.touchpad || !applied.line || applied.line->disabled())
+                continue;
+            if (chosen && *chosen != applied.line->profile)
+                return "";
+            chosen = applied.line->profile;
         }
+        return chosen.value_or("");
+    }
+
+    std::vector<std::string> MiceUsing(const std::string &target, const std::vector<DeviceLine> &lines,
+                                       const std::vector<ConnectedMouse> &mice) {
+        std::vector<std::string> names;
+        for (const ConnectedMouse &mouse : mice) {
+            AppliedLine applied = LineFor(lines, mouse);
+            if (mouse.touchpad || (applied.line && applied.line->disabled()))
+                continue;
+            if ((applied.line ? applied.line->profile : std::string()) == target)
+                names.push_back(mouse.name);
+        }
+        return names;
+    }
+
+    void CarryGlobals(const Parameters &from, Parameters &to) {
+        Parameters merged = from;
+        merged.accelMode = to.accelMode;
+        merged.accel = to.accel;
+        merged.exponent = to.exponent;
+        merged.midpoint = to.midpoint;
+        merged.motivity = to.motivity;
+        merged.useSmoothing = to.useSmoothing;
+        merged.inputOffset = to.inputOffset;
+        merged.legacyCap = to.legacyCap;
+        merged.lutVelocity = to.lutVelocity;
+        merged.lutSize = to.lutSize;
+        std::copy(std::begin(to.lutDataX), std::end(to.lutDataX), std::begin(merged.lutDataX));
+        std::copy(std::begin(to.lutDataY), std::end(to.lutDataY), std::begin(merged.lutDataY));
+        merged.customCurve = to.customCurve;
+        to = merged;
+    }
+
+    Parameters CurveDefaults(AccelMode mode) {
+        RawAccel::Profile profile;
+        switch (mode) {
+            case AccelMode_Classic:
+            case AccelMode_Linear:
+                profile.x.mode = RawAccel::Mode::Classic;
+                break;
+            case AccelMode_Power:
+                profile.x.mode = RawAccel::Mode::Power;
+                break;
+            case AccelMode_Natural:
+                profile.x.mode = RawAccel::Mode::Natural;
+                break;
+            case AccelMode_Synchronous:
+                profile.x.mode = RawAccel::Mode::Synchronous;
+                break;
+            case AccelMode_Jump:
+                profile.x.mode = RawAccel::Mode::Jump;
+                break;
+            default: {
+                Parameters own;
+                own.accelMode = mode;
+                return own;
+            }
+        }
+        profile.x.gain = mode != AccelMode_Linear;
+        Parameters converted = RawAccel::ToParameters(profile, RawAccel::DeviceConfig{});
+        if (mode == AccelMode_Linear) {
+            converted.accelMode = AccelMode_Linear;
+            converted.useSmoothing = false;
+            converted.legacyCap = 0;
+        }
+        return converted;
     }
 
     std::vector<std::string> CheckSetup(const std::filesystem::path &etc) {

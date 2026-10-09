@@ -6,7 +6,6 @@
 
 #ifdef __cplusplus
 #define printk printf
-#define pr_err printf
 extern "C" {
 #endif
 
@@ -16,7 +15,8 @@ extern "C" {
 #include <limits.h>
 #include <stdbool.h>
 #define printk printf
-#define pr_err printf
+extern char yeetmouse_driver_message[256];
+#define pr_err(...) snprintf(yeetmouse_driver_message, sizeof(yeetmouse_driver_message), __VA_ARGS__)
 
 #include <driver/FixedMath/Fixed64.h>
 static inline float FP64_ToFloat(FP_LONG v) {

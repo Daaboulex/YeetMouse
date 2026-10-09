@@ -2659,6 +2659,43 @@ bool Tests::TestProfileFiles() {
         supervisor.Validate(own.line == &receiver_lines[2] && !own.throughReceiver &&
                             paired[0].covers(receiver_lines[0]) && !paired[1].covers(receiver_lines[0]));
 
+        receiver_lines.pop_back();
+        std::vector<Profiles::ConnectedMouse> g502_only(paired.begin(), paired.begin() + 1);
+        supervisor.Validate(Profiles::LaunchTarget(receiver_lines, g502_only) == "power");
+        supervisor.Validate(Profiles::LaunchTarget(receiver_lines, paired).empty());
+        supervisor.Validate(Profiles::LaunchTarget({}, paired).empty());
+        supervisor.Validate(Profiles::MiceUsing("power", receiver_lines, paired) ==
+                            std::vector<std::string>{"Logitech G502"});
+        supervisor.Validate(Profiles::MiceUsing("", {}, paired).size() == 2);
+
+        Parameters from;
+        from.sens = 0.3f;
+        from.minTime = 1;
+        from.truncateCarry = true;
+        from.accelMode = AccelMode_Power;
+        from.accel = 1;
+        from.exponent = 0.15f;
+        Parameters to;
+        to.accelMode = AccelMode_Jump;
+        to.accel = 2;
+        to.exponent = 0;
+        to.midpoint = 9.75f;
+        Profiles::CarryGlobals(from, to);
+        supervisor.Validate(to.sens == 0.3f && to.minTime == 1 && to.truncateCarry && to.accelMode == AccelMode_Jump &&
+                            to.accel == 2 && to.exponent == 0 && to.midpoint == 9.75f);
+
+        for (AccelMode mode : {AccelMode_Linear, AccelMode_Power, AccelMode_Classic, AccelMode_Motivity,
+                               AccelMode_Synchronous, AccelMode_Natural, AccelMode_Jump}) {
+            Parameters defaults = Profiles::CurveDefaults(mode);
+            std::optional<std::string> refusal = Profiles::DriverRefusal(defaults, "defaults");
+            supervisor.Validate(defaults.accelMode == mode && !refusal);
+        }
+        Parameters stalled = Profiles::CurveDefaults(AccelMode_Linear);
+        stalled.accel = 0;
+        std::optional<std::string> reason = Profiles::DriverRefusal(stalled, "stalled");
+        supervisor.Validate(reason && reason->find("Linear") != std::string::npos &&
+                            reason->find("acceleration 0") != std::string::npos);
+
         supervisor.NextTest();
         std::filesystem::remove_all(root);
         auto edit_refused = [](const std::function<void()> &edit, const std::string &reason) {

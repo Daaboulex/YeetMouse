@@ -60,6 +60,17 @@ namespace Profiles {
 
     AppliedLine LineFor(const std::vector<DeviceLine> &lines, const ConnectedMouse &mouse);
 
+    std::string LaunchTarget(const std::vector<DeviceLine> &lines, const std::vector<ConnectedMouse> &mice);
+
+    std::vector<std::string> MiceUsing(const std::string &target, const std::vector<DeviceLine> &lines,
+                                       const std::vector<ConnectedMouse> &mice);
+
+    void CarryGlobals(const Parameters &from, Parameters &to);
+
+    Parameters CurveDefaults(AccelMode mode);
+
+    std::optional<std::string> DriverRefusal(const Parameters &params, const std::string &name);
+
     std::string DeviceId(uint16_t vendor, uint16_t product);
 
     void ParseDeviceId(const std::string &text, uint16_t &vendor, uint16_t &product);

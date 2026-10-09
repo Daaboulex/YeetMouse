@@ -6,7 +6,7 @@ bool ImGui::ModeSelectable(const char *label, bool is_selected, ImGuiSelectableF
     if (!is_selected)
         PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
     else
-        PushStyleColor(ImGuiCol_Button, GetStyleColorVec4(ImGuiCol_FrameBg));
+        PushStyleColor(ImGuiCol_Button, GetStyleColorVec4(ImGuiCol_ButtonActive));
 
     bool ret = false;
 
@@ -18,6 +18,15 @@ bool ImGui::ModeSelectable(const char *label, bool is_selected, ImGuiSelectableF
     PopStyleColor();
 
     return ret;
+}
+
+bool ImGui::Toggle(const char *label, bool *value) {
+    PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.5f);
+    PushStyleColor(ImGuiCol_Border, ImVec4(0.6f, 0.6f, 0.66f, 1.0f));
+    bool changed = Checkbox(label, value);
+    PopStyleColor();
+    PopStyleVar();
+    return changed;
 }
 
 bool ImPlot::DragPoint(int id, float *x, float *y, const ImVec4 &col, float size, ImPlotDragToolFlags flags,
