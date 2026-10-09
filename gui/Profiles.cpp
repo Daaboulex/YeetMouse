@@ -1157,7 +1157,7 @@ namespace Profiles {
     std::string LaunchTarget(const LiveStatus &status) {
         std::optional<std::string> chosen;
         for (const LiveMouse &mouse : status.mice) {
-            if (mouse.disabled || mouse.claimed)
+            if (mouse.disabled || mouse.claimed || !mouse.line)
                 continue;
             if (chosen && *chosen != mouse.profile)
                 return "";

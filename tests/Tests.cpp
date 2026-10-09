@@ -2759,6 +2759,9 @@ bool Tests::TestProfileFiles() {
         Profiles::LiveStatus g502_only = live;
         g502_only.mice.resize(1);
         supervisor.Validate(Profiles::LaunchTarget(g502_only) == "power" && Profiles::LaunchTarget(live).empty());
+        Profiles::LiveStatus with_unlisted = g502_only;
+        with_unlisted.mice.push_back(Profiles::LiveMouse{});
+        supervisor.Validate(Profiles::LaunchTarget(with_unlisted) == "power");
         Profiles::LiveStatus claimed = g502_only;
         claimed.mice[0].claimed = true;
         supervisor.Validate(Profiles::LaunchTarget(claimed).empty());
