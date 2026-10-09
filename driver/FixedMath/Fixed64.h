@@ -1619,7 +1619,7 @@ static inline int FP64_FromString(const char *buf, FP_LONG *val) {
         count++;
     }
 
-    if (count == 0 || count > 18 || intpart > 9223372036854775807LL || (!negative && intpart > 9223372036854775807LL))
+    if (count == 0 || count > 18 || intpart >= (1ull << (63 - FP64_Shift)))
         return false;
 
     FP_LONG value = intpart << FP64_Shift;

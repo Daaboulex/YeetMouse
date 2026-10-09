@@ -1101,6 +1101,14 @@ bool Tests::TestFixedPointArithmetic() {
 
     try {
         supervisor.NextTest();
+        FP_LONG parsed = 0;
+        supervisor.Validate(FP64_FromString("2147483647.5", &parsed) > 0 &&
+                            parsed == (2147483647ll << FP64_Shift) + (1ll << (FP64_Shift - 1)));
+        supervisor.Validate(FP64_FromString("-0.25\n", &parsed) > 0 && parsed == -(1ll << (FP64_Shift - 2)));
+        for (const char *text : {"2147483648", "-3000000000", "", "1e-05", "0x10", "1.5abc"})
+            supervisor.Validate(FP64_FromString(text, &parsed) == 0);
+
+        supervisor.NextTest();
 
         for (int i = -4000; i <= 4000; i++) {
             double x = i * 0.005;
