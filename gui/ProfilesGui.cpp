@@ -693,7 +693,7 @@ namespace ProfilesGui {
                     Profiles::MergeSetup(Profiles::Root, setup);
                     std::string loaded;
                     try {
-                        Profiles::DriverLoadAll(Profiles::Root);
+                        Profiles::DriverLoadMerged(Profiles::Root, setup);
                     } catch (const Profiles::Refused &refused) {
                         loaded = std::string("\nNot all of it reached the driver: ") + refused.what();
                     }

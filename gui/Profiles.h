@@ -180,6 +180,8 @@ namespace Profiles {
         std::vector<DeviceLine> devices;
     };
 
+    void DriverLoadMerged(const std::filesystem::path &root, const Setup &setup);
+
     void ParseWindowsId(const std::string &id, uint16_t &vendor, uint16_t &product);
 
     Setup FromRawAccel(const RawAccel::Settings &settings);

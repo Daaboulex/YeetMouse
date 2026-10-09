@@ -1090,6 +1090,12 @@ namespace Profiles {
             throw Refused("cannot remove profile " + name + ": " + error.message());
     }
 
+    void DriverLoadMerged(const std::filesystem::path &root, const Setup &setup) {
+        for (const auto &[name, params] : setup.profiles)
+            DriverLoad(name, LoadProfileFile(root, name));
+        DriverApplyDevices(root, LoadDevicesFile(root));
+    }
+
     void DriverApplyDevices(const std::filesystem::path &root, const std::vector<DeviceLine> &lines) {
         LiveStatus status = DriverStatus();
         std::set<std::string> loaded;

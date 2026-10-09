@@ -358,7 +358,11 @@ static void Notify(const std::string &message) {
 static int RunGame(const std::string &profile, char **command) {
     std::optional<Profiles::GameClaim> claim;
     try {
-        Profiles::DriverLoad(profile, Profiles::LoadProfileFile(Profiles::Root, profile));
+        {
+            Profiles::SetupLock lock(Profiles::Root);
+            if (!Profiles::DriverStatus().profiles.count(profile))
+                Profiles::DriverLoad(profile, Profiles::LoadProfileFile(Profiles::Root, profile));
+        }
         claim.emplace(profile);
     } catch (const Profiles::Refused &refused) {
         Notify(std::string("the game runs on the saved curve: ") + refused.what());
@@ -446,7 +450,7 @@ static int MergeRawAccel(const std::string &file) {
         std::cout << "Added " << setup.profiles.size() << " profiles and " << setup.devices.size()
                   << " devices. Raw Accel used \"" << setup.profiles.front().first
                   << "\" for unlisted mice; " << DefaultConfigPath << " is unchanged." << std::endl;
-        Profiles::DriverLoadAll(Profiles::Root);
+        Profiles::DriverLoadMerged(Profiles::Root, setup);
     } catch (const RawAccel::Refused &refused) {
         return Failed(refused);
     } catch (const Profiles::Refused &refused) {
