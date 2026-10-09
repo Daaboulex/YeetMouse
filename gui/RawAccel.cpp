@@ -238,7 +238,7 @@ namespace RawAccel {
         const std::string file = "the file";
         Settings settings;
         settings.version = Text(root, "version", file);
-        if (settings.version.rfind("1.7", 0) != 0)
+        if (settings.version != "1.7" && settings.version.rfind("1.7.", 0) != 0)
             throw Refused("a Raw Accel " + settings.version + " settings file; only the Raw Accel 1.7 format is read");
 
         settings.defaultDeviceConfig = ReadDeviceConfig(Field(root, "defaultDeviceConfig", file),
