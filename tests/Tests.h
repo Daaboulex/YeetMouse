@@ -62,6 +62,8 @@ public:
 
     static bool TestDriverStatus();
 
+    static bool TestSetupWrites();
+
     static bool TestRawAccelSetup();
 
 private:

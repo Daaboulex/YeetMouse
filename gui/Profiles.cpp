@@ -15,7 +15,9 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <tuple>
 #include <unistd.h>
 
@@ -108,7 +110,7 @@ namespace Profiles {
             throw Refused("\"" + text + "\" is not a vendor:product id such as 046d:c539");
     }
 
-    std::vector<DeviceLine> ReadDevices(std::istream &stream) {
+    std::vector<DeviceLine> ReadDevices(std::istream &stream, std::vector<std::string> &problems) {
         std::vector<DeviceLine> lines;
         std::string text;
         for (int number = 1; std::getline(stream, text); number++) {
@@ -117,46 +119,58 @@ namespace Profiles {
             if (!(words >> id))
                 continue;
             std::string where = "devices.conf line " + std::to_string(number);
-            DeviceLine line;
             try {
-                ParseDeviceId(id, line.vendor, line.product);
-            } catch (const Refused &refused) {
-                throw Refused(where + ": " + refused.what());
-            }
-            if (!(words >> line.profile))
-                throw Refused(where + ": " + id + " names no profile");
-            if (!line.disabled() && !yeetmouse_name_valid(line.profile.c_str()))
-                throw Refused(where + ": \"" + line.profile + "\" is not a valid profile name");
+                DeviceLine line;
+                try {
+                    ParseDeviceId(id, line.vendor, line.product);
+                } catch (const Refused &refused) {
+                    throw Refused(where + ": " + refused.what());
+                }
+                if (!(words >> line.profile))
+                    throw Refused(where + ": " + id + " names no profile");
+                if (!line.disabled() && !yeetmouse_name_valid(line.profile.c_str()))
+                    throw Refused(where + ": \"" + line.profile + "\" is not a valid profile name");
 
-            std::set<std::string> seen;
-            while (words >> word) {
-                std::size_t equals = word.find('=');
-                if (equals == std::string::npos)
-                    throw Refused(where + ": \"" + word + "\" is not key=value");
-                std::string key = word.substr(0, equals), value = word.substr(equals + 1);
-                if (!seen.insert(key).second)
-                    throw Refused(where + ": " + key + " is given twice");
-                if (key == "preScale")
-                    line.preScale = Number(value, where);
-                else if (key == "minTime")
-                    line.minTime = Number(value, where);
-                else if (key == "maxTime")
-                    line.maxTime = Number(value, where);
-                else if (key == "fixedTime" && (value == "0" || value == "1"))
-                    line.fixedTime = value == "1";
-                else if (key == "windowsId" && !value.empty())
-                    line.windowsId = value;
-                else
-                    throw Refused(where + ": \"" + word + "\" is not a device setting");
+                std::set<std::string> seen;
+                while (words >> word) {
+                    std::size_t equals = word.find('=');
+                    if (equals == std::string::npos)
+                        throw Refused(where + ": \"" + word + "\" is not key=value");
+                    std::string key = word.substr(0, equals), value = word.substr(equals + 1);
+                    if (!seen.insert(key).second)
+                        throw Refused(where + ": " + key + " is given twice");
+                    if (key == "preScale")
+                        line.preScale = Number(value, where);
+                    else if (key == "minTime")
+                        line.minTime = Number(value, where);
+                    else if (key == "maxTime")
+                        line.maxTime = Number(value, where);
+                    else if (key == "fixedTime" && (value == "0" || value == "1"))
+                        line.fixedTime = value == "1";
+                    else if (key == "windowsId" && !value.empty())
+                        line.windowsId = value;
+                    else
+                        throw Refused(where + ": \"" + word + "\" is not a device setting");
+                }
+                for (const char *key : DeviceKeys)
+                    if (!line.disabled() && !seen.count(key))
+                        throw Refused(where + ": " + key + " is missing");
+                for (const DeviceLine &earlier : lines)
+                    if (earlier.vendor == line.vendor && earlier.product == line.product)
+                        throw Refused(where + ": " + id + " is listed twice");
+                lines.push_back(line);
+            } catch (const Refused &refused) {
+                problems.push_back(refused.what());
             }
-            for (const char *key : DeviceKeys)
-                if (!line.disabled() && !seen.count(key))
-                    throw Refused(where + ": " + key + " is missing");
-            for (const DeviceLine &earlier : lines)
-                if (earlier.vendor == line.vendor && earlier.product == line.product)
-                    throw Refused(where + ": " + id + " is listed twice");
-            lines.push_back(line);
         }
+        return lines;
+    }
+
+    std::vector<DeviceLine> ReadDevices(std::istream &stream) {
+        std::vector<std::string> problems;
+        std::vector<DeviceLine> lines = ReadDevices(stream, problems);
+        if (!problems.empty())
+            throw Refused(problems.front());
         return lines;
     }
 
@@ -243,26 +257,55 @@ namespace Profiles {
     }
 
     void SaveFile(const std::filesystem::path &path, const std::string &text) {
-        std::filesystem::path temporary = path;
-        temporary += ".new";
-        {
-            std::ofstream stream(temporary, std::ios::trunc);
-            stream << text;
-            stream.flush();
-            if (!stream)
-                throw Refused("cannot write " + temporary.string());
+        std::string temporary = path.string() + ".XXXXXX";
+        int fd = mkstemp(temporary.data());
+        if (fd < 0) {
+            int error = errno;
+            throw Refused("cannot write next to " + path.string() + ": " + std::strerror(error), error);
         }
-        std::error_code error;
-        std::filesystem::permissions(temporary,
-                                     std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
-                                         std::filesystem::perms::group_read | std::filesystem::perms::group_write |
-                                         std::filesystem::perms::others_read,
-                                     error);
-        if (error)
-            throw Refused("cannot open " + temporary.string() + " to the group: " + error.message());
-        std::filesystem::rename(temporary, path, error);
-        if (error)
-            throw Refused("cannot replace " + path.string() + ": " + error.message());
+        auto fail = [&](const std::string &what, int error) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+            throw Refused(what + ": " + std::strerror(error), error);
+        };
+        for (std::size_t written = 0; written < text.size();) {
+            ssize_t count = write(fd, text.data() + written, text.size() - written);
+            if (count < 0 && errno == EINTR)
+                continue;
+            if (count < 0) {
+                int error = errno;
+                close(fd);
+                fail("cannot write " + temporary, error);
+            }
+            written += static_cast<std::size_t>(count);
+        }
+        if (fchmod(fd, 0664) != 0 || fsync(fd) != 0) {
+            int error = errno;
+            close(fd);
+            fail("cannot finish " + temporary, error);
+        }
+        if (close(fd) != 0)
+            fail("cannot finish " + temporary, errno);
+        if (rename(temporary.c_str(), path.c_str()) != 0)
+            fail("cannot replace " + path.string(), errno);
+    }
+
+    SetupLock::SetupLock(const std::filesystem::path &root) : fd(open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC)) {
+        if (fd < 0) {
+            int error = errno;
+            throw Refused("cannot open " + root.string() + ": " + std::strerror(error), error);
+        }
+        while (flock(fd, LOCK_EX) != 0) {
+            if (errno == EINTR)
+                continue;
+            int error = errno;
+            close(fd);
+            throw Refused("cannot lock " + root.string() + ": " + std::strerror(error), error);
+        }
+    }
+
+    SetupLock::~SetupLock() {
+        close(fd);
     }
 
     yeetmouse_devices_args DevicesArgs(const std::vector<DeviceLine> &lines) {
@@ -313,17 +356,49 @@ namespace Profiles {
         Driver().Call(YEETMOUSE_IOCTL_SET_DEVICES, &args, "setting devices.conf");
     }
 
+    std::vector<DeviceLine> LoadableLines(const std::vector<DeviceLine> &lines, const std::vector<std::string> &loaded,
+                                          std::vector<std::string> &problems) {
+        std::vector<DeviceLine> usable;
+        for (const DeviceLine &line : lines) {
+            std::string id = DeviceId(line.vendor, line.product);
+            if (!line.disabled() && std::find(loaded.begin(), loaded.end(), line.profile) == loaded.end()) {
+                problems.push_back(id + " is left out: its profile \"" + line.profile + "\" did not load");
+                continue;
+            }
+            if (usable.size() == YEETMOUSE_MAX_DEVICES) {
+                problems.push_back(id + " is left out: the driver holds " + std::to_string(YEETMOUSE_MAX_DEVICES) +
+                                   " lines");
+                continue;
+            }
+            try {
+                DevicesArgs({line});
+                usable.push_back(line);
+            } catch (const Refused &refused) {
+                problems.push_back(id + " is left out: " + refused.what());
+            }
+        }
+        return usable;
+    }
+
     void DriverLoadAll(const std::filesystem::path &root) {
-        std::vector<std::string> problems;
+        std::vector<std::string> problems, loaded;
         for (const std::string &name : ProfileNames(root)) {
             try {
                 DriverLoad(name, LoadProfileFile(root, name));
+                loaded.push_back(name);
             } catch (const Refused &refused) {
                 problems.push_back(refused.what());
             }
         }
+        std::vector<DeviceLine> lines;
+        std::filesystem::path path = root / "devices.conf";
+        std::ifstream stream(path);
+        if (stream.is_open())
+            lines = ReadDevices(stream, problems);
+        else if (std::filesystem::exists(path))
+            problems.push_back("cannot open " + path.string());
         try {
-            DriverSetDevices(LoadDevicesFile(root));
+            DriverSetDevices(LoadableLines(lines, loaded, problems));
         } catch (const Refused &refused) {
             problems.push_back(refused.what());
         }
@@ -969,9 +1044,10 @@ namespace Profiles {
     }
 
     void DriverApplyDevices(const std::filesystem::path &root, const std::vector<DeviceLine> &lines) {
+        LiveStatus status = DriverStatus();
         std::set<std::string> loaded;
         for (const DeviceLine &line : lines)
-            if (!line.disabled() && loaded.insert(line.profile).second)
+            if (!line.disabled() && !status.profiles.count(line.profile) && loaded.insert(line.profile).second)
                 DriverLoad(line.profile, LoadProfileFile(root, line.profile));
         DriverSetDevices(lines);
     }

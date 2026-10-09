@@ -77,6 +77,8 @@ namespace Profiles {
 
     void ParseDeviceId(const std::string &text, uint16_t &vendor, uint16_t &product);
 
+    std::vector<DeviceLine> ReadDevices(std::istream &stream, std::vector<std::string> &problems);
+
     std::vector<DeviceLine> ReadDevices(std::istream &stream);
 
     std::string WriteDevices(const std::vector<DeviceLine> &lines);
@@ -92,6 +94,20 @@ namespace Profiles {
     std::vector<DeviceLine> LoadDevicesFile(const std::filesystem::path &root);
 
     void SaveFile(const std::filesystem::path &path, const std::string &text);
+
+    class SetupLock {
+    public:
+        explicit SetupLock(const std::filesystem::path &root);
+
+        ~SetupLock();
+
+        SetupLock(const SetupLock &) = delete;
+
+        SetupLock &operator=(const SetupLock &) = delete;
+
+    private:
+        int fd;
+    };
 
     std::vector<DeviceLine> AssignDevice(const std::filesystem::path &root, const Parameters &defaults, uint16_t vendor,
                                          uint16_t product, const std::string &profile,
@@ -112,6 +128,9 @@ namespace Profiles {
     void DriverDrop(const std::string &name);
 
     void DriverSetDevices(const std::vector<DeviceLine> &lines);
+
+    std::vector<DeviceLine> LoadableLines(const std::vector<DeviceLine> &lines, const std::vector<std::string> &loaded,
+                                          std::vector<std::string> &problems);
 
     void DriverLoadAll(const std::filesystem::path &root);
 

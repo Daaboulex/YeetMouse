@@ -48,9 +48,20 @@ static int ApplyConfig(const std::string &file) {
         return 1;
     }
 
+    std::optional<Profiles::SetupLock> lock;
+    if (std::filesystem::is_directory(Profiles::Root))
+        lock.emplace(Profiles::Root);
     if (!params.SaveAll()) {
-        std::cerr << "Failed to write the driver parameters under " << YEETMOUSE_PARAMS_DIR
-                  << ": is the module loaded, and are you root or in the yeetmouse group?" << std::endl;
+        std::cerr << "Not applied: ";
+        try {
+            Profiles::LiveStatus status = Profiles::DriverStatus();
+            if (status.defaultRefused)
+                std::cerr << "the driver refused it: " << *status.defaultRefused << std::endl;
+            else
+                std::cerr << "the parameters under " << YEETMOUSE_PARAMS_DIR << " could not be written" << std::endl;
+        } catch (const Profiles::Refused &refused) {
+            std::cerr << refused.what() << std::endl;
+        }
         return 1;
     }
 
@@ -114,6 +125,7 @@ static int Failed(const std::exception &error) {
 
 static int LoadAll() {
     try {
+        Profiles::SetupLock lock(Profiles::Root);
         Profiles::DriverLoadAll(Profiles::Root);
     } catch (const Profiles::Refused &refused) {
         return Failed(refused);
@@ -142,6 +154,9 @@ static int ProfileSave(const std::string &name, const std::string &config) {
     if (!parsed)
         return 1;
     try {
+        Profiles::SetupLock lock(Profiles::Root);
+        if (auto refusal = Profiles::DriverRefusal(*parsed, name))
+            throw Profiles::Refused(config + " " + *refusal);
         Profiles::SaveProfile(Profiles::Root, name, *parsed);
         Profiles::DriverLoad(name, Profiles::LoadProfileFile(Profiles::Root, name));
     } catch (const Profiles::Refused &refused) {
@@ -153,6 +168,7 @@ static int ProfileSave(const std::string &name, const std::string &config) {
 
 static int ProfileRemove(const std::string &name) {
     try {
+        Profiles::SetupLock lock(Profiles::Root);
         std::vector<std::string> users = Profiles::ProfileUsers(Profiles::LoadDevicesFile(Profiles::Root), name);
         if (!users.empty())
             throw Profiles::Refused(users.front() + " uses " + name + "; give it another profile first");
@@ -283,6 +299,7 @@ static int DeviceSet(const std::string &id, const std::string &profile, const st
     if (!defaults)
         return 1;
     try {
+        Profiles::SetupLock lock(Profiles::Root);
         uint16_t vendor = 0, product = 0;
         Profiles::ParseDeviceId(id, vendor, product);
         Profiles::DriverApplyDevices(Profiles::Root,
@@ -296,6 +313,7 @@ static int DeviceSet(const std::string &id, const std::string &profile, const st
 
 static int DeviceRemove(const std::string &id) {
     try {
+        Profiles::SetupLock lock(Profiles::Root);
         uint16_t vendor = 0, product = 0;
         Profiles::ParseDeviceId(id, vendor, product);
         Profiles::DriverApplyDevices(Profiles::Root, Profiles::ForgetDevice(Profiles::Root, vendor, product));
@@ -407,6 +425,7 @@ static int MergeRawAccel(const std::string &file) {
         return 1;
     }
     try {
+        Profiles::SetupLock lock(Profiles::Root);
         Profiles::Setup setup = Profiles::FromRawAccel(RawAccel::Read(stream));
         Profiles::MergeSetup(Profiles::Root, setup);
         std::cout << "Added " << setup.profiles.size() << " profiles and " << setup.devices.size()
@@ -473,13 +492,24 @@ static int TouchpadCurve(const std::string &id, const std::string &profile) {
     return 0;
 }
 
-static std::string DumpDriver() {
+static std::optional<std::string> DumpDriver() {
     Parameters params{};
-
     char LUT_user_data[MAX_LUT_TEXT_LEN];
-
-    DriverHelper::ParseAllParameters(params, LUT_user_data);
-
+    if (!DriverHelper::ParseAllParameters(params, LUT_user_data)) {
+        std::cerr << "Failed to read the driver parameters under " << YEETMOUSE_PARAMS_DIR << ": is the module loaded?"
+                  << std::endl;
+        return std::nullopt;
+    }
+    try {
+        Profiles::LiveStatus status = Profiles::DriverStatus();
+        if (status.defaultRefused) {
+            std::cerr << "The driver refused the parameters it holds (" << *status.defaultRefused
+                      << "), so they are not what is live" << std::endl;
+            return std::nullopt;
+        }
+    } catch (const Profiles::Refused &refused) {
+        std::cerr << "Warning: " << refused.what() << std::endl;
+    }
     return ConfigHelper::ExportPlainText(params, false);
 }
 
@@ -516,10 +546,10 @@ int main(int argc, char **argv) {
     }
 
     if (cmd == "dump") {
-        if (const auto dump_str = DumpDriver(); dump_str.length() < 2) {
+        std::optional<std::string> text = DumpDriver();
+        if (!text)
             return 4;
-        }
-        std::cout << DumpDriver();
+        std::cout << *text;
         return 0;
     }
 
@@ -529,14 +559,15 @@ int main(int argc, char **argv) {
             return 2;
         }
 
-        std::ofstream out(argv[2]);
-        if (!out.is_open()) {
-            std::cerr << "Failed to open file\n";
+        std::optional<std::string> text = DumpDriver();
+        if (!text)
+            return 4;
+        try {
+            Profiles::SaveFile(argv[2], *text);
+        } catch (const Profiles::Refused &refused) {
+            std::cerr << refused.what() << std::endl;
             return 3;
         }
-
-        out << DumpDriver();;
-
         return 0;
     }
 

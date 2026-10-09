@@ -13,6 +13,10 @@
 #include <iterator>
 #include <random>
 #include <sstream>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "config.h"
 #include "TestManager.h"
@@ -3275,6 +3279,101 @@ bool Tests::TestDriverStatus() {
         supervisor.Validate(!Profiles::DeviceIsLive(devices, changed));
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during the driver status\n", ex.what());
+        supervisor.result = false;
+    }
+
+    return supervisor.GetResult();
+}
+
+bool Tests::TestSetupWrites() {
+    TestSupervisor supervisor{"Setup Writes"};
+    namespace fs = std::filesystem;
+
+    try {
+        supervisor.NextTest();
+        const std::string text = "046d:c539 power preScale=1 minTime=0 maxTime=100 fixedTime=0\n"
+                                 "zzzz:0000 power\n"
+                                 "1532:0084 jump preScale=1\n"
+                                 "045e:0040 disabled\n"
+                                 "046d:c539 jump preScale=1 minTime=0 maxTime=100 fixedTime=0\n";
+        std::istringstream mixed(text);
+        std::vector<std::string> problems;
+        std::vector<Profiles::DeviceLine> lines = Profiles::ReadDevices(mixed, problems);
+        supervisor.Validate(lines.size() == 2 && lines[0].profile == "power" && lines[1].disabled() &&
+                            problems.size() == 3 && problems[0].find("line 2") != std::string::npos &&
+                            problems[1].find("line 3") != std::string::npos &&
+                            problems[2].find("line 5") != std::string::npos);
+        std::istringstream strict(text);
+        bool threw = false;
+        try {
+            Profiles::ReadDevices(strict);
+        } catch (const Profiles::Refused &refused) {
+            threw = std::string(refused.what()).find("line 2") != std::string::npos;
+        }
+        supervisor.Validate(threw);
+
+        supervisor.NextTest();
+        std::vector<Profiles::DeviceLine> wanted = lines;
+        Profiles::DeviceLine jump = lines[0];
+        jump.product = 0x0084;
+        jump.profile = "jump";
+        Profiles::DeviceLine flat = lines[0];
+        flat.product = 0x0001;
+        flat.preScale = 0;
+        wanted.push_back(jump);
+        wanted.push_back(flat);
+        problems.clear();
+        std::vector<Profiles::DeviceLine> usable = Profiles::LoadableLines(wanted, {"power"}, problems);
+        supervisor.Validate(usable.size() == 2 && usable[0].product == 0xc539 && usable[1].disabled() &&
+                            problems.size() == 2 && problems[0].find("046d:0084") == 0 &&
+                            problems[1].find("preScale") != std::string::npos);
+        std::vector<Profiles::DeviceLine> many;
+        for (int i = 0; i <= YEETMOUSE_MAX_DEVICES; i++) {
+            Profiles::DeviceLine line = lines[0];
+            line.product = static_cast<uint16_t>(i);
+            many.push_back(line);
+        }
+        problems.clear();
+        supervisor.Validate(Profiles::LoadableLines(many, {"power"}, problems).size() == YEETMOUSE_MAX_DEVICES &&
+                            problems.size() == 1);
+
+        supervisor.NextTest();
+        fs::path root = fs::path(SCRATCH_DIR) / "writes";
+        fs::remove_all(root);
+        fs::create_directories(root);
+        Profiles::SaveFile(root / "a.conf", "one\n");
+        Profiles::SaveFile(root / "a.conf", "two\n");
+        std::ifstream saved(root / "a.conf");
+        std::string content((std::istreambuf_iterator<char>(saved)), std::istreambuf_iterator<char>());
+        struct stat info{};
+        supervisor.Validate(content == "two\n" && stat((root / "a.conf").c_str(), &info) == 0 &&
+                            (info.st_mode & 0777) == 0664 &&
+                            std::distance(fs::directory_iterator(root), fs::directory_iterator()) == 1);
+        threw = false;
+        try {
+            Profiles::SaveFile(root / "missing" / "a.conf", "x");
+        } catch (const Profiles::Refused &) {
+            threw = true;
+        }
+        supervisor.Validate(threw);
+
+        supervisor.NextTest();
+        int other = open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        {
+            Profiles::SetupLock lock(root);
+            supervisor.Validate(other >= 0 && flock(other, LOCK_EX | LOCK_NB) != 0 && errno == EWOULDBLOCK);
+        }
+        supervisor.Validate(flock(other, LOCK_EX | LOCK_NB) == 0);
+        close(other);
+        threw = false;
+        try {
+            Profiles::SetupLock missing(root / "missing");
+        } catch (const Profiles::Refused &) {
+            threw = true;
+        }
+        supervisor.Validate(threw);
+    } catch (std::exception &ex) {
+        fprintf(stderr, "Exception: %s during setup writes\n", ex.what());
         supervisor.result = false;
     }
 
