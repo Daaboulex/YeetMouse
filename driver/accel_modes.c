@@ -943,17 +943,20 @@ static INLINE void snap_angle(const struct accel_profile *p, FP_LONG *delta_x, F
 
 static INLINE void accel_plain_packet(const struct accel_profile *p, const struct accel_device *d, FP_LONG *delta_x,
                                       FP_LONG *delta_y, FP_LONG ms) {
-    FP_LONG speed;
+    FP_LONG scale = FP64_1;
 
     if (d->pre_scale != FP64_1) {
         *delta_x = FP64_Mul(*delta_x, d->pre_scale);
         *delta_y = FP64_Mul(*delta_y, d->pre_scale);
     }
-    speed = FP64_DivPrecise(euclidean_speed(p, *delta_x, *delta_y), ms);
+    if (p->x.mode != AccelMode_Current) {
+        FP_LONG speed = FP64_DivPrecise(euclidean_speed(p, *delta_x, *delta_y), ms);
 
-    if (p->input_cap > 0 && FP64_Sub(speed, p->input_cap) > 0)
-        speed = p->input_cap;
-    speed = FP64_Sub(speed, p->offset);
+        if (p->input_cap > 0 && FP64_Sub(speed, p->input_cap) > 0)
+            speed = p->input_cap;
+        speed = FP64_Sub(speed, p->offset);
+        scale = speed > 0 ? accel_curve_eval(&p->x, speed) : p->x.k.current_func_at_0;
+    }
 
     if (p->rotation_angle != 0) {
         FP_LONG rotated_x = FP64_Mul(*delta_x, p->cos_a) - FP64_Mul(*delta_y, p->sin_a);
@@ -961,8 +964,7 @@ static INLINE void accel_plain_packet(const struct accel_profile *p, const struc
         *delta_x = rotated_x;
     }
 
-    speed = speed > 0 ? accel_curve_eval(&p->x, speed) : p->x.k.current_func_at_0;
-    apply_sensitivity(p, speed, delta_x, delta_y);
+    apply_sensitivity(p, scale, delta_x, delta_y);
     snap_angle(p, delta_x, delta_y);
 }
 
@@ -1096,7 +1098,12 @@ void accel_mouse_packet(struct accel_mouse *mouse, const struct profile_table *t
         return;
     delta_x = FP64_FromInt(*x);
     delta_y = FP64_FromInt(*y);
-    ms = accel_time(choice->device, accel_elapsed(&mouse->state, now_ns));
+    if (choice->device->fixed_time) {
+        accel_report(&mouse->state, now_ns);
+        ms = choice->device->min_time;
+    } else {
+        ms = accel_time(choice->device, accel_elapsed(&mouse->state, now_ns));
+    }
     if (choice->profile->plain)
         accel_plain_packet(choice->profile, choice->device, &delta_x, &delta_y, ms);
     else

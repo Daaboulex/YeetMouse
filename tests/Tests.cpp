@@ -3486,7 +3486,7 @@ bool Tests::TestPacketPath() {
         std::mt19937 rng(20261009);
         std::uniform_int_distribution<int> counts(-120, 120);
         std::uniform_real_distribution<double> times(0.125, 5);
-        for (int mode = AccelMode_Linear; mode <= AccelMode_Jump; mode++)
+        for (int mode = AccelMode_Current; mode <= AccelMode_Jump; mode++)
             for (bool exact : {false, true}) {
                 bool built = curve(plain, mode, exact) && curve(general, mode, exact);
                 general.plain = 0;
@@ -3596,6 +3596,29 @@ bool Tests::TestPacketPath() {
         table.generation = 3;
         supervisor.Validate(move(4000000) == 10 && mouse.state.last_report_ns == 3000000);
         supervisor.Validate(!accel_mouse_idle_clock(&mouse, &table));
+
+        static accel_profile timed_curve;
+        static profile_table fixed_table, measured_table;
+        static accel_mouse fixed_mouse, measured_mouse;
+        curve(timed_curve, AccelMode_Linear, false);
+        fixed_table = {};
+        fixed_table.generation = 1;
+        fixed_table.default_profile = &timed_curve;
+        fixed_table.default_device.pre_scale = FP64_1;
+        fixed_table.default_device.min_time = FP64_1;
+        fixed_table.default_device.max_time = FP64_100;
+        measured_table = fixed_table;
+        fixed_table.default_device.fixed_time = 1;
+        fixed_mouse = {};
+        measured_mouse = {};
+        bool same_motion = true;
+        for (int i = 1; i <= 50; i++) {
+            int fx = 3 * i, fy = -i, mx = fx, my = fy;
+            accel_mouse_packet(&fixed_mouse, &fixed_table, 7000000000ll * i, &fx, &fy);
+            accel_mouse_packet(&measured_mouse, &measured_table, 1000000ll * i, &mx, &my);
+            same_motion &= fx == mx && fy == my && fixed_mouse.state.last_report_ns == 7000000000ll * i;
+        }
+        supervisor.Validate(same_motion);
 
         supervisor.NextTest();
         supervisor.Validate(yeetmouse_times_problem(FP64_FromInt(5), FP64_FromInt(2), false) != nullptr &&
