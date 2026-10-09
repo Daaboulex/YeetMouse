@@ -256,7 +256,18 @@ namespace Profiles {
         return ReadDevices(stream);
     }
 
-    void SaveFile(const std::filesystem::path &path, const std::string &text) {
+    void SaveFile(const std::filesystem::path &requested, const std::string &text) {
+        std::error_code checked;
+        std::filesystem::file_type kind = std::filesystem::symlink_status(requested, checked).type();
+        if (checked && kind != std::filesystem::file_type::not_found)
+            throw Refused("cannot check " + requested.string() + ": " + checked.message(), checked.value());
+        std::filesystem::path path = requested;
+        if (kind == std::filesystem::file_type::symlink) {
+            std::error_code followed;
+            path = std::filesystem::canonical(requested, followed);
+            if (followed)
+                throw Refused("cannot follow " + requested.string() + ": " + followed.message(), followed.value());
+        }
         std::string temporary = path.string() + ".XXXXXX";
         int fd = mkstemp(temporary.data());
         if (fd < 0) {

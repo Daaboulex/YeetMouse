@@ -2682,7 +2682,27 @@ bool Tests::TestProfileFiles() {
         supervisor.Validate(Profiles::LoadProfileFile(root, "power").lutSize == 3);
         supervisor.Validate(Profiles::LoadDevicesFile(root).size() == 3);
         Profiles::SaveFile(root / "devices.conf", "045e:0040 disabled\n");
-        supervisor.Validate(Profiles::LoadDevicesFile(root).size() == 1 && !std::filesystem::exists(root / "devices.conf.new"));
+        bool temporary_left = false;
+        for (const auto &entry : std::filesystem::directory_iterator(root))
+            temporary_left |= entry.path().filename().string().rfind("devices.conf.", 0) == 0;
+        supervisor.Validate(Profiles::LoadDevicesFile(root).size() == 1 && !temporary_left);
+
+        Profiles::SaveFile(root / "target.txt", "old\n");
+        std::filesystem::create_symlink("target.txt", root / "link.txt");
+        Profiles::SaveFile(root / "link.txt", "new\n");
+        std::ifstream through(root / "target.txt");
+        std::string landed((std::istreambuf_iterator<char>(through)), std::istreambuf_iterator<char>());
+        supervisor.Validate(std::filesystem::is_symlink(root / "link.txt") && landed == "new\n");
+        std::filesystem::create_symlink("missing.txt", root / "dangling.txt");
+        bool dangling_refused = false;
+        try {
+            Profiles::SaveFile(root / "dangling.txt", "new\n");
+        } catch (const Profiles::Refused &) {
+            dangling_refused = true;
+        }
+        supervisor.Validate(dangling_refused && std::filesystem::is_symlink(root / "dangling.txt"));
+        for (const char *name : {"target.txt", "link.txt", "dangling.txt"})
+            std::filesystem::remove(root / name);
         bool bad_name_refused = false;
         try {
             Profiles::LoadProfileFile(root, "../devices");
