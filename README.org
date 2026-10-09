@@ -105,10 +105,10 @@
    + Under each curve type in the mode column sit the saved profiles that use it; clicking one opens it. Clicking the curve type shows that curve with its defaults, or what was changed this session, keeping the sensitivity.
    + =Apply= uses the edited settings now and leaves the file alone. =Save= writes the file, then applies it. =Reset= puts the saved file back, on screen and in the driver. =Defaults= sets the current curve to its defaults. The line under the picker says =Edited=, =Applied, not saved= or =Saved=, read back from the driver, and switching away from unsaved changes asks first.
    + =Save as new profile=, =Delete profile= and =Copy into default= sit below the picker. A running game's profile shows as =Game running: <profile>=.
-   + The =Devices= menu lists each mouse the driver handles, with the line the driver resolved for it. Pick =Default= or the receiver's line, a profile or =Disabled=, give a mouse paired through a receiver its own line, or set a line's =DPI and timing=. Mice in =devices.conf= that are not connected appear under =Not connected=, where =Forget= removes their line. Touchpads are listed too, as described under Touchpads below.
+   + The =Devices= menu lists each mouse the driver handles, with the line the driver resolved for it. Pick =Default= or the receiver's line, a profile or =Disabled=, give a mouse paired through a receiver its own line, or set a line's DPI (=DPI...=, or =DPI and timing...= with Raw Accel features on). Mice in =devices.conf= that are not connected appear under =Not connected=, where =Forget= removes their line. Touchpads are listed too, as described under Touchpads below.
    + =File=, =Import= loads a YeetMouse config (or an old config.h) or one Raw Accel profile into the editor, or adds every profile and mouse of a Raw Accel settings.json. =File=, =Export= saves the editor's settings as a YeetMouse config, as config.h for older YeetMouse that builds settings into the driver, or as a Raw Accel profile, or saves the default, every profile and every mouse as one Raw Accel settings.json.
    + =Edit= copies the editor's settings as YeetMouse config text and pastes such text back into the editor.
-   + =View=, =Raw Accel features= shows the Raw Accel section even when the curve uses none of it: timing, exact math, lp norm, domain and range weights, smoothing, axis snap, speed cap, directional ratios and a separate vertical curve.
+   + =View=, =Raw Accel features= shows the settings YeetMouse adds for Raw Accel: timing, truncate carry, clock on any report, exact math, lp norm, domain and range weights, smoothing, axis snap, speed cap, directional ratios, a separate vertical curve, Classic's input offset, the Sens Cap of Classic and Power, and tables of velocities. Off hides all of them, including the timing in =Devices=, =DPI...=; settings a curve already uses keep working in the driver.
    + The chart's right-click menu has ImPlot's =Auto-Fit= per axis, which follows the curves and ignores the mouse speed dots; double-clicking the chart fits it once.
 
 ** Arch
@@ -341,7 +341,7 @@
 - YeetMouse's own /Motivity/ mode has no Raw Accel equivalent, so a curve that uses it cannot be exported.
 
 ** How to apply LUT curves as velocity (and use the EPP (Windows default acceleration) curve)?
-- Tick =Values are velocities= in the LUT or custom curve mode, or set =lutVelocity=1= in the config. Each y value is then an output speed, divided by the input speed, as Raw Accel does for a lookup table with =Gain / Velocity= on.
+- Turn on =View=, =Raw Accel features=, then tick =Values are velocities= in the LUT or custom curve mode, or set =lutVelocity=1= in the config. Each y value is then an output speed, divided by the input speed, as Raw Accel does for a lookup table with =Gain / Velocity= on.
 - For the EPP (Enhance Pointer Precision) curve specifically, use the config from this comment: https://github.com/AndyFilter/YeetMouse/issues/67#issuecomment-3620653542.
 
 ** More questions

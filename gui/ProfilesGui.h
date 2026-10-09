@@ -50,7 +50,7 @@ namespace ProfilesGui {
 
     void ModeProfiles(AccelMode mode, const Load &load);
 
-    const char *CurveTip(const char *label);
+    const char *CurveTip(const char *label, int mode);
 
     bool ModeExtras(Parameters &params);
 

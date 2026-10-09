@@ -50,9 +50,9 @@ static const char *const ModeTips[] = {
     "No curve",
     "Sensitivity grows in a straight line with speed",
     "Sensitivity follows a power of speed",
-    "Grows with speed past an input offset, as Quake's",
+    "Sensitivity rises from 1 as speed grows",
     "S-shaped rise around a midpoint",
-    "Raw Accel's synchronous curve around a sync speed",
+    "Lower below the sync speed, higher above it",
     "Rises quickly, then levels off at a limit",
     "Steps up from one sensitivity to another",
     "Your own table of points",
@@ -193,9 +193,9 @@ static int OnGui() {
             ImGui::SetItemTooltip("Multiplies all output");
         }
         change |= ImGui::DragFloat("##OutCap_Param", &params[selected_mode].outCap, 0.05, 0, 100, "Output Cap. %0.2f");
-        ImGui::SetItemTooltip("Highest sensitivity; 0 is off");
+        ImGui::SetItemTooltip("Top sensitivity overall; 0 is off");
         change |= ImGui::DragFloat("##InCap_Param", &params[selected_mode].inCap, 0.1, 0, 200, "Input Cap. %0.2f");
-        ImGui::SetItemTooltip("Fastest input speed the curve sees; 0 is off");
+        ImGui::SetItemTooltip("Curve stops changing above this speed; 0 is off");
         change |= ImGui::DragFloat("##Offset_Param", &params[selected_mode].offset, 0.05, -50, 50, "Offset %0.2f");
         ImGui::SetItemTooltip("Speed the curve starts from");
         bool pre_scale_change = ProfilesGui::EditingDefault() && ImGui::DragFloat("##PreScale_Param", &params[selected_mode].preScale, 0.01, 0.01, 10, "Pre-Scale %0.2f");
@@ -210,9 +210,9 @@ static int OnGui() {
             ImGui::SetItemTooltip("Multiplies all output");
         }
         change |= ImGui::SliderFloat("##OutCap_Param", &params[selected_mode].outCap, 0, 5, "Output Cap. %0.2f");
-        ImGui::SetItemTooltip("Highest sensitivity; 0 is off");
+        ImGui::SetItemTooltip("Top sensitivity overall; 0 is off");
         change |= ImGui::SliderFloat("##InCap_Param", &params[selected_mode].inCap, 0, 120, "Input Cap. %0.2f");
-        ImGui::SetItemTooltip("Fastest input speed the curve sees; 0 is off");
+        ImGui::SetItemTooltip("Curve stops changing above this speed; 0 is off");
         change |= ImGui::SliderFloat("##Offset_Param", &params[selected_mode].offset, -50, 50, "Offset %0.2f");
         ImGui::SetItemTooltip("Speed the curve starts from");
         bool pre_scale_change = ProfilesGui::EditingDefault() && ImGui::SliderFloat("##PreScale_Param", &params[selected_mode].preScale, 0.01, 10, "Pre-Scale %0.2f");
@@ -242,22 +242,22 @@ static int OnGui() {
             {
 #ifdef USE_INPUT_DRAG
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.0001, 0.0005, 1, "Acceleration %0.4f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
 #else
                 change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.0001, 1,
                                              "Acceleration %0.4f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
 #endif
                 change |= ImGui::Toggle("Smooth cap##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SetItemTooltip("Round off at the output limit instead of a hard cap");
+                ImGui::SetItemTooltip("Round off at the limit instead of a hard cap");
                 if (params[selected_mode].useSmoothing) {
 #ifdef USE_INPUT_DRAG
                     change |= ImGui::DragFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.02, 0.1, 10, "Output Limit %0.2f");
-                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit"));
+                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit", selected_mode));
 #else
                     change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.1, 10,
                                                  "Output Limit %0.2f");
-                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit"));
+                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit", selected_mode));
 #endif
                 }
                 break;
@@ -267,30 +267,30 @@ static int OnGui() {
 #ifdef USE_INPUT_DRAG
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.01, 0.01, 10,
                                            "Acceleration %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
                 change |= ImGui::DragFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 0.01, 1,
                                            "Exponent %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Exponent"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Exponent", selected_mode));
 #else
                 change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.001, 50,
                                              "Acceleration %0.3f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
                 change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 5, "Exponent %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Exponent"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Exponent", selected_mode));
                 change |= ImGui::SliderFloat("##OutOffset_Param", &params[selected_mode].midpoint, 0, 50,
                                              "Output Offset %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Offset"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Offset", selected_mode));
 #endif
                 change |= ImGui::Toggle("Smooth cap##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SetItemTooltip("Round off at the output limit instead of a hard cap");
+                ImGui::SetItemTooltip("Round off at the limit instead of a hard cap");
                 if (params[selected_mode].useSmoothing) {
 #ifdef USE_INPUT_DRAG
                     change |= ImGui::DragFloat("##Motivity_Param", &params[selected_mode].motivity, 0.02, 0.1, 10, "Output Limit %0.2f");
-                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit"));
+                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit", selected_mode));
 #else
                     change |= ImGui::SliderFloat("##Motivity_Param", &params[selected_mode].motivity, 0.1, 10,
                                                  "Output Limit %0.2f");
-                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit"));
+                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit", selected_mode));
 #endif
                 }
                 break;
@@ -299,26 +299,26 @@ static int OnGui() {
             {
 #ifdef USE_INPUT_DRAG
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.001, 0.001, 2, "Acceleration %0.3f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
                 change |= ImGui::DragFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 2.01, 5, "Exponent %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Exponent"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Exponent", selected_mode));
 #else
                 change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.0001, 10,
                                              "Acceleration %0.4f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
                 change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 1.01, 10, "Exponent %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Exponent"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Exponent", selected_mode));
 #endif
                 change |= ImGui::Toggle("Smooth cap##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SetItemTooltip("Round off at the output limit instead of a hard cap");
+                ImGui::SetItemTooltip("Round off at the limit instead of a hard cap");
                 if (params[selected_mode].useSmoothing) {
 #ifdef USE_INPUT_DRAG
                     change |= ImGui::DragFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.02, 0.1, 10, "Output Limit %0.2f");
-                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit"));
+                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit", selected_mode));
 #else
                     change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.1, 10,
                                                  "Output Limit %0.2f");
-                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit"));
+                    ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Output Limit", selected_mode));
 #endif
                 }
                 break;
@@ -328,46 +328,46 @@ static int OnGui() {
 #ifdef USE_INPUT_DRAG
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.01, 0.01, 10,
                                            "Acceleration %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
                 change |= ImGui::DragFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.05, 0.1, 50,
                                            "Midpoint %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint", selected_mode));
 #else
                 change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.01, 10,
                                              "Acceleration %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
                 change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.1, 50,
                                              "Midpoint %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint", selected_mode));
 #endif
                 break;
             }
             case AccelMode_Synchronous: {
 #ifdef USE_INPUT_DRAG
                 change |= ImGui::DragFloat("##MidPoint_Param", &params[selected_mode].exponent, 0.01, 0, 20, "Gamma %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Gamma"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Gamma", selected_mode));
                 change |= ImGui::DragFloat("##Exp_Param", &params[selected_mode].midpoint, 0.05, 0.1, 20, "Smoothness %0.2f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness", selected_mode));
                 change |= ImGui::DragFloat("##Motivity_Param", &params[selected_mode].motivity, 0.01, 1, 10, "Motivity %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Motivity"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Motivity", selected_mode));
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.05, 0.01, 20, "SyncSpeed %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("SyncSpeed"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("SyncSpeed", selected_mode));
 #else
                 change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].exponent, 0.01, 20,
                                              "Gamma %0.2f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Gamma"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Gamma", selected_mode));
                 change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].midpoint, 0, 1,
                                              "Smoothness %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness", selected_mode));
                 change |= ImGui::SliderFloat("##Motivity_Param", &params[selected_mode].motivity, 1.01, 50,
                                              "Motivity %0.2f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Motivity"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Motivity", selected_mode));
                 change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.01, 100,
                                              "SyncSpeed %0.2f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("SyncSpeed"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("SyncSpeed", selected_mode));
 #endif
                 change |= ImGui::Toggle("Gain##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SetItemTooltip("Shape the output speed instead, as Raw Accel's Gain");
+                ImGui::SetItemTooltip("Curve shapes output speed, not sensitivity");
                 break;
             }
             case AccelMode_Natural: // Natural
@@ -375,26 +375,26 @@ static int OnGui() {
 #ifdef USE_INPUT_DRAG
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.005, 0.001, 5,
                                            "Decay Rate %0.3f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Decay Rate"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Decay Rate", selected_mode));
                 change |= ImGui::DragFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.1, 0.05, 50,
                                            "Midpoint %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint", selected_mode));
                 change |= ImGui::DragFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 0.01, 8,
                            "Limit %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Limit"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Limit", selected_mode));
 #else
                 change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0.001, 5,
                                              "Decay Rate %0.3f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Decay Rate"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Decay Rate", selected_mode));
                 change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0, 50,
                                              "Midpoint %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint", selected_mode));
                 change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 0.01, 10,
                                              "Limit %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Limit"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Limit", selected_mode));
 #endif
                 change |= ImGui::Toggle("Gain##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SetItemTooltip("Shape the output speed instead, as Raw Accel's Gain");
+                ImGui::SetItemTooltip("Curve shapes output speed, not sensitivity");
                 break;
             }
             case AccelMode_Jump: // Jump
@@ -402,26 +402,26 @@ static int OnGui() {
 #ifdef USE_INPUT_DRAG
                 change |= ImGui::DragFloat("##Accel_Param", &params[selected_mode].accel, 0.01, 0, 10,
                                            "Acceleration %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
                 change |= ImGui::DragFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.05, 0.1, 50,
                                            "Midpoint %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint", selected_mode));
                 change |= ImGui::DragFloat("##Exp_Param", &params[selected_mode].exponent, 0.0, 0.01, 1,
                                            "Smoothness %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness", selected_mode));
 #else
                 change |= ImGui::SliderFloat("##Accel_Param", &params[selected_mode].accel, 0, 10,
                                              "Acceleration %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Acceleration", selected_mode));
                 change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].midpoint, 0.1, 100,
                                              "Midpoint %0.2f", ImGuiSliderFlags_Logarithmic);
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Midpoint", selected_mode));
                 change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].exponent, 0.0, 1,
                                              "Smoothness %0.2f");
-                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness"));
+                ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness", selected_mode));
 #endif
                 change |= ImGui::Toggle("Gain##Smoothing_Param", &params[selected_mode].useSmoothing);
-                ImGui::SetItemTooltip("Shape the output speed instead, as Raw Accel's Gain");
+                ImGui::SetItemTooltip("Curve shapes output speed, not sensitivity");
                 break;
             }
             case AccelMode_Lut: {
@@ -464,15 +464,19 @@ static int OnGui() {
                     float p_max = i < points.size() - 1 ? points[i + 1].x - CURVE_POINTS_MARGIN : 1000;
                     auto &p = points[i];
                     ImGui::PushID(i);
-                    if (ImGui::TreeNode("CrvPnt", "Point %d", i)) {
+                    bool point_open = ImGui::TreeNode("CrvPnt", "Point %d", i);
+                    ImGui::SetItemTooltip("Expand to edit this point");
+                    if (point_open) {
                         auto p_before = p;
                         bool drag_changed = false;
                         ImGui::BeginGroup();
                         ImGui::PushMultiItemsWidths(2, ImGui::GetContentRegionAvail().x);
                         // Sliders don't work too well here, so I decided to stick with drag sliders
                         drag_changed |= ImGui::DragFloat("##pos1x", &p.x, 0.5, p_min, p_max, "%.3f x");
+                        ImGui::SetItemTooltip("The point's speed");
                         ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
                         drag_changed |= ImGui::DragFloat("##pos1y", &p.y, 0.01, 0, 10, "%.3f y");
+                        ImGui::SetItemTooltip("The point's value");
                         ImGui::PopItemWidth(); ImGui::PopItemWidth();
                         ImGui::EndGroup();
 
@@ -502,9 +506,12 @@ static int OnGui() {
                                     i == 0 ? 0 : i == points.size() - 1 ? 1 : j];
                                 // p.x = std::clamp(p.x, i > 0 ? points[i-1].x + 0.5f : 0, i < points.size() - 1 ? points[i+1].x - 0.5f : 1000);
                                 change |= ImGui::DragFloat("##pos2x", &p1.x, 0.5, p_min, p_max, "%.3f x");
+                                ImGui::SetItemTooltip("The handle's speed");
                                 ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
                                 change |= ImGui::DragFloat("##pos2y", &p1.y, 0.01, 0, 10, "%.3f y");
+                                ImGui::SetItemTooltip("The handle's value");
                                 change |= ImGui::Toggle("Enable", &p1.enabled);
+                                ImGui::SetItemTooltip("Let this handle bend the curve");
                                 ImGui::PopItemWidth();
                                 ImGui::PopItemWidth();
                                 ImGui::EndGroup();
@@ -519,6 +526,7 @@ static int OnGui() {
 
                 ImGui::SeparatorText("LUT Export");
                 ImGui::Toggle("Show LUT Points", &show_custom_curve_LUT_points);
+                ImGui::SetItemTooltip("Show the table points sent to the driver");
 
                 if (change) {
                     params[selected_mode].customCurve.ApplyCurveConstraints();
@@ -544,7 +552,7 @@ static int OnGui() {
                 params[selected_mode] = defaults;
                 change = true;
             }
-            ImGui::SetItemTooltip("This curve's defaults, keeping sensitivity and caps");
+            ImGui::SetItemTooltip("This curve's defaults, other settings kept");
         }
 
         ImGui::SeparatorText("Rotation");
@@ -701,6 +709,8 @@ static int OnGui() {
                     ImGui::PushID(i * 1512 + 22);
                     modified |= ImPlot::DragPoint(i * 2, &p.x, &p.y, ImVec4(0, 0.9f, 0, 1), 4, ImPlotDragToolFlags_None,
                                                   &is_pressed, &is_hovered, &is_held);
+                    if (is_hovered && !is_held)
+                        ImGui::SetTooltip("Drag to move; right-click for options");
                     is_interacting_with_points |= is_pressed || is_held || is_hovered;
                     modified |= is_held;
 
@@ -729,12 +739,14 @@ static int OnGui() {
                         bool drag_changed = false;
                         ImVec2 p_before = p;
                         ImGui::Toggle("Lock control", &p.is_locked);
-                        ImGui::SetItemTooltip("Control points won't be updated when smoothing");
+                        ImGui::SetItemTooltip("Smoothing leaves this point's handles alone");
                         ImGui::BeginGroup();
                         ImGui::PushMultiItemsWidths(2, ImGui::GetContentRegionAvail().x);
                         drag_changed |= ImGui::DragFloat("##pos1x", &p.x, 0.5, p_min, p_max);
+                        ImGui::SetItemTooltip("The point's speed");
                         ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
                         drag_changed |= ImGui::DragFloat("##pos1y", &p.y, 0.01, 0, 10);
+                        ImGui::SetItemTooltip("The point's value");
                         ImGui::PopItemWidth();
                         ImGui::EndGroup();
                         modified |= drag_changed;
@@ -767,7 +779,7 @@ static int OnGui() {
                             all_left_disabled = !is_start_point && (!control_points[i - 1][0].enabled && !control_points[i - 1][1].enabled);
                             ImGui::SeparatorText("Control points");
                             ImGui::Toggle("Polar coordinates", &p.use_polar_coordinates);
-                            ImGui::SetItemTooltip("Use polar coordinates for the control points");
+                            ImGui::SetItemTooltip("Edit handles as length and angle");
 
                             // Begin grouping to from a grid of widgets
                             ImGui::BeginGroup();
@@ -872,11 +884,13 @@ static int OnGui() {
 
                                         ImGui::PushItemWidth(-1);
                                         modified |= ImGui::DragFloat("##Magnitude", &length, 0.5f, 0.5f, p_max_dist);
+                                        ImGui::SetItemTooltip("The handle's length");
                                         ImGui::PopItemWidth();
 
                                         ImGui::TableNextColumn();
                                         ImGui::PushItemWidth(-1);
                                         modified |= ImGui::DragFloat("##Angle", &angle_deg, 0.05f, -89.5f, 89.5f);
+                                        ImGui::SetItemTooltip("The handle's angle in degrees");
                                         ImGui::PopItemWidth();
 
                                         // Convert back from UI angle to actual direction (undo mirror if needed)
@@ -889,10 +903,12 @@ static int OnGui() {
                                     } else {
                                         ImGui::PushItemWidth(-1);
                                         modified |= ImGui::DragFloat("##pos2x", &p1.x, 0.5, p_min, p_max);
+                                        ImGui::SetItemTooltip("The handle's speed");
                                         ImGui::PopItemWidth();
                                         ImGui::TableNextColumn();
                                         ImGui::PushItemWidth(-1);
                                         modified |= ImGui::DragFloat("##pos2y", &p1.y, 0.01, 0, 10);
+                                        ImGui::SetItemTooltip("The handle's value");
                                         ImGui::PopItemWidth();
                                     }
                                     if (!((i == 0 && j == 0) || (i == points.size() - 1))) {
@@ -925,6 +941,7 @@ static int OnGui() {
                                             p1 = p - direction * length;
                                             modified = true;
                                         }
+                                        ImGui::SetItemTooltip("Line this handle up with the other side");
                                     }
                                     ImGui::TableNextRow();
                                     ImGui::PopID();
@@ -948,6 +965,7 @@ static int OnGui() {
                             modified = true;
                             ImGui::CloseCurrentPopup();
                         }
+                        ImGui::SetItemTooltip("Remove this point");
                         ImGui::EndPopup();
                     }
                     ImGui::PopID();
@@ -1020,6 +1038,8 @@ static int OnGui() {
                                                               : ImVec4(is_point_hovered ? 0.3 : 0, 0.5f, 1, 1),
                                                           is_point_hovered ? 5 : 4, ImPlotDragToolFlags_None,
                                                           &is_pressed, &is_hovered, &is_held);
+                            if (is_hovered && !is_held)
+                                ImGui::SetTooltip("Drag to bend the curve");
                             is_interacting_with_points |= is_pressed || is_held || is_hovered;
                             modified |= is_held;
 

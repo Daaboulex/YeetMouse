@@ -185,53 +185,78 @@ namespace ProfilesGui {
         }
 
         bool SensCap(const char *id, float *value) {
-            return Slider(id, value, 0, 10, "Sens Cap %0.2f", "Highest sensitivity of the curve; 0 is off");
+            return Slider(id, value, 0, 10, "Sens Cap %0.2f", "The curve's own top sensitivity; 0 is off");
         }
 
         bool VerticalCurve(CurveParameters &curve) {
+            struct Field {
+                const char *label;
+                float min, max;
+                bool logarithmic;
+            };
             struct Labels {
-                const char *accel, *exponent, *midpoint, *motivity;
+                Field accel, exponent, midpoint, motivity;
             };
             static const Labels labels[AccelMode_Count] = {
-                {nullptr, nullptr, nullptr, nullptr},
-                {"Acceleration %0.4f", nullptr, "Output Limit %0.2f", nullptr},
-                {"Acceleration %0.3f", "Exponent %0.2f", "Output Offset %0.2f", "Output Limit %0.2f"},
-                {"Acceleration %0.3f", "Exponent %0.2f", "Output Limit %0.2f", nullptr},
-                {"Acceleration %0.2f", nullptr, "Midpoint %0.2f", nullptr},
-                {"SyncSpeed %0.2f", "Gamma %0.2f", "Smoothness %0.2f", "Motivity %0.2f"},
-                {"Decay Rate %0.3f", "Limit %0.2f", "Midpoint %0.2f", nullptr},
-                {"Acceleration %0.2f", "Smoothness %0.2f", "Midpoint %0.2f", nullptr},
-                {nullptr, nullptr, nullptr, nullptr},
-                {nullptr, nullptr, nullptr, nullptr},
+                {},
+                {{"Acceleration %0.4f", 0.0001f, 1, true}, {}, {"Output Limit %0.2f", 0.1f, 10, false}, {}},
+                {{"Acceleration %0.3f", 0.001f, 50, true},
+                 {"Exponent %0.2f", 0.01f, 5, false},
+                 {"Output Offset %0.2f", 0, 50, false},
+                 {"Output Limit %0.2f", 0.1f, 10, false}},
+                {{"Acceleration %0.4f", 0.0001f, 10, true},
+                 {"Exponent %0.2f", 1.01f, 10, false},
+                 {"Output Limit %0.2f", 0.1f, 10, false},
+                 {}},
+                {{"Acceleration %0.2f", 0.01f, 10, false}, {}, {"Midpoint %0.2f", 0.1f, 50, false}, {}},
+                {{"SyncSpeed %0.2f", 0.01f, 100, true},
+                 {"Gamma %0.2f", 0.01f, 20, true},
+                 {"Smoothness %0.2f", 0, 1, false},
+                 {"Motivity %0.2f", 1.01f, 50, true}},
+                {{"Decay Rate %0.3f", 0.001f, 5, false},
+                 {"Limit %0.2f", 0.01f, 10, false},
+                 {"Midpoint %0.2f", 0, 50, false},
+                 {}},
+                {{"Acceleration %0.2f", 0, 10, false},
+                 {"Smoothness %0.2f", 0, 1, false},
+                 {"Midpoint %0.2f", 0.1f, 100, true},
+                 {}},
+                {},
+                {},
+            };
+            const auto field = [&curve](const char *id, float *value, const Field &f) {
+                return Slider(id, value, f.min, f.max, f.label, CurveTip(f.label, curve.accelMode), f.logarithmic);
             };
             bool change = false;
             int mode = curve.accelMode;
             std::string preview = AccelMode2String(curve.accelMode);
             if (ImGui::BeginCombo("##VerticalMode", ("Vertical: " + preview).c_str())) {
-                for (int i = AccelMode_Current; i < AccelMode_CustomCurve; i++)
+                for (int i = AccelMode_Current; i < AccelMode_CustomCurve; i++) {
                     if (ImGui::Selectable(AccelMode2String(static_cast<AccelMode>(i)).c_str(), i == mode)) {
                         curve.accelMode = static_cast<AccelMode>(i);
                         change = true;
                     }
+                    ImGui::SetItemTooltip("Use this curve for vertical movement");
+                }
                 ImGui::EndCombo();
             }
             ImGui::SetItemTooltip("Curve for vertical movement");
 
             const Labels &label = labels[curve.accelMode];
-            if (label.accel)
-                change |= Slider("##VerticalAccel", &curve.accel, 0.0001f, 20, label.accel, CurveTip(label.accel), true);
-            if (label.exponent)
-                change |= Slider("##VerticalExponent", &curve.exponent, 0.01f, 10, label.exponent, CurveTip(label.exponent));
+            if (label.accel.label)
+                change |= field("##VerticalAccel", &curve.accel, label.accel);
+            if (label.exponent.label)
+                change |= field("##VerticalExponent", &curve.exponent, label.exponent);
             bool capped_midpoint = curve.accelMode == AccelMode_Linear || curve.accelMode == AccelMode_Classic;
-            if (label.midpoint && (!capped_midpoint || curve.useSmoothing))
-                change |= Slider("##VerticalMidpoint", &curve.midpoint, 0, 50, label.midpoint, CurveTip(label.midpoint));
+            if (label.midpoint.label && (!capped_midpoint || curve.useSmoothing))
+                change |= field("##VerticalMidpoint", &curve.midpoint, label.midpoint);
             bool capped_motivity = curve.accelMode == AccelMode_Power;
-            if (label.motivity && (!capped_motivity || curve.useSmoothing))
-                change |= Slider("##VerticalMotivity", &curve.motivity, 0.1f, 10, label.motivity, CurveTip(label.motivity));
+            if (label.motivity.label && (!capped_motivity || curve.useSmoothing))
+                change |= field("##VerticalMotivity", &curve.motivity, label.motivity);
             if (curve.accelMode != AccelMode_Current && curve.accelMode != AccelMode_Motivity &&
                 curve.accelMode != AccelMode_Lut) {
                 change |= ImGui::Toggle("Smoothing / gain", &curve.useSmoothing);
-                ImGui::SetItemTooltip("Smooth cap, or Raw Accel's gain, for this curve");
+                ImGui::SetItemTooltip("Smooth cap or gain for this curve");
             }
             if (curve.accelMode == AccelMode_Classic)
                 change |= Slider("##VerticalInputOffset", &curve.inputOffset, 0, 50, "Input Offset %0.2f",
@@ -239,8 +264,8 @@ namespace ProfilesGui {
             if ((curve.accelMode == AccelMode_Classic || curve.accelMode == AccelMode_Power) && !curve.useSmoothing)
                 change |= SensCap("##VerticalLegacyCap", &curve.legacyCap);
             if (curve.accelMode == AccelMode_Lut) {
-                change |= ImGui::Toggle("Velocity values", &curve.lutVelocity);
-                ImGui::SetItemTooltip("y is output speed, not sensitivity");
+                change |= ImGui::Toggle("Values are velocities", &curve.lutVelocity);
+                ImGui::SetItemTooltip("Values are output speeds, not sensitivities");
                 ImGui::InputTextWithHint("##VerticalTable", "x1,y1;x2,y2;x3,y3...", vertical_table,
                                          sizeof(vertical_table), ImGuiInputTextFlags_AutoSelectAll);
                 ImGui::SetItemTooltip("Points as speed,value pairs");
@@ -366,20 +391,6 @@ namespace ProfilesGui {
             return label;
         }
 
-        bool UsesRawAccelFeatures(const Parameters &params) {
-            const Parameters plain;
-            bool timing = EditingDefault() && (params.minTime != plain.minTime || params.maxTime != plain.maxTime ||
-                                               params.fixedTime != plain.fixedTime);
-            return timing || params.truncateCarry || params.clockOnAnyReport || params.exactMath ||
-                   params.lpNorm != plain.lpNorm || params.domainX != plain.domainX ||
-                   params.domainY != plain.domainY || params.rangeX != plain.rangeX ||
-                   params.rangeY != plain.rangeY || params.inputSmoothHalfLife != plain.inputSmoothHalfLife ||
-                   params.scaleSmoothHalfLife != plain.scaleSmoothHalfLife ||
-                   params.outputSmoothHalfLife != plain.outputSmoothHalfLife || params.axisSnap != plain.axisSnap ||
-                   params.speedClamp != plain.speedClamp || params.ratioLR != plain.ratioLR ||
-                   params.ratioUD != plain.ratioUD || params.byComponent;
-        }
-
         void ApplyDevices(const std::vector<Profiles::DeviceLine> &lines) {
             try {
                 Profiles::DriverApplyDevices(Profiles::Root, lines);
@@ -450,23 +461,30 @@ namespace ProfilesGui {
         }
     }
 
-    const char *CurveTip(const char *label) {
-        static const std::pair<const char *, const char *> tips[] = {
-            {"Acceleration", "How fast sensitivity grows with speed"},
-            {"Exponent", "How steep the curve is"},
-            {"Output Offset", "Sensitivity added at the start"},
-            {"Output Limit", "Sensitivity the curve levels off at"},
-            {"Midpoint", "Speed the curve is centred on"},
-            {"Motivity", "Highest sensitivity relative to the lowest"},
-            {"SyncSpeed", "Speed where sensitivity is 1"},
-            {"Gamma", "How sharp the rise is"},
-            {"Smoothness", "How wide the transition is"},
-            {"Decay Rate", "How fast it approaches the limit"},
-            {"Limit", "Highest sensitivity"},
+    const char *CurveTip(const char *label, int mode) {
+        struct Tip {
+            int mode;
+            const char *prefix, *tip;
         };
-        for (const auto &[prefix, tip] : tips)
-            if (std::string(label).rfind(prefix, 0) == 0)
-                return tip;
+        static const Tip tips[] = {
+            {AccelMode_Motivity, "Acceleration", "Sensitivity the curve rises to"},
+            {AccelMode_Jump, "Acceleration", "Sensitivity after the jump"},
+            {AccelMode_Natural, "Midpoint", "Speed where the rise starts"},
+            {AccelMode_Count, "Acceleration", "How fast sensitivity grows with speed"},
+            {AccelMode_Count, "Exponent", "How steep the curve is"},
+            {AccelMode_Count, "Output Offset", "Sensitivity added at the start"},
+            {AccelMode_Count, "Output Limit", "Sensitivity the curve levels off at"},
+            {AccelMode_Count, "Midpoint", "Speed the curve is centred on"},
+            {AccelMode_Count, "Motivity", "Highest sensitivity; the lowest is its inverse"},
+            {AccelMode_Count, "SyncSpeed", "Speed where sensitivity is 1"},
+            {AccelMode_Count, "Gamma", "How sharp the rise is"},
+            {AccelMode_Count, "Smoothness", "How wide the transition is"},
+            {AccelMode_Count, "Decay Rate", "How fast it approaches the limit"},
+            {AccelMode_Count, "Limit", "Highest sensitivity"},
+        };
+        for (const Tip &t : tips)
+            if ((t.mode == AccelMode_Count || t.mode == mode) && std::string(label).rfind(t.prefix, 0) == 0)
+                return t.tip;
         return "";
     }
 
@@ -625,7 +643,7 @@ namespace ProfilesGui {
         if (!ImGui::BeginMenu("View"))
             return;
         ImGui::Checkbox("Raw Accel features", &show_raw_accel);
-        ImGui::SetItemTooltip("Show Raw Accel's settings even when unused");
+        ImGui::SetItemTooltip("Show the settings YeetMouse adds for Raw Accel");
         ImGui::EndMenu();
     }
 
@@ -646,7 +664,7 @@ namespace ProfilesGui {
                 }
             }
         }
-        ImGui::SetItemTooltip("Load one profile of a Raw Accel settings.json into the editor");
+        ImGui::SetItemTooltip("Load one Raw Accel profile into the editor");
 
         if (ImGui::MenuItem("Raw Accel profiles and mice...")) {
             if (auto path = ConfigHelper::ChooseFile("Select a Raw Accel settings.json", false)) {
@@ -671,7 +689,7 @@ namespace ProfilesGui {
                 Refresh(true);
             }
         }
-        ImGui::SetItemTooltip("Add every profile and mouse of a Raw Accel settings.json to YeetMouse");
+        ImGui::SetItemTooltip("Add all Raw Accel profiles and mice to YeetMouse");
     }
 
     void RawAccelExports(const Parameters &current) {
@@ -701,7 +719,7 @@ namespace ProfilesGui {
                 Message(std::string("Not exported: ") + refused.what());
             }
         }
-        ImGui::SetItemTooltip("Save the default, every profile and every mouse as one Raw Accel settings.json");
+        ImGui::SetItemTooltip("Save all profiles and mice as one Raw Accel file");
     }
 
     void DevicesMenu() {
@@ -750,14 +768,14 @@ namespace ProfilesGui {
             }
             const Profiles::DeviceLine *timed = own ? own : shared;
             ImGui::BeginDisabled(!timed || timed->disabled());
-            if (ImGui::MenuItem("DPI and timing...")) {
+            if (ImGui::MenuItem(show_raw_accel ? "DPI and timing..." : "DPI...")) {
                 device_settings = *timed;
                 device_settings_title = own ? id : "Receiver " + Profiles::DeviceId(timed->vendor, timed->product) +
                                                        ", shared by its mice";
                 open_device_settings = true;
             }
             ImGui::EndDisabled();
-            ImGui::SetItemTooltip("Pre-scale and packet timing of this line");
+            ImGui::SetItemTooltip(show_raw_accel ? "Pre-scale and report timing of this line" : "Pre-scale of this line");
             ImGui::EndMenu();
         }
         for (const Profiles::ConnectedMouse &mouse : view.touchpads)
@@ -790,9 +808,12 @@ namespace ProfilesGui {
         if (ImGui::BeginCombo("##Profile", preview.c_str())) {
             if (ImGui::Selectable(TargetLabel("").c_str(), EditingDefault()) && !EditingDefault())
                 RequestSwitch("", load);
-            for (const std::string &name : view.names)
+            ImGui::SetItemTooltip("Edit the default config");
+            for (const std::string &name : view.names) {
                 if (ImGui::Selectable(TargetLabel(name).c_str(), name == editing_profile) && name != editing_profile)
                     RequestSwitch(name, load);
+                ImGui::SetItemTooltip("Edit this profile");
+            }
             ImGui::EndCombo();
         }
         ImGui::SetItemTooltip("What you edit: the default or a saved profile");
@@ -852,6 +873,8 @@ namespace ProfilesGui {
     }
 
     bool ModeExtras(Parameters &params) {
+        if (!show_raw_accel)
+            return false;
         bool change = false;
         switch (params.accelMode) {
             case AccelMode_Classic:
@@ -867,7 +890,7 @@ namespace ProfilesGui {
             case AccelMode_Lut:
             case AccelMode_CustomCurve:
                 change |= ImGui::Toggle("Values are velocities", &params.lutVelocity);
-                ImGui::SetItemTooltip("y is output speed, not sensitivity, as Raw Accel's gain tables");
+                ImGui::SetItemTooltip("Values are output speeds, not sensitivities");
                 break;
             default:
                 break;
@@ -876,32 +899,34 @@ namespace ProfilesGui {
     }
 
     bool RawAccelFeatures(Parameters &params) {
-        if (!show_raw_accel && !UsesRawAccelFeatures(params))
+        if (!show_raw_accel)
             return false;
         bool change = false;
 
         ImGui::SeparatorText("Raw Accel");
         if (EditingDefault()) {
-            change |= Slider("##MinTime", &params.minTime, 0, 10, "Min Time %0.4f ms", "Shortest time one packet spans");
-            change |= Slider("##MaxTime", &params.maxTime, 1, 1000, "Max Time %0.1f ms", "Longest time one packet spans",
+            change |= Slider("##MinTime", &params.minTime, 0, 10, "Min Time %0.4f ms", "Shortest time counted between reports");
+            change |= Slider("##MaxTime", &params.maxTime, 1, 1000, "Max Time %0.1f ms", "Longest time counted between reports",
                              true);
             change |= ImGui::Toggle("Fixed time", &params.fixedTime);
-            ImGui::SetItemTooltip("Every packet spans Min Time");
+            ImGui::SetItemTooltip("Count every report as Min Time apart");
         }
         change |= ImGui::Toggle("Truncate carry", &params.truncateCarry);
-        ImGui::SetItemTooltip("Drop leftover fractions toward zero");
+        ImGui::SetItemTooltip("Cut leftover fractions toward zero instead of rounding");
         change |= ImGui::Toggle("Clock on any report", &params.clockOnAnyReport);
-        ImGui::SetItemTooltip("Clicks restart the packet clock too");
+        ImGui::SetItemTooltip("Time speed from every report, clicks included");
         change |= ImGui::Toggle("Exact math", &params.exactMath);
-        ImGui::SetItemTooltip("Precise square root and power, a few nanoseconds slower");
+        ImGui::SetItemTooltip("More precise power and square root, slightly slower");
 
         ImGui::SeparatorText("Speed");
-        change |= Slider("##LpNorm", &params.lpNorm, 1, 64, "Lp Norm %0.2f", "How both axes combine: 2 is the length",
+        change |= Slider("##LpNorm", &params.lpNorm, 1, 64, "Lp Norm %0.2f", "How X and Y combine into speed; 2 is distance",
                          true);
-        change |= Slider("##DomainX", &params.domainX, 0.01f, 10, "Domain X %0.2f", "Weight of horizontal speed", true);
-        change |= Slider("##DomainY", &params.domainY, 0.01f, 10, "Domain Y %0.2f", "Weight of vertical speed", true);
-        change |= Slider("##RangeX", &params.rangeX, 0, 10, "Range X %0.2f", "Share of the curve horizontal movement gets");
-        change |= Slider("##RangeY", &params.rangeY, 0, 10, "Range Y %0.2f", "Share of the curve vertical movement gets");
+        change |= Slider("##DomainX", &params.domainX, 0.01f, 10, "Domain X %0.2f", "Scales horizontal speed before the curve",
+                         true);
+        change |= Slider("##DomainY", &params.domainY, 0.01f, 10, "Domain Y %0.2f", "Scales vertical speed before the curve",
+                         true);
+        change |= Slider("##RangeX", &params.rangeX, 0, 10, "Range X %0.2f", "How strongly the curve acts on horizontal movement");
+        change |= Slider("##RangeY", &params.rangeY, 0, 10, "Range Y %0.2f", "How strongly the curve acts on vertical movement");
 
         ImGui::SeparatorText("Smoothing half-life");
         change |= Slider("##InputHalfLife", &params.inputSmoothHalfLife, 0, 1000, "Input %0.2f ms",
@@ -913,8 +938,8 @@ namespace ProfilesGui {
 
         ImGui::SeparatorText("Snapping and limits");
         change |= Slider("##AxisSnap", &params.axisSnap, 0, 45, "Axis Snap %0.1f deg", "Puts near-axis movement on the axis");
-        change |= Slider("##SpeedClamp", &params.speedClamp, 0, 1000, "Speed Cap %0.1f", "Fastest input speed; 0 is off",
-                         true);
+        change |= Slider("##SpeedClamp", &params.speedClamp, 0, 1000, "Speed Cap %0.1f",
+                         "Shrinks movement faster than this; 0 is off", true);
         change |= Slider("##RatioLR", &params.ratioLR, 0.01f, 10, "Left/Right %0.2f", "Multiplier for leftward movement",
                          true);
         change |= Slider("##RatioUD", &params.ratioUD, 0.01f, 10, "Up/Down %0.2f", "Multiplier for upward movement", true);
@@ -938,11 +963,14 @@ namespace ProfilesGui {
             if (import_settings) {
                 if (ImGui::Selectable(("Unlisted mice: " + import_settings->profiles.front().name).c_str()))
                     chosen = "";
-                for (const RawAccel::Device &device : import_settings->devices)
+                ImGui::SetItemTooltip("Load the profile for mice the file does not list");
+                for (const RawAccel::Device &device : import_settings->devices) {
                     if (ImGui::Selectable((device.name + " (" + device.id + "): " +
                                            (device.profile.empty() ? import_settings->profiles.front().name
                                                                    : device.profile)).c_str()))
                         chosen = device.id;
+                    ImGui::SetItemTooltip("Load this mouse's profile and DPI into the editor");
+                }
             }
             if (chosen) {
                 try {
@@ -957,6 +985,7 @@ namespace ProfilesGui {
                 import_settings.reset();
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::SetItemTooltip("Close without importing");
             ImGui::EndPopup();
         }
 
@@ -969,6 +998,7 @@ namespace ProfilesGui {
                 confirm_overwrite = false;
                 save_as_problem.clear();
             }
+            ImGui::SetItemTooltip("Name of the new profile");
             if (!save_as_problem.empty())
                 ImGui::TextColored(Warning, "%s", save_as_problem.c_str());
             if (confirm_overwrite)
@@ -995,9 +1025,11 @@ namespace ProfilesGui {
                     }
                 }
             }
+            ImGui::SetItemTooltip("Save the editor's settings under this name");
             ImGui::SameLine();
             if (ImGui::Button("Cancel", {120, 0}))
                 ImGui::CloseCurrentPopup();
+            ImGui::SetItemTooltip("Close without saving");
             ImGui::EndPopup();
         }
 
@@ -1070,34 +1102,41 @@ namespace ProfilesGui {
                 }
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::SetItemTooltip("Remove the profile from the driver and disk");
             ImGui::SameLine();
             if (ImGui::Button("Cancel", {120, 0}))
                 ImGui::CloseCurrentPopup();
+            ImGui::SetItemTooltip("Keep the profile");
             ImGui::EndPopup();
         }
 
         if (open_device_settings) {
-            ImGui::OpenPopup("DPI and timing");
+            ImGui::OpenPopup("###DeviceSettings");
             open_device_settings = false;
         }
-        if (ImGui::BeginPopupModal("DPI and timing", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::BeginPopupModal(show_raw_accel ? "DPI and timing###DeviceSettings" : "DPI###DeviceSettings", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("%s", device_settings_title.c_str());
             ImGui::InputDouble("Pre-Scale", &device_settings.preScale, 0.01, 0.1, "%.4f");
-            ImGui::SetItemTooltip("1000 / DPI, as Raw Accel's DPI");
-            ImGui::InputDouble("Min Time (ms)", &device_settings.minTime, 0.01, 0.1, "%.4f");
-            ImGui::SetItemTooltip("Shortest time one packet spans");
-            ImGui::InputDouble("Max Time (ms)", &device_settings.maxTime, 1, 10, "%.1f");
-            ImGui::SetItemTooltip("Longest time one packet spans");
-            ImGui::Toggle("Fixed time", &device_settings.fixedTime);
-            ImGui::SetItemTooltip("Every packet spans Min Time");
+            ImGui::SetItemTooltip("1000 divided by the mouse's DPI");
+            if (show_raw_accel) {
+                ImGui::InputDouble("Min Time (ms)", &device_settings.minTime, 0.01, 0.1, "%.4f");
+                ImGui::SetItemTooltip("Shortest time counted between reports");
+                ImGui::InputDouble("Max Time (ms)", &device_settings.maxTime, 1, 10, "%.1f");
+                ImGui::SetItemTooltip("Longest time counted between reports");
+                ImGui::Toggle("Fixed time", &device_settings.fixedTime);
+                ImGui::SetItemTooltip("Count every report as Min Time apart");
+            }
             if (ImGui::Button("Save", {120, 0})) {
                 Assign(device_settings.vendor, device_settings.product, device_settings.profile,
                        LineSettings(device_settings));
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::SetItemTooltip("Write these to devices.conf and the driver");
             ImGui::SameLine();
             if (ImGui::Button("Cancel", {120, 0}))
                 ImGui::CloseCurrentPopup();
+            ImGui::SetItemTooltip("Close without changes");
             ImGui::EndPopup();
         }
 
@@ -1111,6 +1150,7 @@ namespace ProfilesGui {
                 pending_message.clear();
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::SetItemTooltip("Close this message");
             ImGui::EndPopup();
         }
     }
