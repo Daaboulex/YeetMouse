@@ -265,6 +265,7 @@ err_unregister_handle:
     input_unregister_handle(handle);
 
 err_free_mem:
+    input_put_device(handle->dev);
     kfree(handle->private);
     kfree(handle);
     return error;
@@ -273,6 +274,7 @@ err_free_mem:
 static void driver_disconnect(struct input_handle *handle) {
     input_close_device(handle);
     input_unregister_handle(handle);
+    input_put_device(handle->dev);
     kfree(handle->private);
     kfree(handle);
 }
