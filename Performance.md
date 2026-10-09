@@ -1,7 +1,7 @@
-This is upstream's analysis of its 78dcd0d code. In this fork FP64_DivPrecise checks its divisor before the
-hardware divide, since a zero or overflowing divisor traps in the kernel, and divides in portable C on ARM64;
-FP64_SqrtPrecise is a new routine; and the precise power and square root run only with ExactMath on. The fork's
-own per-packet measurements are in the README.
+> The measurements below are of the original fixed-point functions. In this version, `FP64_DivPrecise`
+> checks that the quotient fits before the hardware divide and uses plain C on ARM64, and `FP64_SqrtPrecise`
+> was rewritten. The Power and Classic curves and the pointer speed use the precise power and square root only
+> with exact math on. For current per-packet timings, see the [README](README.org).
 
 # Contents
 <!-- TOC -->

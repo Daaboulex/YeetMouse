@@ -35,10 +35,9 @@ in your `flake.nix` file.
 }
 ```
 
-This will expose a new `hardware.yeetmouse` configuration option in your NixOS system's `config`.
-Enabling it installs and loads the `yeetmouse` driver, installs `yeetmousectl` and the GUI, creates
-the `yeetmouse` group, and adds `yeetmouse.service`, which seeds and applies the configuration whenever
-the driver loads.
+This will expose a new `hardware.yeetmouse` configuration option in your NixOS system's `config`,
+which you can use to install the `yeetmouse` driver, `yeetmousectl`, the GUI, and a service that
+applies your settings whenever the driver loads.
 
 ```nix
 {
@@ -51,12 +50,11 @@ the driver loads.
 
 Then, rebuild and switch into your new system (using `nixos-rebuild`). After a reboot, the
 `yeetmouse` driver should be loaded for your connected mouse with the parameters you specified.
-The options reach `/etc/yeetmouse/default.conf` only while that file does not exist yet, as described in
-[Seeding and the Boot Service](#seeding-and-the-boot-service).
+Your options are copied to `/etc/yeetmouse/default.conf` only if that file does not exist yet.
+See [Changing Options After the First Boot](#changing-options-after-the-first-boot).
 
-The GUI runs without root. The udev rule and the service hand `/dev/yeetmouse`, the driver's parameters
-and the seeded files to the `yeetmouse` group, so add your user to that group and log in again for the
-membership to apply:
+The GUI runs without `sudo` for members of the `yeetmouse` group. Add your user to it, then log out
+and back in:
 
 ```nix
 {
@@ -69,6 +67,36 @@ After restarting your system, to verify that the driver works start up the yeetm
 ```sh
 yeetmouse
 ```
+
+## Applying Changes
+
+### Changing Options After the First Boot
+
+`yeetmouse.service` runs each time the driver loads. It moves an old `/etc/yeetmouse.conf` into
+`/etc/yeetmouse/default.conf`, copies each file from the [options](#configuration-options) only where
+none exists yet, records the touchpads' resolutions and applies everything. After that the GUI and
+`yeetmousectl` own the files, so a changed option does not replace a file that is already there. To use
+the new value, remove the file and restart the service:
+
+```sh
+sudo rm /etc/yeetmouse/default.conf
+sudo systemctl restart yeetmouse.service
+```
+
+If a file is refused, the rest still applies and the service fails. A failure while recording the
+touchpads does not fail it.
+
+### A New Driver Without a Reboot
+
+After a rebuild, `modprobe` still loads the driver from the system you booted. If the new tools cannot
+read that driver's status, `yeetmousectl status` and the GUI ask you to reboot. If the new system was
+built for the kernel you are running, you can load the new driver now instead:
+
+```sh
+sudo modprobe -r yeetmouse && sudo env MODULE_DIR=/run/current-system/kernel-modules/lib/modules modprobe yeetmouse
+```
+
+The udev rule then starts `yeetmouse.service`, which applies everything again.
 
 ## Manual Overlay Installation
 
@@ -115,15 +143,14 @@ let
 in {
   # This installs the yeetmouse kernel module:
   boot.extraModulePackages = [ yeetmouse ];
+  # This loads the yeetmouse kernel module at boot:
   boot.kernelModules = [ "yeetmouse" ];
   # This installs the yeetmouse GUI CLI package:
   environment.systemPackages = [ yeetmouse ];
 }
 ```
 
-The package alone ships no udev rule and applies nothing. The module adds the one udev rule, which
-gives `/dev/yeetmouse` to the `yeetmouse` group and starts `yeetmouse.service` whenever the driver loads;
-the service seeds `/etc`, hands the driver's parameters to the group and runs `yeetmousectl load`.
+The package alone applies no settings. The udev rule and `yeetmouse.service` that do are in `module.nix`.
 
 Since the `pkgs.yeetmouse` package contains a kernel module, it'll be built against a specific version
 of the Linux kernel. By default this will be `pkgs.linuxPackages.kernel`, the default version in nixpkgs.
@@ -141,10 +168,9 @@ nix build .#yeetmouse --json --keep-failed
 
 ## Configuration Options
 
-The typed options below render `/etc/yeetmouse/default.conf` and use the GUI's terminology and structure for
-the GUI's main settings. They do not cover every setting the GUI has, such as its Raw Accel features
-or the timing switches. For those, write a config file in `yeetmousectl`'s format and pass it as
-[`defaultConfig` or a profile](#profiles-and-devices).
+The options below set `/etc/yeetmouse/default.conf`. They follow the GUI's terminology and structure
+and cover its main settings only. For the rest, such as the Raw Accel features and the timing settings,
+use the files described in [Profiles and Devices](#profiles-and-devices).
 
 ### Sensitivity and Anisotropy
 
@@ -306,9 +332,9 @@ See [RawAccel: Motivity](https://github.com/RawAccelOfficial/rawaccel/blob/5b39b
 
 #### Synchronous
 
-Acceleration mode with a logarithmic sensitivity curve centered around a synchronous speed `syncspeed`.
-`gamma` sets how fast the change occurs, `motivity` how much change occurs, and `smoothness` how the
-change tails in and out. `useSmoothing` enables gain and is on by default.
+Acceleration mode with a logarithmic curve centered on the speed `syncspeed`. `gamma` sets how fast the
+sensitivity changes, `motivity` how much, and `smoothness` how gently it starts and ends. `useSmoothing`
+enables gain and is on by default.
 
 ```nix
 {
@@ -319,6 +345,7 @@ change tails in and out. `useSmoothing` enables gain and is on by default.
       motivity = 2.0;
       syncspeed = 2.0;
       smoothness = 1.0;
+      useSmoothing = true;
     };
   };
 }
@@ -328,8 +355,8 @@ See [RawAccel: Synchronous](https://github.com/RawAccelOfficial/rawaccel/blob/ma
 
 #### Natural
 
-Acceleration mode with a concave curve which starts at 1 and approaches a maximum sensitivity, set by
-the decay rate `acceleration`, the `midpoint` and the `limit`.
+Acceleration mode with a concave curve that starts at 1 and approaches `limit`, shaped by `acceleration`
+(the decay rate) and `midpoint`. `useSmoothing` enables gain and is off by default.
 
 ```nix
 {
@@ -379,7 +406,6 @@ Acceleration mode following a custom curve. The curve is specified using individ
     enable = true;
     mode.lut = {
       # A list of points specified as [x y] tuples
-      # NOTE: This is just an example and not a valid LUT
       data = [
         [1.1 1.2]
         [5.2 4.8]
@@ -395,19 +421,18 @@ See [RawAccel: Lookup Table](https://github.com/RawAccelOfficial/rawaccel/blob/5
 
 ### Profiles and Devices
 
-Four options take files instead of typed values. Each file is in `yeetmousectl`'s format, which
-`yeetmousectl save <file>` writes from the live parameters.
+These options take files instead of values. Config files use the format the GUI saves and
+`yeetmousectl save <file>` writes.
 
-- `defaultConfig` becomes `/etc/yeetmouse/default.conf`, which `/etc/yeetmouse.conf` links to, the
-  settings of every mouse `devices.conf` does not list. When it is set, the typed options above are not used.
-- `profiles` names curves, each seeded as `/etc/yeetmouse/profiles/<name>.conf`. A profile leaves out
-  `preScale`, `minTime`, `maxTime` and `fixedTime`, which belong to a mouse's line in `devices.conf`.
-  A name uses letters, digits, `.`, `_` or `-`, starts with a letter or digit, has at most 31
-  characters and is not `disabled`.
-- `devices` becomes `/etc/yeetmouse/devices.conf`, one line per mouse named by its vendor and product
-  id. The driver gives a listed mouse its line as soon as it connects, with no udev rule and
-  no daemon. A line `<vendor:product> disabled` passes that mouse's movement through unchanged.
-- `rawAccel` takes a Raw Accel 1.7 `settings.json`, described in [Raw Accel Settings](#raw-accel-settings).
+- `defaultConfig` is copied to `/etc/yeetmouse/default.conf`, the settings for every mouse not listed in
+  `devices.conf`. Setting it replaces the options above.
+- `profiles` is copied to `/etc/yeetmouse/profiles/<name>.conf`, one file per name. See the
+  [main README](../README.org) for what a profile holds.
+- `devices` is copied to `/etc/yeetmouse/devices.conf`, one line per mouse, as described in the
+  [main README](../README.org).
+- `rawAccel` converts a Raw Accel 1.7 `settings.json` when the system is built. Its first profile becomes
+  the default config unless `defaultConfig` is set, and its profiles and devices are added to `profiles`
+  and `devices`. A setting that cannot be converted exactly fails the build.
 
 ```nix
 {
@@ -429,20 +454,7 @@ With `devices.conf` holding:
 046d:c539 power preScale=1 minTime=0 maxTime=100 fixedTime=0
 ```
 
-The build refuses a profile name given twice and runs `yeetmousectl check` on the result, so a
-malformed file or a device line naming a profile that does not exist fails the build.
-
-In the GUI, the profile picker edits the default config or a profile, and the Devices menu gives each
-connected mouse a profile, the default config or no acceleration. `yeetmousectl profile` and
-`yeetmousectl device` do the same from a shell.
-
-### Raw Accel Settings
-
-`rawAccel` converts a Raw Accel 1.7 `settings.json` at build time with
-`yeetmousectl import-rawaccel <file> --into <dir>`. Unless `defaultConfig` is set, its first profile
-with its default device settings becomes the default config in place of the typed options. Its
-profiles and devices join the ones from `profiles` and `devices`. A setting YeetMouse cannot reproduce
-exactly fails the build.
+Or, from Raw Accel:
 
 ```nix
 {
@@ -453,50 +465,8 @@ exactly fails the build.
 }
 ```
 
-### Seeding and the Boot Service
+The build runs `yeetmousectl check` on these files. A value the driver would refuse, a malformed
+`devices.conf` line or a device line naming a profile that does not exist fails the build. An unknown key
+in a config file is skipped, so a misspelled key still builds and that setting keeps its default.
 
-`yeetmouse.service` runs whenever the driver loads, at boot or after a reload by hand, and stops when
-the module is unloaded. It creates `/etc/yeetmouse` and `/etc/yeetmouse/profiles` for the
-`yeetmouse` group and runs `yeetmousectl setup`, which moves an older `/etc/yeetmouse.conf` into
-`/etc/yeetmouse/default.conf`, links the old path to it, and copies each file from the options above
-into place only when that file does not exist yet, so the GUI owns the files afterwards. It then runs
-`yeetmousectl touchpads --record` and `yeetmousectl load`, which applies the default config, the
-profiles and `devices.conf`, each step on its own, and fails the unit if any of them fails.
-
-A changed option therefore does not overwrite a file that is already there. To take the new value,
-remove the file and restart the service:
-
-```sh
-sudo rm /etc/yeetmouse/default.conf
-sudo systemctl restart yeetmouse.service
-```
-
-### A New Driver Without a Reboot
-
-After a rebuild, `modprobe` still loads modules from the system that booted, so the old driver comes
-back until the next boot, and `yeetmousectl status` and the GUI say to reboot. While the running
-kernel is the one the new system was built for, load the new driver from the new system instead:
-
-```sh
-sudo modprobe -r yeetmouse && sudo env MODULE_DIR=/run/current-system/kernel-modules/lib/modules modprobe yeetmouse
-```
-
-The udev rule then starts `yeetmouse.service`, which applies everything again.
-
-### Per-game Profiles
-
-`yeetmousectl run <profile> -- <command>` runs a game on a profile, for example in Steam's launch
-options:
-
-```sh
-yeetmousectl run power -- %command%
-```
-
-While the game runs every mouse that is not disabled uses that profile's curve. The driver drops it
-when the game exits or the wrapper is killed, and the saved curves return.
-
-### Saving Without a Password
-
-The GUI writes `/etc/yeetmouse/default.conf`, the profiles and `devices.conf` itself, as a member of
-the `yeetmouse` group, so nothing asks for a password and no polkit rule is involved. Touchpad
-resolutions are recorded by the service.
+To run a game on its own profile, see the [main README](../README.org).
