@@ -1255,13 +1255,11 @@ namespace Profiles {
             problems.push_back(refused.what());
         }
         std::filesystem::path defaults = root / DefaultFile;
-        if (std::filesystem::exists(defaults)) {
-            try {
-                if (auto refusal = DefaultRefusal(LoadDefaultFile(defaults)))
-                    problems.push_back(defaults.string() + " is refused: " + *refusal);
-            } catch (const Refused &refused) {
-                problems.push_back(refused.what());
-            }
+        try {
+            if (auto refusal = DefaultRefusal(LoadDefaultFile(defaults)))
+                problems.push_back(defaults.string() + " is refused: " + *refusal);
+        } catch (const Refused &refused) {
+            problems.push_back(refused.what());
         }
         return problems;
     }

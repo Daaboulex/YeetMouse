@@ -3041,6 +3041,8 @@ bool Tests::TestRawAccelSetup() {
         problems = Profiles::CheckSetup(etc);
         supervisor.Validate(problems.size() == 4 && names("default.conf is refused: Linear needs an Acceleration above 0"));
         std::filesystem::remove_all(etc);
+        problems = Profiles::CheckSetup(etc);
+        supervisor.Validate(problems.size() == 1 && names("cannot open"));
 
         supervisor.NextTest();
         std::filesystem::path root = SCRATCH_DIR;
