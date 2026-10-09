@@ -89,7 +89,9 @@ static int OnGui() {
         const char *invalid = "These values do not make a valid curve";
         Parameters imported_params;
         if (ImGui::BeginMenu("File")) {
-            if (ImGui::BeginMenu("Import")) {
+            bool importing = ImGui::BeginMenu("Import");
+            ImGui::SetItemTooltip("Load settings from a file");
+            if (importing) {
                 if (ImGui::MenuItem("YeetMouse config...") &&
                     ConfigHelper::ImportFile(LUT_user_data, imported_params))
                     LoadIntoEditor(imported_params);
@@ -97,7 +99,9 @@ static int OnGui() {
                 ProfilesGui::RawAccelImports(load_into_editor);
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Export")) {
+            bool exporting = ImGui::BeginMenu("Export");
+            ImGui::SetItemTooltip("Save settings to a file");
+            if (exporting) {
                 ImGui::BeginDisabled(!valid);
                 if (ImGui::MenuItem("YeetMouse config..."))
                     ConfigHelper::ExportPlainText(params[selected_mode], true);
@@ -356,8 +360,8 @@ static int OnGui() {
                 change |= ImGui::SliderFloat("##MidPoint_Param", &params[selected_mode].exponent, 0.01, 20,
                                              "Gamma %0.2f", ImGuiSliderFlags_Logarithmic);
                 ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Gamma", selected_mode));
-                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].midpoint, 0, 1,
-                                             "Smoothness %0.2f");
+                change |= ImGui::SliderFloat("##Exp_Param", &params[selected_mode].midpoint, 0, 20,
+                                             "Smoothness %0.2f", ImGuiSliderFlags_Logarithmic);
                 ImGui::SetItemTooltip("%s", ProfilesGui::CurveTip("Smoothness", selected_mode));
                 change |= ImGui::SliderFloat("##Motivity_Param", &params[selected_mode].motivity, 1.01, 50,
                                              "Motivity %0.2f", ImGuiSliderFlags_Logarithmic);
@@ -1312,14 +1316,15 @@ void DroppedFilesCallback(GLFWwindow* /*window*/, int path_count, const char* pa
     const auto* first_file = paths[0];
     const auto file_name_len = strlen(first_file);
 
-    auto file_stream = std::fstream(first_file);
+    auto file_stream = std::ifstream(first_file);
 
     if (!file_stream.is_open()) {
         fprintf(stderr, "Failed to open file %s\n", first_file);
         return;
     }
 
-    bool is_header_file = first_file[file_name_len - 1] == 'h' && first_file[file_name_len - 2] == '.';
+    bool is_header_file =
+        file_name_len >= 2 && first_file[file_name_len - 1] == 'h' && first_file[file_name_len - 2] == '.';
     const auto imported_params = ConfigHelper::ImportAny(file_stream, LUT_user_data, is_header_file);
     if (imported_params.has_value()) {
         LoadIntoEditor(imported_params.value());

@@ -211,7 +211,7 @@ namespace ProfilesGui {
                 {{"Acceleration %0.2f", 0.01f, 10, false}, {}, {"Midpoint %0.2f", 0.1f, 50, false}, {}},
                 {{"SyncSpeed %0.2f", 0.01f, 100, true},
                  {"Gamma %0.2f", 0.01f, 20, true},
-                 {"Smoothness %0.2f", 0, 1, false},
+                 {"Smoothness %0.2f", 0, 20, true},
                  {"Motivity %0.2f", 1.01f, 50, true}},
                 {{"Decay Rate %0.3f", 0.001f, 5, false},
                  {"Limit %0.2f", 0.01f, 10, false},
@@ -264,7 +264,7 @@ namespace ProfilesGui {
             if ((curve.accelMode == AccelMode_Classic || curve.accelMode == AccelMode_Power) && !curve.useSmoothing)
                 change |= SensCap("##VerticalLegacyCap", &curve.legacyCap);
             if (curve.accelMode == AccelMode_Lut) {
-                change |= ImGui::Toggle("Values are velocities", &curve.lutVelocity);
+                change |= ImGui::Toggle("Values are velocities##Vertical", &curve.lutVelocity);
                 ImGui::SetItemTooltip("Values are output speeds, not sensitivities");
                 ImGui::InputTextWithHint("##VerticalTable", "x1,y1;x2,y2;x3,y3...", vertical_table,
                                          sizeof(vertical_table), ImGuiInputTextFlags_AutoSelectAll);
@@ -433,7 +433,9 @@ namespace ProfilesGui {
 
         void TouchpadMenu(const Profiles::ConnectedMouse &mouse, const std::string &id) {
             static std::map<std::string, std::pair<bool, std::optional<double>>> known;
-            if (!ImGui::BeginMenu((mouse.name + " (" + id + "): touchpad").c_str()))
+            bool open = ImGui::BeginMenu((mouse.name + " (" + id + "): touchpad").c_str());
+            ImGui::SetItemTooltip("Give this touchpad a profile's curve through KWin");
+            if (!open)
                 return;
             if (ImGui::IsWindowAppearing() || !known.count(mouse.event))
                 known[mouse.event] = {Profiles::KWinTakesTouchpadCurves(mouse.event),
@@ -755,7 +757,9 @@ namespace ProfilesGui {
             ImGui::TextDisabled("No mouse connected");
         for (const Profiles::LiveMouse &mouse : view.status->mice) {
             std::string id = Profiles::DeviceId(mouse.vendor, mouse.product);
-            if (!ImGui::BeginMenu((mouse.name + " (" + id + ")").c_str()))
+            bool open = ImGui::BeginMenu((mouse.name + " (" + id + ")").c_str());
+            ImGui::SetItemTooltip("Choose this mouse's profile, line and DPI");
+            if (!open)
                 continue;
             const Profiles::DeviceLine *own = FileLine(mouse.vendor, mouse.product);
             const Profiles::DeviceLine *shared =
@@ -811,7 +815,9 @@ namespace ProfilesGui {
                 header = true;
             }
             std::string label = Profiles::DeviceId(line.vendor, line.product) + ": " + line.profile;
-            if (ImGui::BeginMenu(label.c_str())) {
+            bool open = ImGui::BeginMenu(label.c_str());
+            ImGui::SetItemTooltip("A mouse in devices.conf that is not connected");
+            if (open) {
                 if (ImGui::MenuItem("Forget"))
                     Forget(line.vendor, line.product);
                 ImGui::SetItemTooltip("Remove this mouse's line");
