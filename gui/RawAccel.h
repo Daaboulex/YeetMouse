@@ -108,4 +108,4 @@ namespace RawAccel {
     Settings FromParameters(const Parameters &params);
 }
 
-#endif //GUI_RAWACCEL_H
+#endif

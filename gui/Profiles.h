@@ -246,4 +246,4 @@ namespace Profiles {
     };
 }
 
-#endif //GUI_PROFILES_H
+#endif

@@ -59,4 +59,4 @@ namespace ProfilesGui {
     void Popups(const Parameters &current, const Load &load);
 }
 
-#endif //GUI_PROFILESGUI_H
+#endif

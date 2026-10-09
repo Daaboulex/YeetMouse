@@ -536,7 +536,7 @@ namespace RawAccel {
     }
 
     namespace {
-        void MapCurve(const AccelArgs &args, const Profile &profile, Parameters &out) {
+        void MapCurve(const AccelArgs &args, Parameters &out) {
             switch (args.mode) {
                 case Mode::NoAccel:
                     out.accelMode = AccelMode_Current;
@@ -613,10 +613,10 @@ namespace RawAccel {
         out.rangeX = static_cast<float>(profile.range.x);
         out.rangeY = static_cast<float>(profile.range.y);
 
-        MapCurve(profile.x, profile, out);
+        MapCurve(profile.x, out);
         if (!profile.speed.whole) {
             Parameters vertical = out;
-            MapCurve(profile.y, profile, vertical);
+            MapCurve(profile.y, vertical);
             out.byComponent = true;
             out.yCurve = DriverHelper::HorizontalCurve(vertical);
         }

@@ -14,4 +14,4 @@ extern "C" {
 }
 #pragma GCC diagnostic pop
 
-#endif //GUI_FIXEDPOINT_H
+#endif

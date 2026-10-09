@@ -231,10 +231,10 @@ static int Status() {
         report(false, "default: the last set was refused (" + *status.defaultRefused + "); the one before is live");
     else if (!defaults)
         report(false, std::string("default: live, but ") + DefaultConfigPath + " cannot be read");
-    else
-        report(Profiles::DefaultIsLive(status, *defaults),
-               std::string("default: live, ") +
-                   (Profiles::DefaultIsLive(status, *defaults) ? "matches " : "differs from ") + DefaultConfigPath);
+    else {
+        bool matches = Profiles::DefaultIsLive(status, *defaults);
+        report(matches, std::string("default: live, ") + (matches ? "matches " : "differs from ") + DefaultConfigPath);
+    }
 
     std::vector<std::string> names;
     try {
