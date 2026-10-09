@@ -176,7 +176,7 @@
    sudo yeetmouse-uninstall
    #+end_src
 
-   The uninstaller disables the service, removes installed files, removes the DKMS module, and asks whether to remove =/etc/yeetmouse=, with the default config, profiles and =devices.conf=, and the =/etc/yeetmouse.conf= link. =--keep-config= or =--purge-config= answers that question in advance.
+   The uninstaller stops the service, removes installed files, removes the DKMS module, and asks whether to remove =/etc/yeetmouse=, with the default config, profiles and =devices.conf=, and the =/etc/yeetmouse.conf= link. =--keep-config= or =--purge-config= answers that question in advance.
 
 * Manual compile & insmod
    If you want to compile this module only for testing purposes or development, you do not need to install the whole package to your system.

@@ -94,6 +94,13 @@ rm -f "$SYSUSERS_CONF"
 rm -f "$UDEV_RULE"
 rm -rf "$SEED_DIR"
 
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+	systemctl daemon-reload
+fi
+if command -v udevadm >/dev/null 2>&1; then
+	udevadm control --reload-rules || echo "udev did not reload its rules; the YeetMouse rule goes at the next boot"
+fi
+
 if [[ -z "$KEEP_CONFIG" && -z "$PURGE_CONFIG" ]]; then
 	if [[ -f "$CONFIG_FILE" || -d "$CONFIG_DIR" ]]; then
 		read -r -p "Remove ${CONFIG_FILE} and the profiles in ${CONFIG_DIR} too? [y/N] " reply
