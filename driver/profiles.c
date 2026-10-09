@@ -187,6 +187,8 @@ static long profiles_claim(struct file *file, const void __user *from) {
 static long profiles_ioctl(struct file *file, unsigned int command, unsigned long argument) {
     const void __user *from = (const void __user *) argument;
 
+    if (!(file->f_mode & FMODE_WRITE))
+        return -EBADF;
     switch (command) {
         case YEETMOUSE_IOCTL_LOAD_PROFILE:
             return profiles_load(from);
