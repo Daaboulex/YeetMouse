@@ -195,30 +195,27 @@ namespace DriverHelper {
             }
 
             // Zip the X and Y values for sorting
-            std::pair<double, double> pairs[MAX_LUT_ARRAY_SIZE];
+            struct Point {
+                double x, y;
+            };
+            Point points[MAX_LUT_ARRAY_SIZE];
             for (int i = 0; i < idx / 2; i++)
-                pairs[i] = std::make_pair(out_x[i], out_y[i]);
+                points[i] = {out_x[i], out_y[i]};
 
             // Sort the values together (according to X). While preserving the ordering in case of equal X values
-            std::sort(pairs, pairs + idx / 2,
-                      [](std::pair<double, double> a, std::pair<double, double> b) { return a.first < b.first; });
+            std::stable_sort(points, points + idx / 2, [](const Point &a, const Point &b) { return a.x < b.x; });
 
             // Unzip
+            size_t count = 0;
             for (int i = 0; i < idx / 2; i++) {
-                if (i >= 1) {
-                    if (pairs[i].first == pairs[i - 1].first && pairs[i].second == pairs[i - 1].second) {
-                        continue;
-                    }
-
-                    if (pairs[i-1].first > pairs[i].first) {
-                        printf("Error: X values are not sorted! (x[i-1]: %f, x[i]: %f)\n", pairs[i-1].first, pairs[i].first);
-                    }
-                }
-                out_x[i] = pairs[i].first;
-                out_y[i] = pairs[i].second;
+                if (count > 0 && points[i].x == out_x[count - 1] && points[i].y == out_y[count - 1])
+                    continue;
+                out_x[count] = points[i].x;
+                out_y[count] = points[i].y;
+                count++;
             }
 
-            return idx / 2;
+            return count;
         } catch (std::exception &ex) {
             printf("Error parsing user LUT data: %s\n", ex.what());
             return 0;

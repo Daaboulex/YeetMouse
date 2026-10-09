@@ -1168,6 +1168,21 @@ bool Tests::TestFixedPointArithmetic() {
             supervisor.Validate(accel_lut_parse("1,2;3,4", "5,6;", 3, lut_x, lut_y) == 3 && lut_x[2] == FP64_FromInt(5) && lut_y[2] == FP64_FromInt(6));
             supervisor.Validate(accel_lut_parse("1,2;3,4;", ";", 3, lut_x, lut_y) == 0);
             supervisor.Validate(accel_lut_parse("1,2;x,4;", "", 2, lut_x, lut_y) == 0);
+
+            static double user_x[MAX_LUT_ARRAY_SIZE], user_y[MAX_LUT_ARRAY_SIZE];
+            char duplicated[] = "3,1;1,2;3,1;2,5";
+            supervisor.Validate(DriverHelper::ParseUserLutData(duplicated, user_x, user_y, MAX_LUT_ARRAY_SIZE) == 3 &&
+                                user_x[0] == 1 && user_y[0] == 2 && user_x[1] == 2 && user_y[1] == 5 &&
+                                user_x[2] == 3 && user_y[2] == 1);
+            std::string tied;
+            for (int i = 0; i < 40; i++)
+                tied += std::to_string(20 - i % 20) + "," + std::to_string(i) + ";";
+            std::vector<char> tied_text(tied.begin(), tied.end());
+            tied_text.push_back('\0');
+            bool kept_order = DriverHelper::ParseUserLutData(tied_text.data(), user_x, user_y, MAX_LUT_ARRAY_SIZE) == 40;
+            for (int i = 0; kept_order && i < 40; i++)
+                kept_order = user_x[i] == 1 + i / 2 && user_y[i] == 19 - i / 2 + (i % 2) * 20;
+            supervisor.Validate(kept_order);
             supervisor.Validate(accel_lut_parse("1,2;3,4;", "", MAX_LUT_ARRAY_SIZE + 1, lut_x, lut_y) == 0);
             supervisor.Validate(accel_lut_parse("1,2;3,4;5,6;", ";", 2, lut_x, lut_y) == 2 && lut_y[1] == FP64_FromInt(4));
         }
