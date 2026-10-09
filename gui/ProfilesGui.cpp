@@ -846,13 +846,13 @@ namespace ProfilesGui {
         }
 
         if (ImGui::Button("Save as new profile...", {-1, 0})) {
-            if (!edited_dirty) {
+            if (edited_saved) {
                 profile_name[0] = '\0';
                 save_as_problem.clear();
                 confirm_overwrite = false;
                 open_new_profile = true;
             } else {
-                Message("Save or reset first, so this target's file and the driver agree");
+                Message("Save or reset the applied changes first, so this target's file and the driver agree");
             }
         }
         ImGui::SetItemTooltip("Save these settings under a new name");
