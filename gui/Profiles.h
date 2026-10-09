@@ -17,6 +17,8 @@ namespace Profiles {
     inline const std::filesystem::path Root = "/etc/yeetmouse";
     inline const char *const DevicePath = "/dev/yeetmouse";
     inline const char *const Disabled = "disabled";
+    inline const char *const DefaultFile = "default.conf";
+    inline const std::filesystem::path DefaultPath = Root / DefaultFile;
 
     struct Refused : std::runtime_error {
         explicit Refused(const std::string &what, int code = 0) : std::runtime_error(what), code(code) {}
@@ -203,6 +205,10 @@ namespace Profiles {
     Setup ReadSetup(const std::filesystem::path &etc);
 
     void WriteSetup(const std::filesystem::path &etc, const Setup &setup);
+
+    Parameters LoadDefaultFile(const std::filesystem::path &path);
+
+    void SetupEtc(const std::filesystem::path &etc, const std::optional<std::filesystem::path> &seed);
 
     void MergeSetup(const std::filesystem::path &root, const Setup &setup);
 

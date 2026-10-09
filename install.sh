@@ -168,11 +168,9 @@ if command -v systemd-tmpfiles >/dev/null 2>&1; then
 else
 	sudo install -d -m 2775 -g yeetmouse /etc/yeetmouse /etc/yeetmouse/profiles
 fi
+sudo /usr/bin/yeetmousectl setup /etc --seed /usr/share/yeetmouse
 
-# Apply config immediately if present
-if [[ -f /etc/yeetmouse.conf ]]; then
-	sudo /usr/bin/yeetmousectl apply /etc/yeetmouse.conf || true
-fi
+sudo /usr/bin/yeetmousectl apply /etc/yeetmouse/default.conf
 
 # Enable boot-time config apply on systemd systems
 if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
@@ -183,7 +181,8 @@ else
 	echo "systemd not detected; installed driver and yeetmousectl, but did not enable a boot-time service."
 	echo "To persist settings, profiles and devices across reboot on this system, run:"
 	echo "  chown root:yeetmouse /sys/module/yeetmouse/parameters/* /dev/yeetmouse"
-	echo "  /usr/bin/yeetmousectl apply /etc/yeetmouse.conf"
+	echo "  /usr/bin/yeetmousectl setup /etc --seed /usr/share/yeetmouse"
+	echo "  /usr/bin/yeetmousectl apply /etc/yeetmouse/default.conf"
 	echo "  /usr/bin/yeetmousectl load"
 	echo "from your init system's startup mechanism, after the yeetmouse module is loaded."
 fi

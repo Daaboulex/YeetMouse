@@ -166,12 +166,6 @@ namespace DriverHelper {
         return SetParameterTy("update", 1);
     }
 
-    std::string SiblingProgram(const std::string &name) {
-        std::error_code error;
-        std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", error);
-        return error ? std::string() : (self.parent_path() / name).string();
-    }
-
     int RunProgram(const std::vector<std::string> &args) {
         std::vector<std::string> owned = args;
         std::vector<char *> argv;
@@ -193,11 +187,6 @@ namespace DriverHelper {
             if (errno != EINTR)
                 return -1;
         return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-    }
-
-    bool SavePersistentParameters() {
-        std::string yeetmousectl = SiblingProgram("yeetmousectl");
-        return !yeetmousectl.empty() && RunProgram({"pkexec", yeetmousectl, "save", "/etc/yeetmouse.conf"}) == 0;
     }
 
     bool WriteParameterF(const std::string &param_name, float value) {

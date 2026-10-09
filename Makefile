@@ -149,14 +149,9 @@ remove_uninstaller:
 	rm -f $(DESTDIR)/usr/bin/yeetmouse-uninstall
 
 install_config:
-	@echo -e "\n::\033[34m Installing default configuration\033[0m"
+	@echo -e "\n::\033[34m Installing the default configuration to seed /etc/yeetmouse from\033[0m"
 	@echo "====================================================="
-	install -m 755 -v -d $(DESTDIR)/etc
-	if [ ! -f $(DESTDIR)/etc/yeetmouse.conf ]; then \
-		install -m 644 -v install_files/yeetmouse.conf.sample $(DESTDIR)/etc/yeetmouse.conf; \
-	else \
-		echo "Keeping existing $(DESTDIR)/etc/yeetmouse.conf"; \
-	fi
+	install -m 644 -v -D install_files/yeetmouse.conf.sample $(DESTDIR)/usr/share/yeetmouse/default.conf
 
 install_service:
 	@echo -e "\n::\033[34m Installing systemd service\033[0m"
@@ -172,6 +167,7 @@ remove_service:
 	rm -f $(DESTDIR)/usr/lib/systemd/system/yeetmouse.service
 	rm -f $(DESTDIR)/usr/lib/sysusers.d/yeetmouse.conf
 	rm -f $(DESTDIR)/usr/lib/tmpfiles.d/yeetmouse.conf
+	rm -rf $(DESTDIR)/usr/share/yeetmouse
 
 remove_dkms:
 	@echo -e "\n::\033[34m Removing DKMS files\033[0m"

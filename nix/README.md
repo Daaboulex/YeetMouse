@@ -50,7 +50,7 @@ the `yeetmouse` group, and adds `yeetmouse.service`, which seeds and applies the
 
 Then, rebuild and switch into your new system (using `nixos-rebuild`). After a reboot, the
 `yeetmouse` driver should be loaded for your connected mouse with the parameters you specified.
-The options reach `/etc/yeetmouse.conf` only while that file does not exist yet, as described in
+The options reach `/etc/yeetmouse/default.conf` only while that file does not exist yet, as described in
 [Seeding and the Boot Service](#seeding-and-the-boot-service).
 
 The GUI runs without root. The boot service hands the driver's parameters, `/dev/yeetmouse` and the
@@ -122,7 +122,7 @@ in {
 
 The package ships no udev rules and nothing in this setup applies a config at boot. The
 `systemd.services.yeetmouse` unit in `module.nix` shows what the module adds. It seeds `/etc`, runs
-`yeetmousectl apply /etc/yeetmouse.conf` and `yeetmousectl load`, and hands the driver's parameters
+`yeetmousectl apply /etc/yeetmouse/default.conf` and `yeetmousectl load`, and hands the driver's parameters
 and `/dev/yeetmouse` to the `yeetmouse` group.
 
 Since the `pkgs.yeetmouse` package contains a kernel module, it'll be built against a specific version
@@ -141,7 +141,7 @@ nix build .#yeetmouse --json --keep-failed
 
 ## Configuration Options
 
-The typed options below render `/etc/yeetmouse.conf` and use the GUI's terminology and structure for
+The typed options below render `/etc/yeetmouse/default.conf` and use the GUI's terminology and structure for
 the GUI's main settings. They do not cover every setting the GUI has, such as its Raw Accel features
 or the timing switches. For those, write a config file in `yeetmousectl`'s format and pass it as
 [`defaultConfig` or a profile](#profiles-and-devices).
@@ -398,8 +398,8 @@ See [RawAccel: Lookup Table](https://github.com/RawAccelOfficial/rawaccel/blob/5
 Four options take files instead of typed values. Each file is in `yeetmousectl`'s format, which
 `yeetmousectl save <file>` writes from the live parameters.
 
-- `defaultConfig` becomes `/etc/yeetmouse.conf`, the settings of every mouse `devices.conf` does not
-  list. When it is set, the typed options above are not used.
+- `defaultConfig` becomes `/etc/yeetmouse/default.conf`, which `/etc/yeetmouse.conf` links to, the
+  settings of every mouse `devices.conf` does not list. When it is set, the typed options above are not used.
 - `profiles` names curves, each seeded as `/etc/yeetmouse/profiles/<name>.conf`. A profile leaves out
   `preScale`, `minTime`, `maxTime` and `fixedTime`, which belong to a mouse's line in `devices.conf`.
   A name uses letters, digits, `.`, `_` or `-`, starts with a letter or digit, has at most 31
@@ -456,15 +456,17 @@ exactly fails the build.
 ### Seeding and the Boot Service
 
 `yeetmouse.service` runs at boot. It creates `/etc/yeetmouse` and `/etc/yeetmouse/profiles` for the
-`yeetmouse` group and copies each file from the options above into place only when that file does not
-exist yet, so the GUI owns the files afterwards. It then runs `yeetmousectl apply /etc/yeetmouse.conf`,
-`yeetmousectl load` and `yeetmousectl touchpads --record`.
+`yeetmouse` group and runs `yeetmousectl setup`, which moves an older `/etc/yeetmouse.conf` into
+`/etc/yeetmouse/default.conf`, links the old path to it, and copies each file from the options above
+into place only when that file does not exist yet, so the GUI owns the files afterwards. It then runs
+`yeetmousectl apply /etc/yeetmouse/default.conf`, `yeetmousectl load` and
+`yeetmousectl touchpads --record`.
 
 A changed option therefore does not overwrite a file that is already there. To take the new value,
 remove the file and restart the service:
 
 ```sh
-sudo rm /etc/yeetmouse.conf
+sudo rm /etc/yeetmouse/default.conf
 sudo systemctl restart yeetmouse.service
 ```
 
@@ -482,17 +484,6 @@ when the game exits or the wrapper is killed, and the saved curves return.
 
 ### Saving Without a Password
 
-The GUI saves the default config with `pkexec yeetmousectl save /etc/yeetmouse.conf` and records a
-touchpad's resolution with `pkexec yeetmousectl touchpads --record`, so both ask for a password.
-`passwordlessSave = true` adds a polkit rule that lets members of the `yeetmouse` group run exactly
-those two commands without one; any other `pkexec` call still asks. It needs
-`security.polkit.enable`.
-
-```nix
-{
-  hardware.yeetmouse = {
-    enable = true;
-    passwordlessSave = true;
-  };
-}
-```
+The GUI writes `/etc/yeetmouse/default.conf`, the profiles and `devices.conf` itself, as a member of
+the `yeetmouse` group, so nothing asks for a password and no polkit rule is involved. Touchpad
+resolutions are recorded by the boot service.

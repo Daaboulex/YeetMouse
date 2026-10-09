@@ -605,7 +605,8 @@ in
       type = types.nullOr types.path;
       default = null;
       description = ''
-        Config file in yeetmousectl's format, seeded as /etc/yeetmouse.conf: the settings of every
+        Config file in yeetmousectl's format, seeded as /etc/yeetmouse/default.conf, which
+        /etc/yeetmouse.conf links to: the settings of every
         mouse devices.conf does not list. When null, the options above render it, or rawAccel
         provides it. Seeding copies a file only when it is missing, so the GUI owns it afterwards.
       '';
@@ -641,16 +642,6 @@ in
       '';
     };
 
-    passwordlessSave = mkOption {
-      type = types.bool;
-      default = false;
-      description = ''
-        Let members of the yeetmouse group save the default config from the GUI and record touchpad
-        resolutions without a password: a polkit rule allows exactly
-        `yeetmousectl save /etc/yeetmouse.conf` and `yeetmousectl touchpads --record` through
-        pkexec, and every other pkexec call still asks. Off, both ask for a password, as upstream.
-      '';
-    };
   };
 
   config = mkIf cfg.enable (
@@ -711,12 +702,12 @@ in
         if cfg.defaultConfig != null then
           cfg.defaultConfig
         else if cfg.rawAccel != null then
-          "${rawAccel}/yeetmouse.conf"
+          "${rawAccel}/yeetmouse/default.conf"
         else
           renderedDefault;
       etc = pkgs.runCommand "yeetmouse-etc" { } ''
         mkdir -p $out/yeetmouse/profiles
-        install -m 644 ${defaultConfig} $out/yeetmouse.conf
+        install -m 644 ${defaultConfig} $out/yeetmouse/default.conf
         ${optionalString (cfg.rawAccel != null) ''
           install -m 644 ${rawAccel}/yeetmouse/profiles/*.conf $out/yeetmouse/profiles/
           install -m 644 ${rawAccel}/yeetmouse/devices.conf $out/yeetmouse/devices.conf
@@ -738,21 +729,8 @@ in
       seed = pkgs.writeShellScript "yeetmouse-seed" ''
         set -eu
         PATH=${makeBinPath [ pkgs.coreutils ]}
-        seed() {
-          if [ ! -e "$2" ]; then
-            install -m 0664 -g yeetmouse "$1" "$2"
-          fi
-        }
         install -d -m 2775 -g yeetmouse /etc/yeetmouse /etc/yeetmouse/profiles
-        seed ${etc}/yeetmouse.conf /etc/yeetmouse.conf
-        for profile in ${etc}/yeetmouse/profiles/*.conf; do
-          if [ -e "$profile" ]; then
-            seed "$profile" "/etc/yeetmouse/profiles/$(basename "$profile")"
-          fi
-        done
-        if [ -e ${etc}/yeetmouse/devices.conf ]; then
-          seed ${etc}/yeetmouse/devices.conf /etc/yeetmouse/devices.conf
-        fi
+        ${yeetmouse}/bin/yeetmousectl setup /etc --seed ${etc}/yeetmouse
         for attempt in $(seq 1 50); do
           if [ -e ${parameterBasePath}/update ] && [ -e /dev/yeetmouse ]; then
             break
@@ -770,22 +748,7 @@ in
           ) (attrNames cfg.profiles);
           message = "hardware.yeetmouse.profiles: a name uses letters, digits, '.', '_' or '-', starts with a letter or digit, has at most 31 characters and is not \"disabled\"";
         }
-        {
-          assertion = cfg.passwordlessSave -> config.security.polkit.enable;
-          message = "hardware.yeetmouse.passwordlessSave is a polkit rule, so it needs security.polkit.enable";
-        }
       ];
-      security.polkit.extraConfig = mkIf cfg.passwordlessSave ''
-        polkit.addRule(function (action, subject) {
-          if (action.id == "org.freedesktop.policykit.exec" && subject.isInGroup("yeetmouse")) {
-            var command = action.lookup("command_line");
-            if (command == "${yeetmouse}/bin/yeetmousectl save /etc/yeetmouse.conf" ||
-                command == "${yeetmouse}/bin/yeetmousectl touchpads --record") {
-              return polkit.Result.YES;
-            }
-          }
-        });
-      '';
       boot.extraModulePackages = [ yeetmouse ];
       boot.kernelModules = [ "yeetmouse" ];
       environment.systemPackages = [ yeetmouse ];
@@ -801,7 +764,7 @@ in
           RemainAfterExit = true;
           ExecStartPre = seed;
           ExecStart = [
-            "${yeetmouse}/bin/yeetmousectl apply /etc/yeetmouse.conf"
+            "${yeetmouse}/bin/yeetmousectl apply /etc/yeetmouse/default.conf"
             "${yeetmouse}/bin/yeetmousectl load"
             "-${yeetmouse}/bin/yeetmousectl touchpads --record"
           ];

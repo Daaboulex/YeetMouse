@@ -3000,9 +3000,9 @@ bool Tests::TestRawAccelSetup() {
         std::ofstream(etc / "yeetmouse" / "devices.conf", std::ios::app) << "not-an-id power\n";
         problems = Profiles::CheckSetup(etc);
         supervisor.Validate(problems.size() == 3 && names("not-an-id") && names("broken") && names("stalled"));
-        std::ofstream(etc / "yeetmouse.conf") << "accelMode=AccelMode_Linear\naccel=0\n";
+        std::ofstream(etc / "yeetmouse" / "default.conf") << "accelMode=AccelMode_Linear\naccel=0\n";
         problems = Profiles::CheckSetup(etc);
-        supervisor.Validate(problems.size() == 4 && names("yeetmouse.conf is refused by the driver"));
+        supervisor.Validate(problems.size() == 4 && names("default.conf is refused by the driver"));
         std::filesystem::remove_all(etc);
 
         supervisor.NextTest();
@@ -3101,9 +3101,6 @@ bool Tests::TestConfigFiles() {
         std::filesystem::remove_all(SCRATCH_DIR);
 
         supervisor.NextTest();
-        std::filesystem::path sibling = DriverHelper::SiblingProgram("yeetmousectl");
-        supervisor.Validate(sibling.filename() == "yeetmousectl" &&
-                            std::filesystem::exists(sibling.parent_path() / "YeetMouseTests"));
         supervisor.Validate(DriverHelper::RunProgram({"sh", "-c", "exit 3"}) == 3);
         supervisor.Validate(DriverHelper::RunProgram({"true"}) == 0);
         supervisor.Validate(DriverHelper::RunProgram({"/nonexistent/program"}) != 0);
@@ -3372,6 +3369,57 @@ bool Tests::TestSetupWrites() {
             threw = true;
         }
         supervisor.Validate(threw);
+
+        supervisor.NextTest();
+        fs::path etc = fs::path(SCRATCH_DIR) / "etc", seed = fs::path(SCRATCH_DIR) / "seed";
+        auto contents = [](const fs::path &path) {
+            std::ifstream stream(path);
+            return std::string((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        };
+        auto setup_refused = [&](const std::optional<fs::path> &from) {
+            try {
+                Profiles::SetupEtc(etc, from);
+                return false;
+            } catch (const Profiles::Refused &) {
+                return true;
+            }
+        };
+        fs::remove_all(etc);
+        fs::remove_all(seed);
+        fs::create_directories(seed / "profiles");
+        std::ofstream(seed / "default.conf") << "sens=0.5\n";
+        std::ofstream(seed / "devices.conf") << "045e:0040 disabled\n";
+        std::ofstream(seed / "profiles" / "jump.conf") << "sens=2\n";
+        std::ofstream(seed / "profiles" / "power.conf") << "sens=3\n";
+        fs::create_directories(etc);
+        supervisor.Validate(setup_refused(seed));
+        fs::create_directories(etc / "yeetmouse" / "profiles");
+        std::ofstream(etc / "yeetmouse.conf") << "sens=0.25\n";
+        std::ofstream(etc / "yeetmouse" / "profiles" / "jump.conf") << "sens=9\n";
+        Profiles::SetupEtc(etc, seed);
+        supervisor.Validate(fs::is_symlink(etc / "yeetmouse.conf") &&
+                            fs::read_symlink(etc / "yeetmouse.conf") == fs::path("yeetmouse") / "default.conf" &&
+                            contents(etc / "yeetmouse.conf") == "sens=0.25\n" &&
+                            contents(etc / "yeetmouse" / "profiles" / "jump.conf") == "sens=9\n" &&
+                            contents(etc / "yeetmouse" / "profiles" / "power.conf") == "sens=3\n" &&
+                            contents(etc / "yeetmouse" / "devices.conf") == "045e:0040 disabled\n");
+        Profiles::SetupEtc(etc, seed);
+        supervisor.Validate(contents(etc / "yeetmouse" / "default.conf") == "sens=0.25\n");
+
+        fs::remove(etc / "yeetmouse.conf");
+        std::ofstream(etc / "yeetmouse.conf") << "sens=0.75\n";
+        supervisor.Validate(setup_refused(std::nullopt) && !fs::is_symlink(etc / "yeetmouse.conf") &&
+                            contents(etc / "yeetmouse.conf") == "sens=0.75\n" &&
+                            contents(etc / "yeetmouse" / "default.conf") == "sens=0.25\n");
+        fs::remove(etc / "yeetmouse.conf");
+        fs::create_symlink("elsewhere.conf", etc / "yeetmouse.conf");
+        supervisor.Validate(setup_refused(std::nullopt) && fs::read_symlink(etc / "yeetmouse.conf") == "elsewhere.conf");
+        fs::remove(etc / "yeetmouse.conf");
+        fs::remove(etc / "yeetmouse" / "default.conf");
+        Profiles::SetupEtc(etc, seed);
+        supervisor.Validate(contents(etc / "yeetmouse.conf") == "sens=0.5\n");
+        fs::remove_all(etc);
+        fs::remove_all(seed);
     } catch (std::exception &ex) {
         fprintf(stderr, "Exception: %s during setup writes\n", ex.what());
         supervisor.result = false;

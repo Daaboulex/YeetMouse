@@ -41,19 +41,20 @@
 
 ** Configuration model
    YeetMouse keeps its settings in plain files:
-   + =/etc/yeetmouse.conf=, the default config, used by every mouse that =devices.conf= does not list,
+   + =/etc/yeetmouse/default.conf=, the default config, used by every mouse that =devices.conf= does not list; =/etc/yeetmouse.conf= is a link to it for tools that read the old path,
    + =/etc/yeetmouse/profiles/<name>.conf=, named profiles, each a curve in the same format,
    + =/etc/yeetmouse/devices.conf=, one line per mouse naming its profile, DPI pre-scale and timing.
 
    Runtime configuration is handled by =yeetmousectl=:
    #+begin_src sh
-   yeetmousectl apply /etc/yeetmouse.conf
+   yeetmousectl apply /etc/yeetmouse/default.conf
    yeetmousectl load
+   yeetmousectl status
    yeetmousectl dump
    yeetmousectl save my-config.conf
    #+end_src
 
-   On systemd-based systems, the installed =yeetmouse.service= applies =/etc/yeetmouse.conf=, loads the profiles and =devices.conf= into the driver, and records touchpad resolutions during boot.
+   On systemd-based systems, the installed =yeetmouse.service= runs =yeetmousectl setup=, which moves an older =/etc/yeetmouse.conf= into =/etc/yeetmouse/default.conf= and links it, then applies the default config, loads the profiles and =devices.conf= into the driver, and records touchpad resolutions during boot.
 
 ** Uninstallation
    If YeetMouse was installed system-wide, use:
@@ -113,7 +114,7 @@
    make pkgarch
    sudo pacman -U yeetmouse*.zst
    sudo modprobe yeetmouse
-   # Optional, if using YeetMouseGUI or the systemd service for local config at /etc/yeetmouse.conf
+   # Optional, if using YeetMouseGUI or the systemd service for the config in /etc/yeetmouse
    sudo systemctl enable --now yeetmouse.service
    sudo usermod -a -G yeetmouse <your user name>
    # Now log out and log in or alternatively restart your system
@@ -153,14 +154,15 @@
    + the DKMS source tree,
    + the kernel module through DKMS,
    + =yeetmousectl=,
-   + the persistent config file in =/etc/yeetmouse.conf=,
+   + the default config in =/usr/share/yeetmouse/default.conf=, copied to =/etc/yeetmouse/default.conf= when that file is missing,
    + the profile directories =/etc/yeetmouse= and =/etc/yeetmouse/profiles=, writable by the =yeetmouse= group,
    + the systemd service (if systemd is present),
    + and the GUI files if built/installed through the project Makefile.
 
    If systemd is not present, you can still apply the config and load the profiles and =devices.conf= at boot using your init system:
    #+begin_src sh
-   /usr/bin/yeetmousectl apply /etc/yeetmouse.conf
+   /usr/bin/yeetmousectl setup /etc --seed /usr/share/yeetmouse
+   /usr/bin/yeetmousectl apply /etc/yeetmouse/default.conf
    /usr/bin/yeetmousectl load
    #+end_src
 
@@ -170,7 +172,7 @@
    sudo yeetmouse-uninstall
    #+end_src
 
-   The uninstaller disables the service, removes installed files, removes the DKMS module, and asks whether to remove =/etc/yeetmouse.conf= and the profiles in =/etc/yeetmouse=. =--keep-config= or =--purge-config= answers that question in advance.
+   The uninstaller disables the service, removes installed files, removes the DKMS module, and asks whether to remove =/etc/yeetmouse=, with the default config, profiles and =devices.conf=, and the =/etc/yeetmouse.conf= link. =--keep-config= or =--purge-config= answers that question in advance.
 
 * Manual compile & insmod
    If you want to compile this module only for testing purposes or development, you do not need to install the whole package to your system.
@@ -184,13 +186,13 @@
 
 * Command line usage
 ** Applying a config
-   Apply a persistent config file to the running driver:
+   Apply a config file to the running driver as its default:
    #+begin_src sh
-   yeetmousectl apply /etc/yeetmouse.conf
+   yeetmousectl apply /etc/yeetmouse/default.conf
    #+end_src
 
 ** Dumping current runtime values
-   Print the currently active driver parameters:
+   Print the driver parameters; it fails when the driver refused them, because they are then not what is live:
    #+begin_src sh
    yeetmousectl dump
    #+end_src
@@ -202,7 +204,7 @@
    #+end_src
 
 ** Profiles
-   A profile is a curve saved as =/etc/yeetmouse/profiles/<name>.conf=, in the format of =/etc/yeetmouse.conf= but without =preScale=, =minTime=, =maxTime= and =fixedTime=, which belong to a mouse's line in =devices.conf=.
+   A profile is a curve saved as =/etc/yeetmouse/profiles/<name>.conf=, in the format of the default config but without =preScale=, =minTime=, =maxTime= and =fixedTime=, which belong to a mouse's line in =devices.conf=.
    A name uses letters, digits, =.=, =_= or =-=, starts with a letter or digit, has at most 31 characters and is not =disabled=.
    #+begin_src sh
    yeetmousectl profile list
@@ -217,7 +219,7 @@
 ** Devices
    =/etc/yeetmouse/devices.conf= holds one line per mouse, named by its vendor and product id.
    The driver looks each mouse up by that id, so a listed mouse gets its line as soon as it connects, with no udev rule and no daemon.
-   Unlisted mice use =/etc/yeetmouse.conf=.
+   Unlisted mice use the default config, =/etc/yeetmouse/default.conf=.
    #+begin_example
    046d:c539 power preScale=1 minTime=0 maxTime=100 fixedTime=0
    #+end_example
@@ -235,7 +237,7 @@
    #+end_src
 
    =device list= shows each connected mouse with its profile, or =default=, and the listed mice that are not connected.
-   A new line takes its DPI and timing from =/etc/yeetmouse.conf=, and =key=value= arguments override them.
+   A new line takes its DPI and timing from the default config, and =key=value= arguments override them.
    =device remove= returns the mouse to the default config.
 
 ** Loading and checking
@@ -244,9 +246,17 @@
    yeetmousectl check
    #+end_src
 
-   =load= loads every profile and =devices.conf= into the driver, as the boot service does.
-   =check= validates =/etc/yeetmouse.conf=, the profiles and =devices.conf= with the driver's own checks, without touching the driver, and lists every problem.
-   =yeetmousectl check <dir>= checks =<dir>/yeetmouse.conf= and =<dir>/yeetmouse/= instead.
+   =load= loads every profile and =devices.conf= into the driver, as the boot service does. A malformed or invalid line, or one whose profile did not load, is left out and named, and the other lines still load.
+   =check= validates the default config, the profiles and =devices.conf= with the driver's own checks, without touching the driver, and lists every problem.
+   =yeetmousectl check <dir>= checks =<dir>/yeetmouse/= instead.
+
+** Checking what the driver holds
+   #+begin_src sh
+   yeetmousectl status
+   #+end_src
+
+   =status= reads the driver's own state from =/dev/yeetmouse= and says whether the default config, each profile and each =devices.conf= line in the driver match their files, whether the driver refused the last default and why, which game holds a profile, and which curve each connected mouse uses, through its receiver's line when it has none of its own. It exits 1 when anything differs.
+   =cat /dev/yeetmouse= prints the same state as the driver writes it.
 
 ** Running a game on its own profile
    #+begin_src sh
@@ -272,17 +282,17 @@
    #+end_src
 
    + =import-rawaccel <file>= prints Raw Accel's first profile, with its default device settings, as a YeetMouse config. A device id from the file as a second argument prints that device's profile and settings instead.
-   + =--merge= adds every Raw Accel profile to =/etc/yeetmouse/profiles= and every device to =devices.conf=, then loads them. It refuses a profile name or a device that already exists and leaves =/etc/yeetmouse.conf= unchanged.
-   + =--into <dir>= writes =<dir>/yeetmouse.conf=, =<dir>/yeetmouse/profiles/= and =<dir>/yeetmouse/devices.conf=, and refuses if any of those files exists already.
-   + =export-rawaccel= converts the live driver settings, or the config file given, to one Raw Accel profile. =--from <dir>= exports =<dir>/yeetmouse.conf=, every profile and =devices.conf=. A device line keeps the Windows id it was imported with as =windowsId==, and a line without one is left out and named on stderr.
-   + An export needs Raw Accel's timing, which is =truncateCarry=1=, =clockOnAnyReport=1= and a =minTime= above 0. The GUI's =Match Raw Accel timing= button sets them.
+   + =--merge= adds every Raw Accel profile to =/etc/yeetmouse/profiles= and every device to =devices.conf=, then loads them. It refuses a profile name or a device that already exists and leaves the default config unchanged.
+   + =--into <dir>= writes =<dir>/yeetmouse/default.conf=, =<dir>/yeetmouse/profiles/= and =<dir>/yeetmouse/devices.conf=, and refuses if any of those files exists already.
+   + =export-rawaccel= converts the live driver settings, or the config file given, to one Raw Accel profile. =--from <dir>= exports =<dir>/yeetmouse/default.conf=, every profile and =devices.conf=. A device line keeps the Windows id it was imported with as =windowsId==, and a line without one is left out and named on stderr.
+   + An export needs Raw Accel's timing, which is =truncateCarry=1=, =clockOnAnyReport=1= and a =minTime= above 0. The GUI's Raw Accel section sets them.
 
 ** Touchpads
    Touchpads are listed with the mice, but the driver does not curve them, because libinput in the compositor turns finger positions into motion.
    YeetMouse can hand a profile's curve to KWin as a libinput custom acceleration curve once KWin takes one (KWin merge request 6937). Until then the GUI's touchpad entry says KWin cannot take touchpad curves yet, and =yeetmousectl touchpad= is refused.
    #+begin_src sh
    yeetmousectl touchpads
-   pkexec yeetmousectl touchpads --record
+   yeetmousectl touchpads --record
    yeetmousectl touchpad <vendor:product> power
    #+end_src
 
@@ -295,10 +305,10 @@
 - Ctrl + Left Click on the parameter box to start inputting the values manually.
 
 ** How are settings preserved between reboots?
-- Settings are stored in =/etc/yeetmouse.conf=, with named profiles in =/etc/yeetmouse/profiles= and per-mouse lines in =/etc/yeetmouse/devices.conf=.
+- Settings are stored in =/etc/yeetmouse/default.conf=, with named profiles in =/etc/yeetmouse/profiles= and per-mouse lines in =/etc/yeetmouse/devices.conf=.
 - To apply them immediately:
   #+begin_src sh
-  yeetmousectl apply /etc/yeetmouse.conf
+  yeetmousectl apply /etc/yeetmouse/default.conf
   yeetmousectl load
   #+end_src
 - On systemd systems, the installed =yeetmouse.service= does both on boot.

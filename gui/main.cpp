@@ -1182,8 +1182,8 @@ static int OnGui() {
         }
         ImGui::EndDisabled();
         ImGui::PopStyleColor(3);
-        explain(ProfilesGui::EditingDefault() ? "Apply, then write /etc/yeetmouse.conf so it holds across reboots"
-                                              : "Apply, then write this profile's file so it holds across reboots");
+        explain(ProfilesGui::EditingDefault() ? "Write the default's file, then apply it"
+                                              : "Write this profile's file, then apply it");
 
         ImGui::SetWindowFontScale(1.f);
     } else

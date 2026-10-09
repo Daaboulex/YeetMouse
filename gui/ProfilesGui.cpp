@@ -41,15 +41,12 @@ namespace ProfilesGui {
         char vertical_table[MAX_LUT_TEXT_LEN] = {};
 
         std::optional<Parameters> DefaultConfig() {
-            std::ifstream stream("/etc/yeetmouse.conf");
-            static char lut_data[MAX_LUT_TEXT_LEN];
-            bool is_config_h = false;
-            auto params = ConfigHelper::ImportAny(stream, lut_data, is_config_h);
-            if (!stream.is_open() || !params) {
-                Message("/etc/yeetmouse.conf cannot be read; it holds the DPI and timing new device lines start from");
+            try {
+                return Profiles::LoadDefaultFile(Profiles::DefaultPath);
+            } catch (const Profiles::Refused &refused) {
+                Message(refused.what());
                 return std::nullopt;
             }
-            return params;
         }
 
         Parameters WithDeviceSettings(Parameters curve, const Parameters &device) {
@@ -365,17 +362,22 @@ namespace ProfilesGui {
 
     void SaveEdited(const Parameters &edited) {
         try {
-            if (EditingDefault()) {
-                MakeLive(edited);
-                if (!DriverHelper::SavePersistentParameters())
-                    throw Profiles::Refused("applied, but /etc/yeetmouse.conf was not written");
-            } else {
-                MakeLive(edited);
+            Profiles::SetupLock lock(Profiles::Root);
+            if (auto refusal = Refusal(edited))
+                throw Profiles::Refused("the curve " + *refusal);
+            if (EditingDefault())
+                Profiles::SaveFile(Profiles::DefaultPath, ConfigHelper::ExportPlainText(edited, false));
+            else
                 Profiles::SaveProfile(Profiles::Root, editing_profile, edited);
-            }
             saved_params = edited;
         } catch (const Profiles::Refused &refused) {
             Message(std::string("Not saved: ") + refused.what());
+            return;
+        }
+        try {
+            MakeLive(edited);
+        } catch (const Profiles::Refused &refused) {
+            Message(std::string("Saved, but the driver did not take it: ") + refused.what());
         }
     }
 
@@ -465,7 +467,7 @@ namespace ProfilesGui {
                 Message(std::string("Not exported: ") + refused.what());
             }
         }
-        ImGui::SetItemTooltip("Writes /etc/yeetmouse.conf, every profile and devices.conf as one Raw Accel file");
+        ImGui::SetItemTooltip("The default, every profile and every mouse as one Raw Accel file");
         ImGui::EndMenu();
     }
 
@@ -484,10 +486,7 @@ namespace ProfilesGui {
                 ImGui::SetItemTooltip("A touchpad sends finger positions; KWin's libinput turns them into motion, "
                                       "so its curve has to be set there, which needs KWin merge request 6937");
             } else if (!resolution) {
-                if (ImGui::MenuItem("Record its resolution..."))
-                    if (DriverHelper::RunProgram({"pkexec", DriverHelper::SiblingProgram("yeetmousectl"), "touchpads",
-                                                  "--record"}) != 0)
-                        Message("Recording the touchpad's resolution failed");
+                ImGui::TextDisabled("Resolution not recorded yet");
             } else {
                 for (const std::string &name : names)
                     if (ImGui::MenuItem((name + " curve").c_str())) {

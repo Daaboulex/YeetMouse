@@ -32,9 +32,16 @@ jobs:
       - name: Check if necessary files were created
         run: |
           test -f /sys/module/yeetmouse/parameters/AccelerationMode
-          test -f /etc/yeetmouse.conf
+          test -f /etc/yeetmouse/default.conf
+          test "$(readlink /etc/yeetmouse.conf)" = yeetmouse/default.conf
           test -f /usr/lib/systemd/system/yeetmouse.service
-          yeetmousectl dump | grep -q "accelMode"
+          [[ "$(sudo yeetmousectl dump)" == *accelMode=* ]]
+
+      - name: Check the driver holds exactly the default written to it
+        run: |
+          sudo cp tests/fixtures/distinct-default.conf /etc/yeetmouse/default.conf
+          sudo yeetmousectl apply /etc/yeetmouse/default.conf
+          sudo yeetmousectl status
 
       - name: Check profiles, devices and a killed game's claim on the live driver
         run: |
@@ -43,6 +50,7 @@ jobs:
           sudo yeetmousectl profile save probe /etc/yeetmouse.conf
           sudo yeetmousectl device set 1234:5678 probe
           sudo yeetmousectl load
+          sudo yeetmousectl status
           sudo yeetmousectl device remove 1234:5678
           sudo yeetmousectl run probe -- sleep 120 &
           sleep 2

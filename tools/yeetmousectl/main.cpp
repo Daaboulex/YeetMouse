@@ -116,7 +116,7 @@ static int ExportRawAccel(const std::optional<std::string> &file) {
     return 0;
 }
 
-static const char *const DefaultConfigPath = "/etc/yeetmouse.conf";
+static const std::string DefaultConfigPath = Profiles::DefaultPath.string();
 
 static int Failed(const std::exception &error) {
     std::cerr << error.what() << std::endl;
@@ -430,12 +430,24 @@ static int MergeRawAccel(const std::string &file) {
         Profiles::MergeSetup(Profiles::Root, setup);
         std::cout << "Added " << setup.profiles.size() << " profiles and " << setup.devices.size()
                   << " devices. Raw Accel used \"" << setup.profiles.front().first
-                  << "\" for unlisted mice; /etc/yeetmouse.conf is unchanged." << std::endl;
+                  << "\" for unlisted mice; " << DefaultConfigPath << " is unchanged." << std::endl;
         Profiles::DriverLoadAll(Profiles::Root);
     } catch (const RawAccel::Refused &refused) {
         return Failed(refused);
     } catch (const Profiles::Refused &refused) {
         return Failed(refused);
+    }
+    return 0;
+}
+
+static int RunSetup(const std::string &etc, const std::optional<std::string> &seed) {
+    try {
+        Profiles::SetupLock lock(std::filesystem::path(etc) / "yeetmouse");
+        Profiles::SetupEtc(etc, seed ? std::optional<std::filesystem::path>(*seed) : std::nullopt);
+    } catch (const Profiles::Refused &refused) {
+        return Failed(refused);
+    } catch (const std::filesystem::filesystem_error &error) {
+        return Failed(error);
     }
     return 0;
 }
@@ -481,7 +493,7 @@ static int TouchpadCurve(const std::string &id, const std::string &profile) {
             throw Profiles::Refused(id + " is not a connected touchpad");
         std::optional<double> resolution = Profiles::TouchpadResolution(vendor, product);
         if (!resolution)
-            throw Profiles::Refused(id + "'s resolution is not recorded yet: run pkexec yeetmousectl touchpads --record");
+            throw Profiles::Refused(id + "'s resolution is not recorded yet: run yeetmousectl touchpads --record as root");
         Profiles::SetTouchpadCurve(touchpad->event,
                                    Profiles::SampleTouchpadCurve(Profiles::LoadProfileFile(Profiles::Root, profile),
                                                                  *resolution));
@@ -525,6 +537,7 @@ int main(int argc, char **argv) {
                 "  yeetmousectl load\n"
                 "  yeetmousectl status\n"
                 "  yeetmousectl check [<etc dir>]\n"
+                "  yeetmousectl setup <etc dir> [--seed <dir>]\n"
                 "  yeetmousectl profile list | save <name> <config> | remove <name>\n"
                 "  yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | remove <vendor:product>\n"
                 "  yeetmousectl touchpads [--record]\n"
@@ -603,6 +616,9 @@ int main(int argc, char **argv) {
 
     if (cmd == "check" && argc <= 3)
         return CheckSetup(argc == 3 ? argv[2] : "/etc");
+
+    if (cmd == "setup" && (argc == 3 || (argc == 5 && std::string(argv[3]) == "--seed")))
+        return RunSetup(argv[2], argc == 5 ? std::optional<std::string>(argv[4]) : std::nullopt);
 
     if (cmd == "touchpads" && (argc == 2 || (argc == 3 && std::string(argv[2]) == "--record")))
         return Touchpads(argc == 3);

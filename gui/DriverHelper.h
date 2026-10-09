@@ -34,10 +34,6 @@ namespace DriverHelper {
 
     bool SaveParameters();
 
-    bool SavePersistentParameters();
-
-    std::string SiblingProgram(const std::string &name);
-
     int RunProgram(const std::vector<std::string> &args);
 
     bool ValidateDirectory();

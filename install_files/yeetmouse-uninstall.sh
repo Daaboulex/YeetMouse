@@ -6,6 +6,7 @@ DKMS_NAME="yeetmouse-driver"
 SERVICE_NAME="yeetmouse.service"
 CONFIG_FILE="/etc/yeetmouse.conf"
 CONFIG_DIR="/etc/yeetmouse"
+SEED_DIR="/usr/share/yeetmouse"
 
 USR_BIN_CTL="/usr/bin/yeetmousectl"
 USR_BIN_GUI="/usr/bin/yeetmouse"
@@ -89,6 +90,7 @@ rm -f "$ICON_FILE"
 rm -f "$SYSTEMD_UNIT"
 rm -f "$TMPFILES_CONF"
 rm -f "$SYSUSERS_CONF"
+rm -rf "$SEED_DIR"
 
 if [[ -z "$KEEP_CONFIG" && -z "$PURGE_CONFIG" ]]; then
 	if [[ -f "$CONFIG_FILE" || -d "$CONFIG_DIR" ]]; then

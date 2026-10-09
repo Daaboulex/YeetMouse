@@ -924,19 +924,77 @@ namespace Profiles {
         return settings;
     }
 
-    Setup ReadSetup(const std::filesystem::path &etc) {
-        Setup setup;
-        std::filesystem::path defaults = etc / "yeetmouse.conf";
-        std::ifstream stream(defaults);
+    Parameters LoadDefaultFile(const std::filesystem::path &path) {
+        std::ifstream stream(path);
         if (!stream.is_open())
-            throw Refused("cannot open " + defaults.string());
+            throw Refused("cannot open " + path.string());
         static char lut_data[MAX_LUT_TEXT_LEN];
         bool is_config_h = false;
         auto params = ConfigHelper::ImportAny(stream, lut_data, is_config_h);
         if (!params || is_config_h)
-            throw Refused(defaults.string() + " is not a YeetMouse config");
-        setup.defaults = *params;
+            throw Refused(path.string() + " is not a YeetMouse config");
+        return *params;
+    }
+
+    namespace {
+        void SeedFile(const std::filesystem::path &from, const std::filesystem::path &to) {
+            if (std::filesystem::exists(std::filesystem::symlink_status(to)))
+                return;
+            std::ifstream stream(from);
+            if (!stream.is_open())
+                throw Refused("cannot open " + from.string());
+            SaveFile(to, std::string((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>()));
+        }
+    }
+
+    void SetupEtc(const std::filesystem::path &etc, const std::optional<std::filesystem::path> &seed) {
+        namespace fs = std::filesystem;
+        const fs::path root = etc / "yeetmouse", target = root / DefaultFile, legacy = etc / "yeetmouse.conf";
+        const fs::path link = fs::path("yeetmouse") / DefaultFile;
+        std::error_code error;
+        if (!fs::is_directory(root))
+            throw Refused(root.string() + " does not exist; create it, owned by the yeetmouse group, first");
+
+        fs::file_status legacy_status = fs::symlink_status(legacy, error);
+        if (fs::is_symlink(legacy_status)) {
+            if (fs::read_symlink(legacy) != link)
+                throw Refused(legacy.string() + " links somewhere other than " + link.string() + "; remove it");
+        } else if (fs::is_regular_file(legacy_status)) {
+            if (fs::exists(fs::symlink_status(target)))
+                throw Refused("both " + legacy.string() + " and " + target.string() +
+                              " hold a default config; keep one and remove the other");
+            fs::rename(legacy, target, error);
+            if (error)
+                throw Refused("cannot move " + legacy.string() + " to " + target.string() + ": " + error.message());
+            fs::permissions(target, fs::perms(0664), error);
+            if (error)
+                throw Refused("cannot open " + target.string() + " to the group: " + error.message());
+        } else if (fs::exists(legacy_status)) {
+            throw Refused(legacy.string() + " is neither a file nor a link");
+        }
+
+        if (seed) {
+            SeedFile(*seed / DefaultFile, target);
+            if (fs::exists(*seed / "devices.conf"))
+                SeedFile(*seed / "devices.conf", root / "devices.conf");
+            fs::create_directories(root / "profiles", error);
+            if (error)
+                throw Refused("cannot create " + (root / "profiles").string() + ": " + error.message());
+            for (const std::string &name : ProfileNames(*seed))
+                SeedFile(*seed / "profiles" / (name + ".conf"), root / "profiles" / (name + ".conf"));
+        }
+
+        if (!fs::exists(fs::symlink_status(legacy))) {
+            fs::create_symlink(link, legacy, error);
+            if (error)
+                throw Refused("cannot link " + legacy.string() + " to " + link.string() + ": " + error.message());
+        }
+    }
+
+    Setup ReadSetup(const std::filesystem::path &etc) {
+        Setup setup;
         std::filesystem::path root = etc / "yeetmouse";
+        setup.defaults = LoadDefaultFile(root / DefaultFile);
         for (const std::string &name : ProfileNames(root))
             setup.profiles.emplace_back(name, LoadProfileFile(root, name));
         setup.devices = LoadDevicesFile(root);
@@ -945,7 +1003,7 @@ namespace Profiles {
 
     void WriteSetup(const std::filesystem::path &etc, const Setup &setup) {
         std::filesystem::path root = etc / "yeetmouse";
-        std::vector<std::filesystem::path> targets = {etc / "yeetmouse.conf", root / "devices.conf"};
+        std::vector<std::filesystem::path> targets = {root / DefaultFile, root / "devices.conf"};
         for (const auto &[name, params] : setup.profiles)
             targets.push_back(root / "profiles" / (name + ".conf"));
         for (const std::filesystem::path &target : targets)
@@ -954,7 +1012,7 @@ namespace Profiles {
         DevicesArgs(setup.devices);
 
         std::filesystem::create_directories(root / "profiles");
-        SaveFile(etc / "yeetmouse.conf", ConfigHelper::ExportPlainText(setup.defaults, false));
+        SaveFile(root / DefaultFile, ConfigHelper::ExportPlainText(setup.defaults, false));
         for (const auto &[name, params] : setup.profiles)
             SaveFile(root / "profiles" / (name + ".conf"), WriteProfile(params));
         SaveFile(root / "devices.conf", WriteDevices(setup.devices));
@@ -1203,16 +1261,14 @@ namespace Profiles {
         } catch (const Refused &refused) {
             problems.push_back(refused.what());
         }
-        std::filesystem::path defaults = etc / "yeetmouse.conf";
+        std::filesystem::path defaults = root / DefaultFile;
         if (std::filesystem::exists(defaults)) {
-            std::ifstream stream(defaults);
-            static char lut_data[MAX_LUT_TEXT_LEN];
-            bool is_config_h = false;
-            auto params = ConfigHelper::ImportAny(stream, lut_data, is_config_h);
-            if (!params || is_config_h)
-                problems.push_back(defaults.string() + " is not a YeetMouse config");
-            else if (auto refusal = DefaultRefusal(*params))
-                problems.push_back(defaults.string() + " " + *refusal);
+            try {
+                if (auto refusal = DefaultRefusal(LoadDefaultFile(defaults)))
+                    problems.push_back(defaults.string() + " " + *refusal);
+            } catch (const Refused &refused) {
+                problems.push_back(refused.what());
+            }
         }
         return problems;
     }
