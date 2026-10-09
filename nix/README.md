@@ -471,6 +471,18 @@ sudo rm /etc/yeetmouse/default.conf
 sudo systemctl restart yeetmouse.service
 ```
 
+### A New Driver Without a Reboot
+
+After a rebuild, `modprobe` still loads modules from the system that booted, so the old driver comes
+back until the next boot, and `yeetmousectl status` and the GUI say to reboot. While the running
+kernel is the one the new system was built for, load the new driver from the new system instead:
+
+```sh
+sudo modprobe -r yeetmouse && sudo env MODULE_DIR=/run/current-system/kernel-modules/lib/modules modprobe yeetmouse
+```
+
+The udev rule then starts `yeetmouse.service`, which applies everything again.
+
 ### Per-game Profiles
 
 `yeetmousectl run <profile> -- <command>` runs a game on a profile, for example in Steam's launch

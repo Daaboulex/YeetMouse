@@ -127,7 +127,8 @@ static int OnGui() {
     /* ---------------------------- LEFT MODES WINDOW ---------------------------- */
     ImGui::SetNextWindowSizeConstraints({220, 0}, {FLT_MAX, FLT_MAX});
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-    if (ImGui::BeginChild("Modes", ImVec2(220, 0), ImGuiChildFlags_FrameStyle)) {
+    const float status_height = ImGui::GetFrameHeight();
+    if (ImGui::BeginChild("Modes", ImVec2(220, -status_height), ImGuiChildFlags_FrameStyle)) {
         ImGui::PopStyleColor();
         ImGui::Spacing();
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {12, 12});
@@ -158,7 +159,7 @@ static int OnGui() {
     /* ---------------------------- MIDDLE PARAMETERS WINDOW ---------------------------- */
     ImGui::SetNextWindowSizeConstraints({220, -1}, {420, FLT_MAX});
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-    if (ImGui::BeginChild("Parameters", ImVec2(220, -1), ImGuiChildFlags_FrameStyle | ImGuiChildFlags_ResizeX)) {
+    if (ImGui::BeginChild("Parameters", ImVec2(220, -status_height), ImGuiChildFlags_FrameStyle | ImGuiChildFlags_ResizeX)) {
         auto avail = ImGui::GetContentRegionAvail();
         ImGui::PopStyleColor();
         ImGui::Spacing();
@@ -629,7 +630,7 @@ static int OnGui() {
 
     ImPlot::SetNextAxesLimits(0, PLOT_X_RANGE, 0, 4);
     /* ---------------------------- FUNCTION PLOT ---------------------------- */
-    if (ImPlot::BeginPlot("Function Plot [Input / Output]", {-1, avail.y - 70})) {
+    if (ImPlot::BeginPlot("Function Plot [Input / Output]", {-1, avail.y - 70 - status_height})) {
         ImPlot::SetupAxis(ImAxis_X1, "Input Speed [counts / ms]");
         ImPlot::SetupAxis(ImAxis_Y1, "Output / Input Speed Ratio");
 
@@ -1176,7 +1177,7 @@ static int OnGui() {
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {10, 10});
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {10, 10});
-    if (ImGui::BeginChild("EndButtons", ImVec2(-1, -1), ImGuiChildFlags_FrameStyle)) {
+    if (ImGui::BeginChild("EndButtons", ImVec2(-1, -status_height), ImGuiChildFlags_FrameStyle)) {
         ImGui::PopStyleColor();
 
         ImGui::SetWindowFontScale(1.2f);
@@ -1194,36 +1195,36 @@ static int OnGui() {
                 ImGui::SetTooltip("%s", !blocked.empty() ? blocked.c_str() : done);
         };
         float third = avail.x / 3 - (ImGui::GetStyle().ItemSpacing.x * 2);
+        auto colored = [](bool active, float hue, const char *label, ImVec2 size) {
+            float saturation = active ? 0.78f : 0;
+            float value = active ? 0.78f : 0.3f;
+            ImGui::PushStyleColor(ImGuiCol_Button, ImColor::HSV(hue, saturation, value).Value);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImColor::HSV(hue, saturation * 0.92f, value * 1.08f).Value);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImColor::HSV(hue, saturation * 0.87f, value * 1.13f).Value);
+            ImGui::BeginDisabled(!active);
+            bool pressed = ImGui::Button(label, size);
+            ImGui::EndDisabled();
+            ImGui::PopStyleColor(3);
+            return pressed;
+        };
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImColor::HSV(0.975, 0.82, 0.8).Value);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImColor::HSV(0.975, 0.75, 0.8).Value);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImColor::HSV(0.975, 0.7, 0.8).Value);
-        ImGui::BeginDisabled(ProfilesGui::Saved());
-        if (ImGui::Button("Reset", {third, -1}))
+        bool can_reset = ProfilesGui::Unavailable().empty() && !ProfilesGui::Saved();
+        if (colored(can_reset, 0.975f, "Reset", {third, -1}))
             ProfilesGui::ResetEdited(LoadIntoEditor);
-        ImGui::EndDisabled();
-        ImGui::PopStyleColor(3);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("Back to the saved file");
+            ImGui::SetTooltip("%s", ProfilesGui::Unavailable().empty() ? "Back to the saved file"
+                                                                       : ProfilesGui::Unavailable().c_str());
 
         ImGui::SameLine();
 
-        ImGui::BeginDisabled(!blocked.empty() || ProfilesGui::Applied());
-        if (ImGui::Button("Apply", {third, -1}))
+        if (colored(blocked.empty() && !ProfilesGui::Applied(), 0.6f, "Apply", {third, -1}))
             ProfilesGui::ApplyEdited(edited);
-        ImGui::EndDisabled();
         explain("Use these settings now; the file stays as it is");
 
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImColor::HSV(0.3, 0.75, 0.76).Value);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImColor::HSV(0.3, 0.7, 0.8).Value);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImColor::HSV(0.3, 0.67, 0.83).Value);
-        ImGui::BeginDisabled(!blocked.empty() || ProfilesGui::Saved());
-        if (ImGui::Button("Save", {-1, -1}))
+        if (colored(blocked.empty() && !ProfilesGui::Saved(), 0.3f, "Save", {-1, -1}))
             ProfilesGui::SaveEdited(edited);
-        ImGui::EndDisabled();
-        ImGui::PopStyleColor(3);
         explain("Save to the file and use these settings");
 
         ImGui::SetWindowFontScale(1.f);
@@ -1233,6 +1234,8 @@ static int OnGui() {
     ImGui::EndChild();
 
     ImGui::EndGroup();
+
+    ProfilesGui::StatusBar();
 
     ProfilesGui::Popups(params[selected_mode], load_into_editor);
 

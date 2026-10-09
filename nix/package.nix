@@ -73,6 +73,7 @@ stdenv.mkDerivation rec {
       icon = pname;
       type = "Application";
       desktopName = "Yeetmouse GUI";
+      startupWMClass = "yeetmouse";
       comment = "Yeetmouse Configuration Tool";
       categories = [
         "Settings"

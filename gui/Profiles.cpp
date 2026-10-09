@@ -561,7 +561,7 @@ namespace Profiles {
                 if (version != StatusVersion)
                     throw Refused("the loaded driver reports status version " + std::to_string(version) +
                                   " and these tools read version " + std::to_string(StatusVersion) +
-                                  "; reboot after updating so the driver and the tools match");
+                                  "; reboot after updating so the driver and the tools match", EPROTO);
                 versioned = true;
             } else if (kind == "generation" && bare.size() == 1) {
                 status.generation = StatusNumber<uint64_t>(bare[0], 10, where);
@@ -629,6 +629,9 @@ namespace Profiles {
         int fd = open(DevicePath, O_RDONLY | O_CLOEXEC);
         if (fd < 0) {
             int error = errno;
+            if (error == ENOENT && std::filesystem::exists("/sys/module/yeetmouse"))
+                throw Refused("the loaded yeetmouse driver is older than these tools; reboot to load the new one",
+                              EPROTO);
             if (error == ENOENT)
                 throw Refused("the yeetmouse driver is not loaded", error);
             if (error == EACCES)
@@ -647,7 +650,7 @@ namespace Profiles {
                 close(fd);
                 if (error == EINVAL)
                     throw Refused("the loaded yeetmouse driver is older than these tools; reboot to load the new one",
-                                  error);
+                                  EPROTO);
                 if (error)
                     throw Refused(std::string("cannot read ") + DevicePath + ": " + std::strerror(error), error);
                 break;

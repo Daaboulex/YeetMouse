@@ -36,7 +36,7 @@ namespace ProfilesGui {
 
     void ResetEdited(const Load &load);
 
-    void Banner();
+    void StatusBar();
 
     void RawAccelMenu(const Parameters &current, const Load &load);
 

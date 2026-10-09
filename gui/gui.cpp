@@ -141,6 +141,10 @@ int GUI::Setup(int (*OnGui)())
     //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 #endif
 
+    glfwWindowHintString(GLFW_WAYLAND_APP_ID, "yeetmouse");
+    glfwWindowHintString(GLFW_X11_CLASS_NAME, "yeetmouse");
+    glfwWindowHintString(GLFW_X11_INSTANCE_NAME, "yeetmouse");
+
     // Create window with graphics context
     window = glfwCreateWindow(1280, 720, "Yeet Mouse", nullptr, nullptr);
     if (window == nullptr)

@@ -23,6 +23,7 @@ namespace ProfilesGui {
             Clock::time_point read;
             std::optional<Profiles::LiveStatus> status;
             std::string problem;
+            int problem_code = 0;
             std::vector<std::string> names;
             std::map<std::string, Parameters> files;
             std::map<std::string, std::string> broken;
@@ -67,6 +68,31 @@ namespace ProfilesGui {
 
         const ImVec4 Warning = ImVec4(1, 0.45f, 0.45f, 1);
         const ImVec4 Notice = ImVec4(1, 0.75f, 0.3f, 1);
+        const ImVec4 Good = ImVec4(0.45f, 0.85f, 0.5f, 1);
+        const ImVec4 Muted = ImVec4(0.65f, 0.65f, 0.65f, 1);
+        const ImVec4 Accent = ImVec4(0.4f, 0.7f, 1, 1);
+
+        void WrappedTooltip(const std::string &text) {
+            if (!text.empty() && ImGui::BeginItemTooltip()) {
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
+                ImGui::TextUnformatted(text.c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
+        }
+
+        const char *ShortProblem() {
+            switch (view.problem_code) {
+                case EPROTO:
+                    return "Reboot to load the new driver";
+                case ENOENT:
+                    return "Driver not loaded";
+                case EACCES:
+                    return "Not in the yeetmouse group";
+                default:
+                    return "Driver unreadable";
+            }
+        }
 
         void Refresh(bool force) {
             Clock::time_point now = Clock::now();
@@ -78,6 +104,7 @@ namespace ProfilesGui {
                 next.status = Profiles::DriverStatus();
             } catch (const Profiles::Refused &refused) {
                 next.problem = refused.what();
+                next.problem_code = refused.code;
             }
             try {
                 next.names = Profiles::ProfileNames(Profiles::Root);
@@ -574,22 +601,24 @@ namespace ProfilesGui {
         Refresh(true);
     }
 
-    void Banner() {
+    void StatusBar() {
+        ImGui::AlignTextToFramePadding();
+        auto item = [](const ImVec4 &color, const char *text, const std::string &tip) {
+            ImGui::TextColored(color, "%s", text);
+            WrappedTooltip(tip);
+            ImGui::SameLine(0, 24);
+        };
         if (!view.status) {
-            ImGui::PushTextWrapPos(0);
-            ImGui::TextColored(Warning, "%s", view.problem.c_str());
-            ImGui::PopTextWrapPos();
-            return;
+            item(Warning, ShortProblem(), view.problem);
+        } else {
+            item(Good, "Driver live", "Generation " + std::to_string(view.status->generation));
+            if (!view.status->claims.empty())
+                item(Notice, ("Game running: " + view.status->claims.back()).c_str(),
+                     "Its profile drives every mouse until the game exits");
+            if (view.status->defaultRefused)
+                item(Warning, "Default refused", *view.status->defaultRefused);
         }
-        if (!view.status->claims.empty()) {
-            ImGui::TextColored(Notice, "Game running: %s", view.status->claims.back().c_str());
-            ImGui::SetItemTooltip("Its profile drives every mouse until the game exits");
-        }
-        if (EditingDefault() && view.status->defaultRefused) {
-            ImGui::PushTextWrapPos(0);
-            ImGui::TextColored(Warning, "Refused: %s", view.status->defaultRefused->c_str());
-            ImGui::PopTextWrapPos();
-        }
+        ImGui::NewLine();
     }
 
     void RawAccelMenu(const Parameters &current, const Load &load) {
@@ -675,7 +704,8 @@ namespace ProfilesGui {
         if (!ImGui::BeginMenu("Devices"))
             return;
         if (!view.status) {
-            ImGui::TextDisabled("%s", view.problem.c_str());
+            ImGui::TextDisabled("%s", ShortProblem());
+            WrappedTooltip(view.problem);
             ImGui::EndMenu();
             return;
         }
@@ -752,7 +782,6 @@ namespace ProfilesGui {
     }
 
     void ProfilePicker(const Parameters &current, const Load &load) {
-        Banner();
         std::string preview = TargetLabel(editing_profile);
         if (ImGui::BeginCombo("##Profile", preview.c_str())) {
             if (ImGui::Selectable(TargetLabel("").c_str(), EditingDefault()) && !EditingDefault())
@@ -800,11 +829,19 @@ namespace ProfilesGui {
             if (params.accelMode != mode)
                 continue;
             listed = true;
-            ImGui::Indent();
-            if (ImGui::Selectable(name.c_str(), name == editing_profile) && name != editing_profile)
+            bool editing = name == editing_profile;
+            ImGui::Indent(14);
+            ImGui::PushStyleColor(ImGuiCol_Text, editing ? Accent : Muted);
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(1, 1, 1, 0.06f));
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(1, 1, 1, 0.1f));
+            ImGui::Bullet();
+            ImGui::SameLine();
+            if (ImGui::Selectable(name.c_str(), editing) && !editing)
                 RequestSwitch(name, load);
-            ImGui::SetItemTooltip("Open this saved profile");
-            ImGui::Unindent();
+            ImGui::PopStyleColor(4);
+            ImGui::SetItemTooltip(editing ? "Being edited" : "Open this saved profile");
+            ImGui::Unindent(14);
         }
         if (listed)
             ImGui::Dummy(ImVec2(0, 6));
