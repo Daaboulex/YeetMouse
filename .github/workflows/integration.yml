@@ -79,7 +79,7 @@ jobs:
             echo "a profile a running game claims was removed"
             exit 1
           fi
-          sudo pkill -KILL -f "yeetmousectl run probe"
+          sudo pkill -KILL -x -f "yeetmousectl run probe -- sleep 120"
           sleep 1
           sudo yeetmousectl profile remove probe
 
