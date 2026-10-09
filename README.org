@@ -54,7 +54,7 @@
    yeetmousectl save my-config.conf
    #+end_src
 
-   On systemd-based systems, the installed =yeetmouse.service= runs =yeetmousectl setup=, which moves an older =/etc/yeetmouse.conf= into =/etc/yeetmouse/default.conf= and links it, then applies the default config, loads the profiles and =devices.conf= into the driver, and records touchpad resolutions during boot.
+   On systemd-based systems, a udev rule gives =/dev/yeetmouse= to the =yeetmouse= group and starts =yeetmouse.service= whenever the driver loads, at boot or by hand. The service runs =yeetmousectl setup=, which moves an older =/etc/yeetmouse.conf= into =/etc/yeetmouse/default.conf= and links it, records touchpad resolutions, and runs =yeetmousectl load=. Unloading the module stops the service, so the next load applies everything again.
 
 ** Uninstallation
    If YeetMouse was installed system-wide, use:
@@ -117,8 +117,7 @@
    make pkgarch
    sudo pacman -U yeetmouse*.zst
    sudo modprobe yeetmouse
-   # Optional, if using YeetMouseGUI or the systemd service for the config in /etc/yeetmouse
-   sudo systemctl enable --now yeetmouse.service
+   # Loading the module starts yeetmouse.service through its udev rule
    sudo usermod -a -G yeetmouse <your user name>
    # Now log out and log in or alternatively restart your system
    #+end_src
@@ -162,10 +161,10 @@
    + the systemd service (if systemd is present),
    + and the GUI files if built/installed through the project Makefile.
 
-   If systemd is not present, you can still apply the config and load the profiles and =devices.conf= at boot using your init system:
+   If systemd is not present, run these after the module loads, from your init system:
    #+begin_src sh
+   chgrp yeetmouse /sys/module/yeetmouse/parameters/* /dev/yeetmouse
    /usr/bin/yeetmousectl setup /etc --seed /usr/share/yeetmouse
-   /usr/bin/yeetmousectl apply /etc/yeetmouse/default.conf
    /usr/bin/yeetmousectl load
    #+end_src
 
@@ -249,7 +248,7 @@
    yeetmousectl check
    #+end_src
 
-   =load= loads every profile and =devices.conf= into the driver, as the boot service does. A malformed or invalid line, or one whose profile did not load, is left out and named, and the other lines still load.
+   =load= applies the default config, then loads every profile and =devices.conf= into the driver, as the service does. Every step runs even when one fails, and the command exits 1 naming each failure; with a driver older than the tools it changes nothing and says to reboot. A malformed or invalid line, or one whose profile did not load, is left out and named, and the other lines still load.
    =check= validates the default config, the profiles and =devices.conf= with the driver's own checks, without touching the driver, and lists every problem.
    =yeetmousectl check <dir>= checks =<dir>/yeetmouse/= instead.
 
@@ -300,7 +299,7 @@
    #+end_src
 
    =touchpads= lists the connected touchpads with their resolution.
-   =--record= stores each touchpad's resolution in =/run/yeetmouse/touchpads=. It needs root, and the boot service runs it.
+   =--record= stores each touchpad's resolution in =/run/yeetmouse/touchpads=. It needs root, and the service runs it.
    =touchpad= samples a profile into KWin's curve for that touchpad. A profile that needs more than a single speed curve, such as one with smoothing, rotation, angle snapping or a separate vertical curve, is refused.
 
 * FAQ
@@ -314,7 +313,7 @@
   yeetmousectl apply /etc/yeetmouse/default.conf
   yeetmousectl load
   #+end_src
-- On systemd systems, the installed =yeetmouse.service= does both on boot.
+- On systemd systems, =yeetmouse.service= does both whenever the driver loads.
 - To export the currently active settings:
   #+begin_src sh
   yeetmousectl save my-config.conf

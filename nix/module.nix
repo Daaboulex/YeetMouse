@@ -731,13 +731,7 @@ in
         PATH=${makeBinPath [ pkgs.coreutils ]}
         install -d -m 2775 -g yeetmouse /etc/yeetmouse /etc/yeetmouse/profiles
         ${yeetmouse}/bin/yeetmousectl setup /etc --seed ${etc}/yeetmouse
-        for attempt in $(seq 1 50); do
-          if [ -e ${parameterBasePath}/update ] && [ -e /dev/yeetmouse ]; then
-            break
-          fi
-          sleep 0.1
-        done
-        chgrp yeetmouse ${parameterBasePath}/* /dev/yeetmouse
+        chgrp yeetmouse ${parameterBasePath}/*
       '';
     in
     {
@@ -753,20 +747,20 @@ in
       boot.kernelModules = [ "yeetmouse" ];
       environment.systemPackages = [ yeetmouse ];
       users.groups.yeetmouse = { };
+      services.udev.extraRules = ''
+        ACTION=="add", SUBSYSTEM=="misc", KERNEL=="yeetmouse", GROUP="yeetmouse", MODE="0660", TAG+="systemd", ENV{SYSTEMD_WANTS}+="yeetmouse.service"
+      '';
       systemd.services.yeetmouse = {
         description = "Apply YeetMouse configuration, profiles and devices";
-        wantedBy = [ "multi-user.target" ];
-        after = [ "systemd-modules-load.service" ];
-        wants = [ "systemd-modules-load.service" ];
-        unitConfig.ConditionPathExists = "/sys/module/yeetmouse";
+        bindsTo = [ "dev-yeetmouse.device" ];
+        after = [ "dev-yeetmouse.device" ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
           ExecStartPre = seed;
           ExecStart = [
-            "${yeetmouse}/bin/yeetmousectl apply /etc/yeetmouse/default.conf"
-            "${yeetmouse}/bin/yeetmousectl load"
             "-${yeetmouse}/bin/yeetmousectl touchpads --record"
+            "${yeetmouse}/bin/yeetmousectl load"
           ];
         };
       };

@@ -35,33 +35,32 @@ static std::optional<Parameters> ReadConfig(const std::string &file) {
     return parsed;
 }
 
+static std::optional<std::string> MakeDefaultLive(Parameters params, const std::string &file) {
+    if (auto refusal = Profiles::DefaultRefusal(params))
+        return file + " " + *refusal;
+    if (params.SaveAll())
+        return std::nullopt;
+    try {
+        Profiles::LiveStatus status = Profiles::DriverStatus();
+        if (status.defaultRefused)
+            return file + " was not applied: the driver refused it: " + *status.defaultRefused;
+        return file + " was not applied: the parameters under " YEETMOUSE_PARAMS_DIR " could not be written";
+    } catch (const Profiles::Refused &refused) {
+        return file + " was not applied: " + refused.what();
+    }
+}
+
 static int ApplyConfig(const std::string &file) {
     auto parsed = ReadConfig(file);
 
     if (!parsed)
         return 1;
 
-    Parameters params = *parsed;
-
-    if (auto refusal = Profiles::DefaultRefusal(params)) {
-        std::cerr << file << " " << *refusal << std::endl;
-        return 1;
-    }
-
     std::optional<Profiles::SetupLock> lock;
     if (std::filesystem::is_directory(Profiles::Root))
         lock.emplace(Profiles::Root);
-    if (!params.SaveAll()) {
-        std::cerr << "Not applied: ";
-        try {
-            Profiles::LiveStatus status = Profiles::DriverStatus();
-            if (status.defaultRefused)
-                std::cerr << "the driver refused it: " << *status.defaultRefused << std::endl;
-            else
-                std::cerr << "the parameters under " << YEETMOUSE_PARAMS_DIR << " could not be written" << std::endl;
-        } catch (const Profiles::Refused &refused) {
-            std::cerr << refused.what() << std::endl;
-        }
+    if (auto problem = MakeDefaultLive(*parsed, file)) {
+        std::cerr << *problem << std::endl;
         return 1;
     }
 
@@ -124,13 +123,29 @@ static int Failed(const std::exception &error) {
 }
 
 static int LoadAll() {
+    std::vector<std::string> problems;
     try {
         Profiles::SetupLock lock(Profiles::Root);
-        Profiles::DriverLoadAll(Profiles::Root);
+        Profiles::DriverStatus();
+        try {
+            if (auto problem = MakeDefaultLive(Profiles::LoadDefaultFile(Profiles::DefaultPath), DefaultConfigPath))
+                problems.push_back(*problem);
+        } catch (const Profiles::Refused &refused) {
+            problems.push_back(refused.what());
+        }
+        try {
+            Profiles::DriverLoadAll(Profiles::Root);
+        } catch (const Profiles::Refused &refused) {
+            problems.push_back(refused.what());
+        }
     } catch (const Profiles::Refused &refused) {
-        return Failed(refused);
+        problems.push_back(refused.what());
     }
-    std::cout << "Profiles and devices loaded." << std::endl;
+    for (const std::string &problem : problems)
+        std::cerr << problem << std::endl;
+    if (!problems.empty())
+        return 1;
+    std::cout << "Default config, profiles and devices loaded." << std::endl;
     return 0;
 }
 

@@ -35,6 +35,9 @@ jobs:
           test -f /etc/yeetmouse/default.conf
           test "$(readlink /etc/yeetmouse.conf)" = yeetmouse/default.conf
           test -f /usr/lib/systemd/system/yeetmouse.service
+          test -f /usr/lib/udev/rules.d/99-yeetmouse.rules
+          test "$(stat -c %G /dev/yeetmouse)" = yeetmouse
+          systemctl is-active --quiet yeetmouse.service
           [[ "$(sudo yeetmousectl dump)" == *accelMode=* ]]
 
       - name: Check the driver holds exactly the default written to it
@@ -46,6 +49,19 @@ jobs:
           fi
           sudo cp tests/fixtures/distinct-default.conf /etc/yeetmouse/default.conf
           sudo yeetmousectl apply /etc/yeetmouse/default.conf
+          sudo yeetmousectl status
+
+      - name: Check a module reload applies everything again
+        run: |
+          sudo modprobe -r yeetmouse
+          sudo udevadm settle
+          if systemctl is-active --quiet yeetmouse.service; then
+            echo "the service outlived the module"
+            exit 1
+          fi
+          sudo modprobe yeetmouse
+          sudo udevadm settle
+          sudo systemctl start yeetmouse.service
           sudo yeetmousectl status
 
       - name: Check profiles, devices and a killed game's claim on the live driver

@@ -37,7 +37,8 @@ in your `flake.nix` file.
 
 This will expose a new `hardware.yeetmouse` configuration option in your NixOS system's `config`.
 Enabling it installs and loads the `yeetmouse` driver, installs `yeetmousectl` and the GUI, creates
-the `yeetmouse` group, and adds `yeetmouse.service`, which seeds and applies the configuration at boot.
+the `yeetmouse` group, and adds `yeetmouse.service`, which seeds and applies the configuration whenever
+the driver loads.
 
 ```nix
 {
@@ -53,8 +54,8 @@ Then, rebuild and switch into your new system (using `nixos-rebuild`). After a r
 The options reach `/etc/yeetmouse/default.conf` only while that file does not exist yet, as described in
 [Seeding and the Boot Service](#seeding-and-the-boot-service).
 
-The GUI runs without root. The boot service hands the driver's parameters, `/dev/yeetmouse` and the
-seeded files to the `yeetmouse` group, so add your user to that group and log in again for the
+The GUI runs without root. The udev rule and the service hand `/dev/yeetmouse`, the driver's parameters
+and the seeded files to the `yeetmouse` group, so add your user to that group and log in again for the
 membership to apply:
 
 ```nix
@@ -120,10 +121,9 @@ in {
 }
 ```
 
-The package ships no udev rules and nothing in this setup applies a config at boot. The
-`systemd.services.yeetmouse` unit in `module.nix` shows what the module adds. It seeds `/etc`, runs
-`yeetmousectl apply /etc/yeetmouse/default.conf` and `yeetmousectl load`, and hands the driver's parameters
-and `/dev/yeetmouse` to the `yeetmouse` group.
+The package alone ships no udev rule and applies nothing. The module adds the one udev rule, which
+gives `/dev/yeetmouse` to the `yeetmouse` group and starts `yeetmouse.service` whenever the driver loads;
+the service seeds `/etc`, hands the driver's parameters to the group and runs `yeetmousectl load`.
 
 Since the `pkgs.yeetmouse` package contains a kernel module, it'll be built against a specific version
 of the Linux kernel. By default this will be `pkgs.linuxPackages.kernel`, the default version in nixpkgs.
@@ -455,12 +455,13 @@ exactly fails the build.
 
 ### Seeding and the Boot Service
 
-`yeetmouse.service` runs at boot. It creates `/etc/yeetmouse` and `/etc/yeetmouse/profiles` for the
+`yeetmouse.service` runs whenever the driver loads, at boot or after a reload by hand, and stops when
+the module is unloaded. It creates `/etc/yeetmouse` and `/etc/yeetmouse/profiles` for the
 `yeetmouse` group and runs `yeetmousectl setup`, which moves an older `/etc/yeetmouse.conf` into
 `/etc/yeetmouse/default.conf`, links the old path to it, and copies each file from the options above
 into place only when that file does not exist yet, so the GUI owns the files afterwards. It then runs
-`yeetmousectl apply /etc/yeetmouse/default.conf`, `yeetmousectl load` and
-`yeetmousectl touchpads --record`.
+`yeetmousectl touchpads --record` and `yeetmousectl load`, which applies the default config, the
+profiles and `devices.conf`, each step on its own, and fails the unit if any of them fails.
 
 A changed option therefore does not overwrite a file that is already there. To take the new value,
 remove the file and restart the service:
@@ -486,4 +487,4 @@ when the game exits or the wrapper is killed, and the saved curves return.
 
 The GUI writes `/etc/yeetmouse/default.conf`, the profiles and `devices.conf` itself, as a member of
 the `yeetmouse` group, so nothing asks for a password and no polkit rule is involved. Touchpad
-resolutions are recorded by the boot service.
+resolutions are recorded by the service.

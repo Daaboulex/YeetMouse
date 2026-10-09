@@ -153,38 +153,32 @@ fi
 DKMS_MODULE_INSTALLED=1
 sudo dkms install -m "$DKMS_NAME" -v "$DKMS_VER"
 
-# Reload module if needed
-sudo modprobe -r yeetmouse 2>/dev/null || true
-sudo modprobe yeetmouse
-
-if getent group yeetmouse >/dev/null 2>&1 && [[ -d /sys/module/yeetmouse/parameters ]]; then
-	sudo chown root:yeetmouse /sys/module/yeetmouse/parameters/* || true
-	sudo chmod 0660 /sys/module/yeetmouse/parameters/* || true
-	sudo chown root:yeetmouse /dev/yeetmouse
-fi
-
 if command -v systemd-tmpfiles >/dev/null 2>&1; then
 	sudo systemd-tmpfiles --create /usr/lib/tmpfiles.d/yeetmouse.conf
 else
 	sudo install -d -m 2775 -g yeetmouse /etc/yeetmouse /etc/yeetmouse/profiles
 fi
-sudo /usr/bin/yeetmousectl setup /etc --seed /usr/share/yeetmouse
 
-sudo /usr/bin/yeetmousectl apply /etc/yeetmouse/default.conf
+if [[ -d /sys/module/yeetmouse ]]; then
+	sudo modprobe -r yeetmouse
+fi
 
-# Enable boot-time config apply on systemd systems
 if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
 	sudo systemctl daemon-reload
-	sudo systemctl enable yeetmouse.service
-	sudo systemctl restart yeetmouse.service || true
+	sudo udevadm control --reload-rules
+	sudo modprobe yeetmouse
+	sudo udevadm settle
+	sudo systemctl start yeetmouse.service
 else
-	echo "systemd not detected; installed driver and yeetmousectl, but did not enable a boot-time service."
-	echo "To persist settings, profiles and devices across reboot on this system, run:"
-	echo "  chown root:yeetmouse /sys/module/yeetmouse/parameters/* /dev/yeetmouse"
+	sudo modprobe yeetmouse
+	sudo chgrp yeetmouse /sys/module/yeetmouse/parameters/* /dev/yeetmouse
+	sudo /usr/bin/yeetmousectl setup /etc --seed /usr/share/yeetmouse
+	sudo /usr/bin/yeetmousectl load
+	echo "systemd not detected; the driver and yeetmousectl are installed, without a boot-time service."
+	echo "Run these after the yeetmouse module loads, from your init system's startup mechanism:"
+	echo "  chgrp yeetmouse /sys/module/yeetmouse/parameters/* /dev/yeetmouse"
 	echo "  /usr/bin/yeetmousectl setup /etc --seed /usr/share/yeetmouse"
-	echo "  /usr/bin/yeetmousectl apply /etc/yeetmouse/default.conf"
 	echo "  /usr/bin/yeetmousectl load"
-	echo "from your init system's startup mechanism, after the yeetmouse module is loaded."
 fi
 
 trap - ERR

@@ -156,10 +156,11 @@ install_config:
 install_service:
 	@echo -e "\n::\033[34m Installing systemd service\033[0m"
 	@echo "====================================================="
-	install -m 755 -v -d $(DESTDIR)/usr/lib/{systemd/system,sysusers.d,tmpfiles.d}
+	install -m 755 -v -d $(DESTDIR)/usr/lib/{systemd/system,sysusers.d,tmpfiles.d,udev/rules.d}
 	install -m 644 -v install_files/systemd/yeetmouse.service $(DESTDIR)/usr/lib/systemd/system/yeetmouse.service
 	install -m 644 -v install_files/sysusers/yeetmouse.conf   $(DESTDIR)/usr/lib/sysusers.d/yeetmouse.conf
 	install -m 644 -v install_files/tmpfiles/yeetmouse.conf   $(DESTDIR)/usr/lib/tmpfiles.d/yeetmouse.conf
+	install -m 644 -v install_files/udev/99-yeetmouse.rules   $(DESTDIR)/usr/lib/udev/rules.d/99-yeetmouse.rules
 
 remove_service:
 	@echo -e "\n::\033[34m Removing systemd service\033[0m"
@@ -167,6 +168,7 @@ remove_service:
 	rm -f $(DESTDIR)/usr/lib/systemd/system/yeetmouse.service
 	rm -f $(DESTDIR)/usr/lib/sysusers.d/yeetmouse.conf
 	rm -f $(DESTDIR)/usr/lib/tmpfiles.d/yeetmouse.conf
+	rm -f $(DESTDIR)/usr/lib/udev/rules.d/99-yeetmouse.rules
 	rm -rf $(DESTDIR)/usr/share/yeetmouse
 
 remove_dkms:
