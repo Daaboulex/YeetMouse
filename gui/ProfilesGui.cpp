@@ -342,7 +342,7 @@ namespace ProfilesGui {
         std::string text = Canonical(edited, false);
         if (text != checked) {
             checked = text;
-            result = Profiles::DriverRefusal(edited, EditingDefault() ? "default" : editing_profile);
+            result = EditingDefault() ? Profiles::DefaultRefusal(edited) : Profiles::DriverRefusal(edited, editing_profile);
         }
         return result;
     }

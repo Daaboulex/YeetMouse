@@ -4,10 +4,6 @@
 #include "FixedMath/Fixed64.h"
 #include "FixedMath/FixedUtil.h"
 
-#ifdef TEST_ENV
-char yeetmouse_driver_message[256];
-#endif
-
 #define EXP_ARG_THRESHOLD 16ll
 
 static void synchronous_build_lut(struct accel_curve *c);
@@ -152,7 +148,9 @@ static FP_LONG curve_at_zero(const struct accel_curve *c) {
 }
 
 // Recalculate new modes constants
-static void update_curve_constants(struct accel_curve *c) {
+static const char *update_curve_constants(struct accel_curve *c) {
+    const char *problem = NULL;
+
     // General
     c->k.accel_sub_1 = FP64_Sub(c->acceleration, FP64_1);
     c->k.exp_sub_1 = FP64_Sub(c->exponent, FP64_1);
@@ -164,7 +162,7 @@ static void update_curve_constants(struct accel_curve *c) {
     // Synchronous
     if (c->mode == AccelMode_Synchronous) {
         if (c->motivity <= FP64_1) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Synchronous' is not supported for motivity 1.\n");
+            problem = "Acceleration mode 'Synchronous' is not supported for a motivity not above 1";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -191,7 +189,7 @@ static void update_curve_constants(struct accel_curve *c) {
     // Linear
     if (c->mode == AccelMode_Linear) {
         if (c->acceleration == 0) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Linear' is not supported for acceleration 0.\n");
+            problem = "Acceleration mode 'Linear' is not supported for acceleration 0";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -218,15 +216,15 @@ static void update_curve_constants(struct accel_curve *c) {
     // Classic
     if (c->mode == AccelMode_Classic) {
         if (c->use_smoothing && (c->exponent == 0 || c->k.exp_sub_1 == 0)) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Classic' is not supported for exponent 0 or 1 while using the the smooth cap.\n");
+            problem = "Acceleration mode 'Classic' is not supported for exponent 0 or 1 while using the smooth cap";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         } else if (c->input_offset < 0 || c->legacy_cap < 0) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Classic' is not supported for a negative input offset or legacy cap.\n");
+            problem = "Acceleration mode 'Classic' is not supported for a negative input offset or legacy cap";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         } else if (!classic_constants(c)) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Classic' is not supported for a cap whose constants leave the fixed-point range.\n");
+            problem = "Acceleration mode 'Classic' is not supported for a cap whose constants leave the fixed-point range";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -235,12 +233,12 @@ static void update_curve_constants(struct accel_curve *c) {
     // Natural
     if (c->mode == AccelMode_Natural) {
         if (c->k.exp_sub_1 == 0 || c->exponent == FP64_1) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Natural' is not supported for exponent 1.\n");
+            problem = "Acceleration mode 'Natural' is not supported for exponent 1";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
-        if (c->acceleration == 0) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Natural' is not supported for acceleration 0.\n");
+        else if (c->acceleration == 0) {
+            problem = "Acceleration mode 'Natural' is not supported for acceleration 0";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -253,7 +251,7 @@ static void update_curve_constants(struct accel_curve *c) {
     // Jump
     if (c->mode == AccelMode_Jump) {
         if (c->midpoint == 0) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Jump' is not supported for midpoint 0.\n");
+            problem = "Acceleration mode 'Jump' is not supported for midpoint 0";
             c->midpoint = FP64_1;
             c->acceleration = 0;
             c->mode = AccelMode_Current;
@@ -280,13 +278,13 @@ static void update_curve_constants(struct accel_curve *c) {
 
     // Power
     if (c->mode == AccelMode_Power && c->legacy_cap < 0) {
-        pr_err("YeetMouse: Error: Acceleration mode 'Power' is not supported for a negative legacy cap.\n");
+        problem = "Acceleration mode 'Power' is not supported for a negative legacy cap";
         c->acceleration = 0;
         c->mode = AccelMode_Current;
     }
     if (c->mode == AccelMode_Power) {
         if (c->exponent == 0 || c->exponent == -FP64_1 || c->acceleration == 0) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Power' is not supported for exponent 0 or -1 or acceleration 0.\n");
+            problem = "Acceleration mode 'Power' is not supported for exponent 0 or -1 or acceleration 0";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -295,12 +293,12 @@ static void update_curve_constants(struct accel_curve *c) {
             c->k.power_constant = 0;
         }
         else if ((c->midpoint >= c->motivity) && c->use_smoothing) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Power' is not supported for output offsets higher than the smooth cap.\n");
+            problem = "Acceleration mode 'Power' is not supported for output offsets higher than the smooth cap";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
         else if (!power_constants(c)) {
-            pr_err("YeetMouse: Error: Acceleration mode 'Power' is not supported for an output offset or smooth cap whose constants leave the fixed-point range.\n");
+            problem = "Acceleration mode 'Power' is not supported for an output offset or smooth cap whose constants leave the fixed-point range";
             c->acceleration = 0;
             c->mode = AccelMode_Current;
         }
@@ -308,18 +306,20 @@ static void update_curve_constants(struct accel_curve *c) {
 
     // Lut (Validation)
     if (c->mode == AccelMode_Lut || c->mode == AccelMode_CustomCurve) {
-        if (c->lut_size <= 1 || c->lut_x[c->lut_size-1] == c->lut_x[c->lut_size-2])
+        if (c->lut_size <= 1 || c->lut_x[c->lut_size-1] == c->lut_x[c->lut_size-2]) {
             c->mode = AccelMode_Current;
+            problem = "Acceleration mode 'LUT' is not supported for fewer than two points or two last points at one speed";
+        }
         else if (c->lut_velocity && c->lut_x[0] <= 0) {
             c->mode = AccelMode_Current;
-            pr_err("YeetMouse: Error: Acceleration mode 'LUT' is not supported for velocity values whose first speed is not positive.\n");
+            problem = "Acceleration mode 'LUT' is not supported for velocity values whose first speed is not positive";
         }
 
         // Check if LUT_x is sorted
         for (int i = 1; i < c->lut_size; i++) {
             if (c->lut_x[i - 1] > c->lut_x[i]) {
                 c->mode = AccelMode_Current;
-                pr_err("YeetMouse: Error: Acceleration mode 'LUT' is not supported for unsorted LUT_x.\n");
+                problem = "Acceleration mode 'LUT' is not supported for unsorted LUT_x";
                 break;
             }
         }
@@ -327,6 +327,7 @@ static void update_curve_constants(struct accel_curve *c) {
 
     c->k.current_func_at_0 = accel_curve_eval(c, FP64_0_01);
     c->k.zero_scale = curve_at_zero(c);
+    return problem;
 }
 
 static FP_LONG cutoff_log2(FP_LONG window_log2) {
@@ -341,7 +342,9 @@ static void smoothing_constants(struct accel_smoothing *k, FP_LONG half_life, FP
     k->cutoff_trend_log2 = cutoff_log2(k->window_trend_log2);
 }
 
-void update_profile_constants(struct accel_profile *p) {
+const char *update_profile_constants(struct accel_profile *p) {
+    const char *problem, *vertical = NULL;
+
     smoothing_constants(&p->input_k, p->input_half_life, C0NST_FP64_FromDouble(1.25));
     smoothing_constants(&p->scale_k, p->scale_half_life, 0);
     smoothing_constants(&p->output_k, p->output_half_life, C0NST_FP64_FromDouble(0.7));
@@ -349,9 +352,9 @@ void update_profile_constants(struct accel_profile *p) {
     p->lp_mode = p->lp_norm == FP64_FromInt(2) || p->lp_norm < FP64_1 ? LP_EUCLIDEAN : p->lp_norm >= FP64_FromInt(16) ? LP_MAX : LP_GENERAL;
     p->lp_inverse = p->lp_mode == LP_GENERAL ? FP64_DivPrecise(FP64_1, p->lp_norm) : 0;
 
-    update_curve_constants(&p->x);
+    problem = update_curve_constants(&p->x);
     if (p->by_component)
-        update_curve_constants(&p->y);
+        vertical = update_curve_constants(&p->y);
 
     // Rotation (precalculate the trig. functions)
     p->sin_a = FP64_Sin(p->rotation_angle);
@@ -362,6 +365,7 @@ void update_profile_constants(struct accel_profile *p) {
     p->as_half_threshold = FP64_DivPrecise(p->angle_snap_threshold, 2ll << FP64_Shift);
 
     p->is_init = 1;
+    return problem ? problem : vertical;
 }
 
 static FP_LONG synchronous_legacy(const struct accel_curve *c, FP_LONG x) {

@@ -101,6 +101,7 @@ struct accel_profile {
     char clock_on_any_report;
 
     bool is_init;
+    unsigned long long digest;
 };
 
 struct accel_device {
@@ -130,7 +131,7 @@ static const FP_LONG FP64_100     = 100ll << FP64_Shift;
 static const FP_LONG FP64_1000    = 1000ll << FP64_Shift;
 static const FP_LONG FP64_10000   = 10000ll << FP64_Shift;
 
-void update_profile_constants(struct accel_profile *p);
+const char *update_profile_constants(struct accel_profile *p);
 
 FP_LONG accel_linear(const struct accel_curve *c, FP_LONG speed);
 FP_LONG accel_power(const struct accel_curve *c, FP_LONG speed);

@@ -13,10 +13,15 @@ _Static_assert(sizeof(struct yeetmouse_profile_args) == 8536, "the profile ABI m
 _Static_assert(sizeof(struct yeetmouse_device_args) == 64, "the device ABI must have no implicit padding");
 _Static_assert(sizeof(struct yeetmouse_devices_args) == 2056, "the device table ABI must have no implicit padding");
 
-static int curve_from_args(struct accel_curve *curve, const struct yeetmouse_curve_args *args) {
-    if (args->mode >= AccelMode_Count || args->use_smoothing > 1 || args->lut_velocity > 1 || args->reserved != 0 ||
-        args->lut_size > YEETMOUSE_LUT_POINTS)
-        return -EINVAL;
+static const char *curve_from_args(struct accel_curve *curve, const struct yeetmouse_curve_args *args) {
+    if (args->mode >= AccelMode_Count)
+        return "the acceleration mode is not known";
+    if (args->use_smoothing > 1 || args->lut_velocity > 1)
+        return "a curve flag is not 0 or 1";
+    if (args->reserved != 0)
+        return "a reserved curve field is set";
+    if (args->lut_size > YEETMOUSE_LUT_POINTS)
+        return "the lookup table holds more than 257 points";
 
     curve->mode = (char) args->mode;
     curve->use_smoothing = (char) args->use_smoothing;
@@ -30,21 +35,26 @@ static int curve_from_args(struct accel_curve *curve, const struct yeetmouse_cur
     curve->lut_velocity = (char) args->lut_velocity;
     memcpy(curve->lut_x, args->lut_x, sizeof(curve->lut_x));
     memcpy(curve->lut_y, args->lut_y, sizeof(curve->lut_y));
-    return 0;
+    return NULL;
 }
 
-int profile_from_args(struct accel_profile *profile, const struct yeetmouse_profile_args *args) {
+const char *profile_from_args(struct accel_profile *profile, const struct yeetmouse_profile_args *args) {
+    const char *problem;
     unsigned int i;
 
     memset(profile, 0, sizeof(*profile));
-    if (!yeetmouse_name_valid(args->name) || args->by_component > 1 || args->truncate_carry > 1 ||
-        args->clock_on_any_report > 1)
-        return -EINVAL;
+    if (!yeetmouse_name_valid(args->name))
+        return "the profile name is not valid";
+    if (args->by_component > 1 || args->truncate_carry > 1 || args->clock_on_any_report > 1)
+        return "a profile flag is not 0 or 1";
     for (i = 0; i < sizeof(args->reserved); i++)
         if (args->reserved[i] != 0)
-            return -EINVAL;
-    if (curve_from_args(&profile->x, &args->x) || curve_from_args(&profile->y, &args->y))
-        return -EINVAL;
+            return "a reserved profile field is set";
+    problem = curve_from_args(&profile->x, &args->x);
+    if (!problem)
+        problem = curve_from_args(&profile->y, &args->y);
+    if (problem)
+        return problem;
 
     profile->by_component = (char) args->by_component;
     profile->sensitivity = args->sensitivity;
@@ -70,16 +80,20 @@ int profile_from_args(struct accel_profile *profile, const struct yeetmouse_prof
     profile->truncate_carry = (char) args->truncate_carry;
     profile->clock_on_any_report = (char) args->clock_on_any_report;
 
-    if (!accel_angle_snap_valid(profile->angle_snap_threshold) ||
-        !accel_weights_valid(profile->lp_norm, profile->domain_x, profile->domain_y, profile->range_x, profile->range_y) ||
-        !accel_half_lives_valid(profile->input_half_life, profile->scale_half_life, profile->output_half_life) ||
-        !accel_snap_valid(profile->axis_snap, profile->speed_clamp, profile->ratio_lr, profile->ratio_ud))
-        return -EINVAL;
+    if (!accel_angle_snap_valid(profile->angle_snap_threshold))
+        return "AngleSnap_Threshold must lie in [0, pi)";
+    if (!accel_weights_valid(profile->lp_norm, profile->domain_x, profile->domain_y, profile->range_x, profile->range_y))
+        return "LpNorm must be at least 1, the domain weights above 0 and the range weights not below 0";
+    if (!accel_half_lives_valid(profile->input_half_life, profile->scale_half_life, profile->output_half_life))
+        return "smoothing half-lives must not be negative";
+    if (!accel_snap_valid(profile->axis_snap, profile->speed_clamp, profile->ratio_lr, profile->ratio_ud))
+        return "AxisSnap must lie in [0, pi/4], SpeedClamp not below 0 and RatioLR and RatioUD above 0";
 
-    update_profile_constants(profile);
-    if (profile->x.mode != (char) args->x.mode || (profile->by_component && profile->y.mode != (char) args->y.mode))
-        return -EINVAL;
-    return 0;
+    problem = update_profile_constants(profile);
+    if (problem)
+        return problem;
+    profile->digest = yeetmouse_digest(args, sizeof(*args));
+    return NULL;
 }
 
 int table_find(const struct profile_table *table, const char *name) {
@@ -101,22 +115,25 @@ static const struct device_line *table_line(const struct profile_table *table, _
 }
 
 struct table_choice table_resolve(const struct profile_table *table, const struct device_path *path) {
-    struct table_choice choice = {false, NULL, NULL};
+    struct table_choice choice = {false, false, -1, NULL, NULL, NULL};
     const struct device_line *line = table_line(table, path->vendor, path->product);
 
     if (!line && path->through_receiver)
         line = table_line(table, path->receiver_vendor, path->receiver_product);
+    choice.line = line;
 
     if (line && line->disabled) {
         choice.disabled = true;
         return choice;
     }
-    if (line) {
-        choice.device = &line->device;
-        choice.profile = table->profiles[line->profile].profile;
+    if (line)
+        choice.slot = line->profile;
+    if (table->claim_count > 0) {
+        choice.claimed = true;
+        choice.slot = table->claims[table->claim_count - 1].profile;
     }
-    if (table->claim_count > 0)
-        choice.profile = table->profiles[table->claims[table->claim_count - 1].profile].profile;
+    choice.profile = choice.slot >= 0 ? table->profiles[choice.slot].profile : table->default_profile;
+    choice.device = line ? &line->device : &table->default_device;
     return choice;
 }
 

@@ -2,11 +2,11 @@
 
 #include "accel.h"
 #include "profiles.h"
-#include "util.h"
 #include <linux/hid.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/version.h>
 #include <linux/usb/input.h>
@@ -298,19 +298,70 @@ struct input_handler driver_handler = {
     .match = driver_match
 };
 
+struct status_walk {
+    struct seq_file *m;
+    const struct profile_table *table;
+};
+
+static int mouse_status(struct input_handle *handle, void *data) {
+    struct status_walk *walk = data;
+    const struct device_path *path = &((const struct mouse_state *) handle->private)->accel.path;
+    struct table_choice choice = table_resolve(walk->table, path);
+
+    seq_printf(walk->m, "mouse %04x:%04x", path->vendor, path->product);
+    if (path->through_receiver)
+        seq_printf(walk->m, " receiver=%04x:%04x", path->receiver_vendor, path->receiver_product);
+    if (choice.line)
+        seq_printf(walk->m, " line=%04x:%04x", choice.line->vendor, choice.line->product);
+    if (choice.disabled)
+        seq_puts(walk->m, " disabled");
+    else if (choice.slot >= 0)
+        seq_printf(walk->m, " profile=%s", walk->table->profiles[choice.slot].name);
+    else
+        seq_puts(walk->m, " default");
+    if (choice.claimed)
+        seq_puts(walk->m, " claimed");
+    seq_puts(walk->m, " name=");
+    seq_escape(walk->m, handle->dev->name ?: "unknown", "\\\n");
+    seq_putc(walk->m, '\n');
+    return 0;
+}
+
+void mice_status(struct seq_file *m, const struct profile_table *table) {
+    struct status_walk walk = {m, table};
+
+    input_handler_for_each_handle(&driver_handler, &walk, mouse_status);
+}
+
 static int __init yeetmouse_init(void) {
     int error = profiles_init();
 
     if (error)
         return error;
+    error = accel_init();
+    if (error)
+        goto exit_profiles;
     error = input_register_handler(&driver_handler);
     if (error)
-        profiles_exit();
+        goto exit_accel;
+    error = profiles_register();
+    if (error)
+        goto unregister_handler;
+    return 0;
+
+unregister_handler:
+    input_unregister_handler(&driver_handler);
+exit_accel:
+    accel_exit();
+exit_profiles:
+    profiles_exit();
     return error;
 }
 
 static void __exit yeetmouse_exit(void) {
+    profiles_unregister();
     input_unregister_handler(&driver_handler);
+    accel_exit();
     profiles_exit();
 }
 

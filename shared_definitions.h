@@ -88,6 +88,12 @@ static inline const char *yeetmouse_times_problem(__s64 min_time, __s64 max_time
     return NULL;
 }
 
+static inline const char *yeetmouse_scaling_problem(__s64 pre_scale, __s64 min_time, __s64 max_time, bool fixed_time) {
+    if (pre_scale <= 0)
+        return "preScale is not above 0";
+    return yeetmouse_times_problem(min_time, max_time, fixed_time);
+}
+
 static inline const char *yeetmouse_device_problem(const struct yeetmouse_device_args *device) {
     if (device->disabled > 1 || device->fixed_time > 1 || device->reserved[0] != 0 || device->reserved[1] != 0)
         return "a flag is out of range";
@@ -95,9 +101,23 @@ static inline const char *yeetmouse_device_problem(const struct yeetmouse_device
         return device->profile[0] != '\0' ? "a disabled mouse names a profile" : NULL;
     if (!yeetmouse_name_valid(device->profile))
         return "the profile name is not valid";
-    if (device->pre_scale <= 0)
-        return "preScale is not above 0";
-    return yeetmouse_times_problem(device->min_time, device->max_time, device->fixed_time);
+    return yeetmouse_scaling_problem(device->pre_scale, device->min_time, device->max_time, device->fixed_time);
+}
+
+static inline bool yeetmouse_mode_uses_lut(unsigned int mode) {
+    return mode == AccelMode_Lut || mode == AccelMode_CustomCurve;
+}
+
+static inline __u64 yeetmouse_digest(const void *data, size_t size) {
+    const unsigned char *bytes = (const unsigned char *) data;
+    __u64 digest = 0xcbf29ce484222325ull;
+    size_t i;
+
+    for (i = 0; i < size; i++) {
+        digest ^= bytes[i];
+        digest *= 0x100000001b3ull;
+    }
+    return digest;
 }
 
 #define YEETMOUSE_IOCTL_LOAD_PROFILE _IOW('Y', 0x40, struct yeetmouse_profile_args)

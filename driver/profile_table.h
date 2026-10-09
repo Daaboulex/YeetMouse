@@ -27,6 +27,8 @@ struct profile_claim {
 
 struct profile_table {
     __u64 generation;
+    struct accel_profile *default_profile;
+    struct accel_device default_device;
     struct profile_slot profiles[YEETMOUSE_MAX_PROFILES];
     struct device_line devices[YEETMOUSE_MAX_DEVICES];
     struct profile_claim claims[YEETMOUSE_MAX_CLAIMS];
@@ -40,12 +42,14 @@ struct device_path {
 };
 
 struct table_choice {
-    bool disabled;
+    bool disabled, claimed;
+    int slot;
+    const struct device_line *line;
     const struct accel_profile *profile;
     const struct accel_device *device;
 };
 
-int profile_from_args(struct accel_profile *profile, const struct yeetmouse_profile_args *args);
+const char *profile_from_args(struct accel_profile *profile, const struct yeetmouse_profile_args *args);
 
 int table_find(const struct profile_table *table, const char *name);
 

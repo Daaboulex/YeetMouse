@@ -43,6 +43,11 @@ static int ApplyConfig(const std::string &file) {
 
     Parameters params = *parsed;
 
+    if (auto refusal = Profiles::DefaultRefusal(params)) {
+        std::cerr << file << " " << *refusal << std::endl;
+        return 1;
+    }
+
     if (!params.SaveAll()) {
         std::cerr << "Failed to write the driver parameters under " << YEETMOUSE_PARAMS_DIR
                   << ": is the module loaded, and are you root or in the yeetmouse group?" << std::endl;

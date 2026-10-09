@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "accel.h"
-#include "util.h"
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/time.h>
@@ -12,6 +11,7 @@
 #include "defaults.h"
 #include "profiles.h"
 #include <linux/rcupdate.h>
+#include <linux/slab.h>
 
 MODULE_AUTHOR("Christopher Williams <chilliams (at) gmail (dot) com>"); //Original idea of this module
 MODULE_AUTHOR("Klaus Zipfel <klaus (at) zipfel (dot) family>");         //Current maintainer
@@ -24,7 +24,6 @@ MODULE_AUTHOR("Maciej Grzęda <gmaciejg525 (at) gmail (dot) com>");      // Curr
 
 // Convenient helper for float based parameters
 #define PARAM_F(param, default, desc)                                   \
-    FP_LONG g_##param = C0NST_FP64_FromDouble(default);                 \
     char* g_param_##param = s(default);                                 \
     module_param_named(param, g_param_##param, charp, 0660);            \
     MODULE_PARM_DESC(param, desc);
@@ -34,32 +33,21 @@ MODULE_AUTHOR("Maciej Grzęda <gmaciejg525 (at) gmail (dot) com>");      // Curr
     module_param_named(param, g_##param, byte, 0660);                   \
     MODULE_PARM_DESC(param, desc);
 
-#define PARAM_BYTE(param, default, desc)                                \
-    char g_##param = (char)default;                                     \
-    char* g_param_##param = s(default);                                 \
-    module_param_named(param, g_param_##param, charp, 0660);            \
-    MODULE_PARM_DESC(param, desc);
+#define PARAM_BYTE PARAM_F
 
 #define PARAM_ARR(param, default, desc) \
     char g_param_##param[MAX_LUT_BUF_LEN] = s(default);                 \
     module_param_string(param, g_param_##param, MAX_LUT_BUF_LEN, 0660); \
     MODULE_PARM_DESC(param, desc);
 
-#define PARAM_UL(param, default, desc)                                  \
-    unsigned long g_##param = (unsigned long)default;                   \
-    char* g_param_##param = s(default);                                 \
-    module_param_named(param, g_param_##param, charp, 0660);            \
-    MODULE_PARM_DESC(param, desc);
+#define PARAM_UL PARAM_F
 
 // ########## Kernel module parameters
-
-// Simple module parameters (instant update)
-PARAM(update,             1,                  "Triggers an update of the acceleration parameters below");
 
 // Triggered update (same as Acceleration parameters)
 PARAM_BYTE(AccelerationMode, ACCELERATION_MODE, "Sets the algorithm to be used for acceleration");
 
-// Acceleration parameters (type pchar. Converted to float via "update_params" triggered by /sys/module/yeetmouse/parameters/update)
+// Acceleration parameters (type pchar. Converted to fixed point when 1 is written to /sys/module/yeetmouse/parameters/update)
 PARAM_F(InputCap,       INPUT_CAP,          "Limit the maximum pointer speed before applying acceleration.");
 PARAM_F(Sensitivity,    SENSITIVITY,        "Mouse base sensitivity, or X axis sensitivity if the anisotropy is on."); // Sensitivity for X axis only if sens != sens_y (anisotropy is on), otherwise sensitivity for both axes
 PARAM_F(RatioYX,        RATIO_YX,           "Mouse base sensitivity on the Y axis."); // Used only when anisotropy is on
@@ -119,216 +107,164 @@ PARAM_F(InputOffset,    INPUT_OFFSET,       "Classic only: speed at or below whi
 PARAM_BYTE(LutVelocity, LUT_VELOCITY,       "LUT values are velocities divided by the speed, as Raw Accel's gain lookup tables");
 PARAM_F(LegacyCap,      LEGACY_CAP,         "Classic and Power without smoothing: sensitivity cap of the curve, below 1 the classic curve falls toward it; 0 is none");
 
-FP_LONG g_LutData_x[MAX_LUT_ARRAY_SIZE]; // Array to store the x-values of the LUT data
-FP_LONG g_LutData_y[MAX_LUT_ARRAY_SIZE]; // Array to store the y-values of the LUT data
 
-// Converts given string to a unsigned long
-unsigned long atoul(const char *str);
+#define READ_FIXED(param, field)                                        \
+    do {                                                                \
+        if (!FP64_FromString(g_param_##param, &(field)))                \
+            return #param " is not a number";                           \
+    } while (0)
 
-// Updates the acceleration parameters. This is purposely done with a delay!
-// First, to not hammer too much the logic in "accelerate()", which is called VERY OFTEN!
-// Second, to fight possible cheating. However, this can be OFC changed, since we are OSS...
-#define PARAM_UPDATE(param) (FP64_FromString(g_param_##param, &g_##param))
-#define PARAM_UPDATE_UL(param) (atoul(g_param_##param))
+#define READ_FLAG(param, field)                                         \
+    do {                                                                \
+        if (kstrtou8(g_param_##param, 10, &(field)))                    \
+            return #param " is not a whole number up to 255";           \
+    } while (0)
 
-// Aggregate values that don't change with speed to save on calculations done every irq
-static struct accel_profile g_profile = {
-    .y = {
-        .mode = ACCELERATION_MODE_Y,
-        .k = { .current_func_at_0 = 1ll << FP64_Shift },
-    },
-    .x = {
-        .mode = ACCELERATION_MODE,
-        .use_smoothing = USE_SMOOTHING,
-        .acceleration = C0NST_FP64_FromDouble(ACCELERATION),
-        .exponent = C0NST_FP64_FromDouble(EXPONENT),
-        .midpoint = C0NST_FP64_FromDouble(MIDPOINT),
-        .motivity = C0NST_FP64_FromDouble(MOTIVITY),
-        .input_offset = C0NST_FP64_FromDouble(INPUT_OFFSET),
-        .legacy_cap = C0NST_FP64_FromDouble(LEGACY_CAP),
-        .lut_size = LUT_SIZE,
-        .lut_velocity = LUT_VELOCITY,
-        .k = { .current_func_at_0 = 1ll << FP64_Shift },
-    },
-    .sensitivity = C0NST_FP64_FromDouble(SENSITIVITY),
-    .ratio_yx = C0NST_FP64_FromDouble(RATIO_YX),
-    .output_cap = C0NST_FP64_FromDouble(OUTPUT_CAP),
-    .input_cap = C0NST_FP64_FromDouble(INPUT_CAP),
-    .offset = C0NST_FP64_FromDouble(OFFSET),
-    .rotation_angle = C0NST_FP64_FromDouble(ROTATION_ANGLE),
-    .angle_snap_angle = C0NST_FP64_FromDouble(ANGLE_SNAPPING_ANGLE),
-    .angle_snap_threshold = C0NST_FP64_FromDouble(ANGLE_SNAPPING_THRESHOLD),
-    .truncate_carry = TRUNCATE_CARRY,
-    .lp_norm = C0NST_FP64_FromDouble(LP_NORM),
-    .domain_x = C0NST_FP64_FromDouble(DOMAIN_X),
-    .domain_y = C0NST_FP64_FromDouble(DOMAIN_Y),
-    .range_x = C0NST_FP64_FromDouble(RANGE_X),
-    .range_y = C0NST_FP64_FromDouble(RANGE_Y),
-    .axis_snap = C0NST_FP64_FromDouble(AXIS_SNAP),
-    .speed_clamp = C0NST_FP64_FromDouble(SPEED_CLAMP),
-    .ratio_lr = C0NST_FP64_FromDouble(RATIO_LR),
-    .ratio_ud = C0NST_FP64_FromDouble(RATIO_UD),
-    .clock_on_any_report = CLOCK_ON_ANY_REPORT,
-};
+#define READ_COUNT(param, field)                                        \
+    do {                                                                \
+        if (kstrtou32(g_param_##param, 10, &(field)))                   \
+            return #param " is not a whole number";                     \
+    } while (0)
 
-static struct accel_device g_device = {
-    .pre_scale = C0NST_FP64_FromDouble(PRESCALE),
-    .min_time = C0NST_FP64_FromDouble(MIN_TIME),
-    .max_time = C0NST_FP64_FromDouble(MAX_TIME),
-    .fixed_time = FIXED_TIME,
-};
+static enum { DEFAULT_STARTING, DEFAULT_LIVE, DEFAULT_STOPPED } g_default_state;
 
-static ktime_t g_next_update = 0;
-INLINE void update_params(ktime_t now)
+static bool lut_complete(struct yeetmouse_curve_args *curve, const char *first, const char *second)
 {
-    if(!g_update) return;
-    if(now < g_next_update) return;
-    g_update = 0;
-    g_next_update = now + 1000000000ll;    //Next update is allowed after 1s of delay
+    __u32 points = curve->lut_size;
 
-    g_profile.is_init = false;
+    curve->lut_size = accel_lut_parse(first, second, points, curve->lut_x, curve->lut_y);
+    return curve->lut_size == points;
+}
 
-    PARAM_UPDATE(InputCap);
-    PARAM_UPDATE(Sensitivity);
-    PARAM_UPDATE(RatioYX);
-    PARAM_UPDATE(Acceleration);
-    PARAM_UPDATE(OutputCap);
-    PARAM_UPDATE(Offset);
-    PARAM_UPDATE(Exponent);
-    PARAM_UPDATE(Midpoint);
-    PARAM_UPDATE(PreScale);
-    PARAM_UPDATE(Motivity);
-    PARAM_UPDATE(RotationAngle);
-    PARAM_UPDATE(AngleSnap_Threshold);
-    PARAM_UPDATE(AngleSnap_Angle);
-    PARAM_UPDATE(MinTime);
-    PARAM_UPDATE(MaxTime);
-    PARAM_UPDATE(LpNorm);
-    PARAM_UPDATE(DomainX);
-    PARAM_UPDATE(DomainY);
-    PARAM_UPDATE(RangeX);
-    PARAM_UPDATE(RangeY);
-    PARAM_UPDATE(InputSmoothHalfLife);
-    PARAM_UPDATE(ScaleSmoothHalfLife);
-    PARAM_UPDATE(OutputSmoothHalfLife);
-    PARAM_UPDATE(AxisSnap);
-    PARAM_UPDATE(SpeedClamp);
-    PARAM_UPDATE(RatioLR);
-    PARAM_UPDATE(RatioUD);
-    PARAM_UPDATE(AccelerationY);
-    PARAM_UPDATE(ExponentY);
-    PARAM_UPDATE(MidpointY);
-    PARAM_UPDATE(MotivityY);
-    PARAM_UPDATE(InputOffsetY);
-    PARAM_UPDATE(LegacyCapY);
-    PARAM_UPDATE(InputOffset);
-    PARAM_UPDATE(LegacyCap);
-    g_FixedTime = PARAM_UPDATE_UL(FixedTime) != 0;
-    g_TruncateCarry = PARAM_UPDATE_UL(TruncateCarry) != 0;
-    g_ClockOnAnyReport = PARAM_UPDATE_UL(ClockOnAnyReport) != 0;
-    g_LutVelocity = PARAM_UPDATE_UL(LutVelocity) != 0;
-    g_LutSize = PARAM_UPDATE_UL(LutSize);
-    g_AccelerationMode = PARAM_UPDATE_UL(AccelerationMode);
-    g_LutSize = accel_lut_parse(g_param_LutDataBuf, g_param_LutDataBuf2, g_LutSize, g_LutData_x, g_LutData_y);
+static const char *default_args(struct yeetmouse_profile_args *args, struct accel_device *device)
+{
+    __u8 fixed_time;
 
-    // Sanity check
-    if(g_LutSize <= 1 && (g_AccelerationMode == AccelMode_Lut || g_AccelerationMode == AccelMode_CustomCurve))
-        g_AccelerationMode = AccelMode_Current;
+    strscpy(args->name, "default", sizeof(args->name));
 
-    if ((g_AccelerationMode == AccelMode_Lut || g_AccelerationMode == AccelMode_CustomCurve) &&
-        (g_LutData_x[g_LutSize-1] == g_LutData_x[g_LutSize-2] && g_LutData_y[g_LutSize-1] == g_LutData_y[g_LutSize-2]))
-        g_AccelerationMode = AccelMode_Current;
+    READ_FLAG(AccelerationMode, args->x.mode);
+    args->x.use_smoothing = g_UseSmoothing;
+    READ_FIXED(Acceleration, args->x.acceleration);
+    READ_FIXED(Exponent, args->x.exponent);
+    READ_FIXED(Midpoint, args->x.midpoint);
+    READ_FIXED(Motivity, args->x.motivity);
+    READ_FIXED(InputOffset, args->x.input_offset);
+    READ_FIXED(LegacyCap, args->x.legacy_cap);
+    READ_FLAG(LutVelocity, args->x.lut_velocity);
 
-    // Angle snap threshold should be in range [0, PI)
-    if(!accel_angle_snap_valid(g_AngleSnap_Threshold)) {
-        g_AngleSnap_Threshold = 0;
+    READ_FLAG(ByComponent, args->by_component);
+    READ_FLAG(AccelerationModeY, args->y.mode);
+    READ_FLAG(UseSmoothingY, args->y.use_smoothing);
+    READ_FIXED(AccelerationY, args->y.acceleration);
+    READ_FIXED(ExponentY, args->y.exponent);
+    READ_FIXED(MidpointY, args->y.midpoint);
+    READ_FIXED(MotivityY, args->y.motivity);
+    READ_FIXED(InputOffsetY, args->y.input_offset);
+    READ_FIXED(LegacyCapY, args->y.legacy_cap);
+    READ_FLAG(LutVelocityY, args->y.lut_velocity);
+
+    READ_FIXED(Sensitivity, args->sensitivity);
+    READ_FIXED(RatioYX, args->ratio_yx);
+    READ_FIXED(OutputCap, args->output_cap);
+    READ_FIXED(InputCap, args->input_cap);
+    READ_FIXED(Offset, args->offset);
+    READ_FIXED(RotationAngle, args->rotation_angle);
+    READ_FIXED(AngleSnap_Angle, args->angle_snap_angle);
+    READ_FIXED(AngleSnap_Threshold, args->angle_snap_threshold);
+    READ_FIXED(LpNorm, args->lp_norm);
+    READ_FIXED(DomainX, args->domain_x);
+    READ_FIXED(DomainY, args->domain_y);
+    READ_FIXED(RangeX, args->range_x);
+    READ_FIXED(RangeY, args->range_y);
+    READ_FIXED(InputSmoothHalfLife, args->input_half_life);
+    READ_FIXED(ScaleSmoothHalfLife, args->scale_half_life);
+    READ_FIXED(OutputSmoothHalfLife, args->output_half_life);
+    READ_FIXED(AxisSnap, args->axis_snap);
+    READ_FIXED(SpeedClamp, args->speed_clamp);
+    READ_FIXED(RatioLR, args->ratio_lr);
+    READ_FIXED(RatioUD, args->ratio_ud);
+    READ_FLAG(TruncateCarry, args->truncate_carry);
+    READ_FLAG(ClockOnAnyReport, args->clock_on_any_report);
+
+    READ_FIXED(PreScale, device->pre_scale);
+    READ_FIXED(MinTime, device->min_time);
+    READ_FIXED(MaxTime, device->max_time);
+    READ_FLAG(FixedTime, fixed_time);
+    if (fixed_time > 1)
+        return "FixedTime is not 0 or 1";
+    device->fixed_time = (char) fixed_time;
+
+    if (yeetmouse_mode_uses_lut(args->x.mode)) {
+        READ_COUNT(LutSize, args->x.lut_size);
+        if (!lut_complete(&args->x, g_param_LutDataBuf, g_param_LutDataBuf2))
+            return "LutDataBuf and LutDataBuf2 do not hold LutSize points";
     }
-
-    g_profile.x.mode = g_AccelerationMode;
-    g_profile.x.acceleration = g_Acceleration;
-    g_profile.x.exponent = g_Exponent;
-    g_profile.x.midpoint = g_Midpoint;
-    g_profile.x.motivity = g_Motivity;
-    g_profile.x.input_offset = g_InputOffset;
-    g_profile.x.legacy_cap = g_LegacyCap;
-    g_profile.x.lut_size = g_LutSize;
-    g_profile.x.lut_velocity = g_LutVelocity;
-    memcpy(g_profile.x.lut_x, g_LutData_x, sizeof(g_profile.x.lut_x));
-    memcpy(g_profile.x.lut_y, g_LutData_y, sizeof(g_profile.x.lut_y));
-    g_device.pre_scale = g_PreScale;
-    g_profile.sensitivity = g_Sensitivity;
-    g_profile.ratio_yx = g_RatioYX;
-    g_profile.output_cap = g_OutputCap;
-    g_profile.input_cap = g_InputCap;
-    g_profile.offset = g_Offset;
-    g_profile.rotation_angle = g_RotationAngle;
-    g_profile.angle_snap_angle = g_AngleSnap_Angle;
-    g_profile.angle_snap_threshold = g_AngleSnap_Threshold;
-
-    if (yeetmouse_times_problem(g_MinTime, g_MaxTime, g_FixedTime)) {
-        pr_err("YeetMouse: Error: MaxTime must be above 0, MinTime not below 0, and above 0 when FixedTime is set.\n");
-        g_MinTime = 0;
-        g_MaxTime = FP64_100;
-        g_FixedTime = 0;
+    if (args->by_component && yeetmouse_mode_uses_lut(args->y.mode)) {
+        READ_COUNT(LutSizeY, args->y.lut_size);
+        if (!lut_complete(&args->y, g_param_LutDataBufY, g_param_LutDataBufY2))
+            return "LutDataBufY and LutDataBufY2 do not hold LutSizeY points";
     }
-    if (!accel_weights_valid(g_LpNorm, g_DomainX, g_DomainY, g_RangeX, g_RangeY)) {
-        pr_err("YeetMouse: Error: LpNorm must be at least 1, the domain weights above 0 and the range weights not below 0.\n");
-        g_LpNorm = FP64_FromInt(2);
-        g_DomainX = FP64_1;
-        g_DomainY = FP64_1;
-        g_RangeX = FP64_1;
-        g_RangeY = FP64_1;
-    }
-    g_ByComponent = PARAM_UPDATE_UL(ByComponent) != 0;
-    g_profile.by_component = g_ByComponent;
-    g_profile.y.mode = PARAM_UPDATE_UL(AccelerationModeY);
-    g_profile.y.use_smoothing = PARAM_UPDATE_UL(UseSmoothingY) != 0;
-    g_profile.y.acceleration = g_AccelerationY;
-    g_profile.y.exponent = g_ExponentY;
-    g_profile.y.midpoint = g_MidpointY;
-    g_profile.y.motivity = g_MotivityY;
-    g_profile.y.input_offset = g_InputOffsetY;
-    g_profile.y.legacy_cap = g_LegacyCapY;
-    g_profile.y.lut_velocity = PARAM_UPDATE_UL(LutVelocityY) != 0;
-    g_profile.y.lut_size = accel_lut_parse(g_param_LutDataBufY, g_param_LutDataBufY2, PARAM_UPDATE_UL(LutSizeY),
-                                           g_profile.y.lut_x, g_profile.y.lut_y);
-    if (!accel_half_lives_valid(g_InputSmoothHalfLife, g_ScaleSmoothHalfLife, g_OutputSmoothHalfLife)) {
-        pr_err("YeetMouse: Error: smoothing half-lives must not be negative.\n");
-        g_InputSmoothHalfLife = 0;
-        g_ScaleSmoothHalfLife = 0;
-        g_OutputSmoothHalfLife = 0;
-    }
-    if (!accel_snap_valid(g_AxisSnap, g_SpeedClamp, g_RatioLR, g_RatioUD)) {
-        pr_err("YeetMouse: Error: AxisSnap must lie in [0, pi/4], SpeedClamp not below 0 and RatioLR and RatioUD above 0.\n");
-        g_AxisSnap = 0;
-        g_SpeedClamp = 0;
-        g_RatioLR = FP64_1;
-        g_RatioUD = FP64_1;
-    }
-    g_profile.axis_snap = g_AxisSnap;
-    g_profile.speed_clamp = g_SpeedClamp;
-    g_profile.ratio_lr = g_RatioLR;
-    g_profile.ratio_ud = g_RatioUD;
-    g_profile.input_half_life = g_InputSmoothHalfLife;
-    g_profile.scale_half_life = g_ScaleSmoothHalfLife;
-    g_profile.output_half_life = g_OutputSmoothHalfLife;
-    g_profile.lp_norm = g_LpNorm;
-    g_profile.domain_x = g_DomainX;
-    g_profile.domain_y = g_DomainY;
-    g_profile.range_x = g_RangeX;
-    g_profile.range_y = g_RangeY;
-    g_device.min_time = g_MinTime;
-    g_device.max_time = g_MaxTime;
-    g_device.fixed_time = g_FixedTime;
-    g_profile.truncate_carry = g_TruncateCarry;
-    g_profile.clock_on_any_report = g_ClockOnAnyReport;
+    return NULL;
+}
 
-    update_profile_constants(&g_profile);
+static int apply_default(void)
+{
+    struct yeetmouse_profile_args *args = kvzalloc(sizeof(*args), GFP_KERNEL);
+    struct accel_device device = {0};
+    const char *problem;
+    int error;
 
-    g_Acceleration = g_profile.x.acceleration;
-    g_Midpoint = g_profile.x.midpoint;
-    g_AccelerationY = g_profile.y.acceleration;
-    g_MidpointY = g_profile.y.midpoint;
+    if (!args)
+        return -ENOMEM;
+    problem = default_args(args, &device);
+    error = profiles_set_default(args, &device, problem);
+    kvfree(args);
+    return error;
+}
+
+static int update_set(const char *value, const struct kernel_param *kp)
+{
+    bool apply;
+    int error = kstrtobool(value, &apply);
+
+    if (error)
+        return error;
+    if (!apply || g_default_state == DEFAULT_STARTING)
+        return 0;
+    if (g_default_state == DEFAULT_STOPPED)
+        return -ENODEV;
+    return apply_default();
+}
+
+static int update_get(char *buffer, const struct kernel_param *kp)
+{
+    return scnprintf(buffer, PAGE_SIZE, "0\n");
+}
+
+static const struct kernel_param_ops update_ops = {
+    .set = update_set,
+    .get = update_get,
+};
+
+module_param_cb(update, &update_ops, NULL, 0660);
+MODULE_PARM_DESC(update, "Write 1 to apply the parameters below at once; a refused set leaves the one before live and reading /dev/yeetmouse names the reason");
+
+int accel_init(void)
+{
+    int error;
+
+    kernel_param_lock(THIS_MODULE);
+    error = apply_default();
+    g_default_state = error ? DEFAULT_STOPPED : DEFAULT_LIVE;
+    kernel_param_unlock(THIS_MODULE);
+    return error;
+}
+
+void accel_exit(void)
+{
+    kernel_param_lock(THIS_MODULE);
+    g_default_state = DEFAULT_STOPPED;
+    kernel_param_unlock(THIS_MODULE);
 }
 
 static void follow_table(struct accel_mouse *mouse, const struct profile_table *table)
@@ -349,15 +285,13 @@ void accelerate_idle(struct accel_mouse *mouse)
     rcu_read_lock();
     choice = table_resolve(profiles_current(), &mouse->path);
     if (!choice.disabled)
-        accel_idle_report(choice.profile ? choice.profile : &g_profile, &mouse->state, ktime_get());
+        accel_idle_report(choice.profile, &mouse->state, ktime_get());
     rcu_read_unlock();
 }
 
 int accelerate(struct accel_mouse *mouse, int *x, int *y)
 {
     const struct profile_table *table;
-    const struct accel_profile *profile;
-    const struct accel_device *device;
     struct table_choice choice;
     FP_LONG delta_x, delta_y, ms;
     ktime_t now;
@@ -368,11 +302,6 @@ int accelerate(struct accel_mouse *mouse, int *x, int *y)
 
     now = ktime_get();
 
-    g_profile.x.use_smoothing = g_UseSmoothing;
-
-    // Update acceleration parameters periodically
-    update_params(now);
-
     rcu_read_lock();
     table = profiles_current();
     choice = table_resolve(table, &mouse->path);
@@ -381,14 +310,12 @@ int accelerate(struct accel_mouse *mouse, int *x, int *y)
         return status;
     }
     follow_table(mouse, table);
-    profile = choice.profile ? choice.profile : &g_profile;
-    device = choice.device ? choice.device : &g_device;
 
-    ms = accel_time(device, accel_elapsed(&mouse->state, now));
+    ms = accel_time(choice.device, accel_elapsed(&mouse->state, now));
 
-    accel_packet(profile, device, &mouse->state, &delta_x, &delta_y, ms);
+    accel_packet(choice.profile, choice.device, &mouse->state, &delta_x, &delta_y, ms);
 
-    accel_round(profile, &mouse->state, delta_x, delta_y, x, y);
+    accel_round(choice.profile, &mouse->state, delta_x, delta_y, x, y);
     rcu_read_unlock();
 
     // Used to very roughly estimate the performance, and 0.1% lows
@@ -406,17 +333,4 @@ int accelerate(struct accel_mouse *mouse, int *x, int *y)
     // }
 
     return status;
-}
-
-unsigned long atoul(const char *str) {
-    unsigned long result = 0;
-    int i = 0;
-
-    // Iterate through the string, converting each digit to an integer
-    while (str[i] >= '0' && str[i] <= '9') {
-        result = result * 10 + (str[i] - '0');
-        i++;
-    }
-
-    return result;
 }

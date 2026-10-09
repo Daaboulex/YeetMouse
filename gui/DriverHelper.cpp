@@ -465,18 +465,18 @@ namespace DriverHelper {
         return true;
     }
 
-    static bool CurveArgs(const CurveParameters &curve, yeetmouse_curve_args &args) {
+    static bool CurveArgs(const CurveParameters &curve, bool uses_lut, yeetmouse_curve_args &args) {
         if (curve.accelMode < 0 || curve.accelMode >= AccelMode_Count || curve.lutSize < 0 ||
             curve.lutSize > YEETMOUSE_LUT_POINTS)
             return false;
         args.mode = static_cast<__u8>(curve.accelMode);
         args.use_smoothing = curve.useSmoothing;
         args.lut_velocity = curve.lutVelocity;
-        args.lut_size = static_cast<__u32>(curve.lutSize);
+        args.lut_size = uses_lut ? static_cast<__u32>(curve.lutSize) : 0;
         bool ok = FixedPoint(curve.accel, args.acceleration) && FixedPoint(curve.exponent, args.exponent) &&
                   FixedPoint(curve.midpoint, args.midpoint) && FixedPoint(curve.motivity, args.motivity) &&
                   FixedPoint(curve.inputOffset, args.input_offset) && FixedPoint(curve.legacyCap, args.legacy_cap);
-        for (int i = 0; ok && i < curve.lutSize; i++)
+        for (__u32 i = 0; ok && i < args.lut_size; i++)
             ok = FixedPoint(curve.lutDataX[i], args.lut_x[i]) && FixedPoint(curve.lutDataY[i], args.lut_y[i]);
         return ok;
     }
@@ -489,7 +489,8 @@ namespace DriverHelper {
         args.by_component = params.byComponent;
         args.truncate_carry = params.truncateCarry;
         args.clock_on_any_report = params.clockOnAnyReport;
-        return CurveArgs(HorizontalCurve(params), args.x) && CurveArgs(params.yCurve, args.y) &&
+        return CurveArgs(HorizontalCurve(params), yeetmouse_mode_uses_lut(params.accelMode), args.x) &&
+               CurveArgs(params.yCurve, params.byComponent && yeetmouse_mode_uses_lut(params.yCurve.accelMode), args.y) &&
                FixedPoint(params.sens, args.sensitivity) &&
                FixedPoint(params.useAnisotropy ? params.ratioYX : 1, args.ratio_yx) &&
                FixedPoint(params.outCap, args.output_cap) && FixedPoint(params.inCap, args.input_cap) &&

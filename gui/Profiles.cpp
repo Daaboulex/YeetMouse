@@ -796,16 +796,21 @@ namespace Profiles {
         if (!DriverHelper::ProfileArgs(params, name, args))
             return "holds a value out of the driver's range";
         auto profile = std::make_unique<accel_profile>();
-        yeetmouse_driver_message[0] = '\0';
-        if (profile_from_args(profile.get(), &args) == 0)
-            return std::nullopt;
-        std::string reason = yeetmouse_driver_message;
-        const std::string prefix = "YeetMouse: Error: ";
-        if (reason.rfind(prefix, 0) == 0)
-            reason.erase(0, prefix.size());
-        while (!reason.empty() && std::isspace(static_cast<unsigned char>(reason.back())))
-            reason.pop_back();
-        return reason.empty() ? std::string("is refused by the driver") : "is refused by the driver: " + reason;
+        if (const char *problem = profile_from_args(profile.get(), &args))
+            return std::string("is refused by the driver: ") + problem;
+        return std::nullopt;
+    }
+
+    std::optional<std::string> DefaultRefusal(const Parameters &params) {
+        if (auto refusal = DriverRefusal(params, "default"))
+            return refusal;
+        __s64 pre_scale = 0, min_time = 0, max_time = 0;
+        if (!DriverHelper::FixedPoint(params.preScale, pre_scale) || !DriverHelper::FixedPoint(params.minTime, min_time) ||
+            !DriverHelper::FixedPoint(params.maxTime, max_time))
+            return "holds a value out of the driver's range";
+        if (const char *problem = yeetmouse_scaling_problem(pre_scale, min_time, max_time, params.fixedTime))
+            return std::string("is refused by the driver: ") + problem;
+        return std::nullopt;
     }
 
     std::string LaunchTarget(const std::vector<DeviceLine> &lines, const std::vector<ConnectedMouse> &mice) {
@@ -922,7 +927,7 @@ namespace Profiles {
             auto params = ConfigHelper::ImportAny(stream, lut_data, is_config_h);
             if (!params || is_config_h)
                 problems.push_back(defaults.string() + " is not a YeetMouse config");
-            else if (auto refusal = DriverRefusal(*params, "default"))
+            else if (auto refusal = DefaultRefusal(*params))
                 problems.push_back(defaults.string() + " " + *refusal);
         }
         return problems;

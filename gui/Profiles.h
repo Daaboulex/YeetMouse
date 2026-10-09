@@ -71,6 +71,8 @@ namespace Profiles {
 
     std::optional<std::string> DriverRefusal(const Parameters &params, const std::string &name);
 
+    std::optional<std::string> DefaultRefusal(const Parameters &params);
+
     std::string DeviceId(uint16_t vendor, uint16_t product);
 
     void ParseDeviceId(const std::string &text, uint16_t &vendor, uint16_t &product);

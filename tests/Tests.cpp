@@ -2279,7 +2279,7 @@ bool Tests::TestProfileTable() {
     };
 
     auto loaded = [&](const Parameters &params, accel_profile &profile) {
-        return DriverHelper::ProfileArgs(params, "probe", args) && profile_from_args(&profile, &args) == 0;
+        return DriverHelper::ProfileArgs(params, "probe", args) && profile_from_args(&profile, &args) == nullptr;
     };
 
     try {
@@ -2340,9 +2340,33 @@ bool Tests::TestProfileTable() {
         auto refused = [&](const std::function<void(yeetmouse_profile_args &)> &spoil) {
             args = good;
             spoil(args);
-            return profile_from_args(&profiles[0], &args) == -EINVAL;
+            return profile_from_args(&profiles[0], &args) != nullptr;
         };
-        supervisor.Validate(profile_from_args(&profiles[0], &good) == 0);
+        auto reason = [&](const std::function<void(yeetmouse_profile_args &)> &spoil) {
+            args = good;
+            spoil(args);
+            const char *problem = profile_from_args(&profiles[0], &args);
+            return std::string(problem ? problem : "");
+        };
+        supervisor.Validate(profile_from_args(&profiles[0], &good) == nullptr &&
+                            profiles[0].digest == yeetmouse_digest(&good, sizeof(good)));
+        args = good;
+        args.sensitivity += 1;
+        supervisor.Validate(profile_from_args(&profiles[1], &args) == nullptr && profiles[1].digest != profiles[0].digest);
+        supervisor.Validate(reason([](yeetmouse_profile_args &a) { a.lp_norm = FP64_FromDouble(0.5); }).find("LpNorm") == 0);
+        supervisor.Validate(reason([](yeetmouse_profile_args &a) {
+            a.x.mode = AccelMode_Linear;
+            a.x.acceleration = 0;
+        }).find("'Linear'") != std::string::npos);
+        supervisor.Validate(reason([](yeetmouse_profile_args &a) {
+            a.x.mode = AccelMode_Natural;
+            a.x.exponent = FP64_1;
+            a.x.acceleration = 0;
+        }).find("exponent 1") != std::string::npos);
+        supervisor.Validate(reason([](yeetmouse_profile_args &a) {
+            a.x.mode = AccelMode_Lut;
+            a.x.lut_size = 1;
+        }).find("fewer than two points") != std::string::npos);
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.name[0] = '.'; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.x.mode = AccelMode_Count; }));
         supervisor.Validate(refused([](yeetmouse_profile_args &a) { a.y.lut_size = YEETMOUSE_LUT_POINTS + 1; }));
@@ -2366,9 +2390,36 @@ bool Tests::TestProfileTable() {
         supervisor.Validate(!DriverHelper::ProfileArgs(unreadable, "probe", args));
         supervisor.Validate(!DriverHelper::ProfileArgs(owner, std::string(YEETMOUSE_NAME_LEN, 'p'), args));
 
+        Parameters timing = owner;
+        timing.fixedTime = true;
+        timing.minTime = 0;
+        supervisor.Validate(!Profiles::DefaultRefusal(owner) && !Profiles::DriverRefusal(timing, "default") &&
+                            Profiles::DefaultRefusal(timing).value_or("").find("fixedTime") != std::string::npos);
+        timing = owner;
+        timing.preScale = 0;
+        supervisor.Validate(Profiles::DefaultRefusal(timing).value_or("").find("preScale") != std::string::npos);
+
+        Parameters stale = owner;
+        stale.lutSize = 2;
+        stale.lutDataX[0] = 3;
+        stale.lutDataY[0] = 4;
+        stale.yCurve.lutSize = 2;
+        stale.yCurve.lutDataX[1] = 5;
+        yeetmouse_profile_args clean_args{}, stale_args{};
+        supervisor.Validate(owner.accelMode != AccelMode_Lut && !owner.byComponent &&
+                            DriverHelper::ProfileArgs(owner, "probe", clean_args) &&
+                            DriverHelper::ProfileArgs(stale, "probe", stale_args) &&
+                            yeetmouse_digest(&clean_args, sizeof(clean_args)) ==
+                                yeetmouse_digest(&stale_args, sizeof(stale_args)));
+        stale.accelMode = AccelMode_Lut;
+        supervisor.Validate(DriverHelper::ProfileArgs(stale, "probe", stale_args) && stale_args.x.lut_size == 2 &&
+                            stale_args.x.lut_x[0] == FP64_FromInt(3) && stale_args.y.lut_size == 0);
+
         supervisor.NextTest();
         static profile_table state;
+        static accel_profile fallback;
         state = {};
+        state.default_profile = &fallback;
         accel_profile *replaced = nullptr;
         for (int i = 0; i < YEETMOUSE_MAX_PROFILES; i++)
             supervisor.Validate(table_load(&state, ("p" + std::to_string(i)).c_str(), &profiles[i], &replaced) == 0 &&
@@ -2403,21 +2454,24 @@ bool Tests::TestProfileTable() {
         };
         auto resolve = [&](__u16 vendor, __u16 product) { return through(vendor, product, false, 0, 0); };
         table_choice unlisted = resolve(0x1234, 0x5678);
-        supervisor.Validate(!unlisted.disabled && unlisted.profile == nullptr && unlisted.device == nullptr);
+        supervisor.Validate(!unlisted.disabled && !unlisted.claimed && unlisted.profile == &fallback &&
+                            unlisted.device == &state.default_device && unlisted.slot == -1 && unlisted.line == nullptr);
         table_choice g502 = resolve(0x046d, 0xc539);
-        supervisor.Validate(!g502.disabled && g502.profile == &profiles[1] && g502.device &&
+        supervisor.Validate(!g502.disabled && g502.profile == &profiles[1] && g502.slot == 1 && g502.line == &state.devices[0] &&
+                            g502.device == &state.devices[0].device &&
                             g502.device->pre_scale == FP64_FromDouble(0.625) && g502.device->min_time == FP64_1);
         table_choice raw = resolve(0x045e, 0x0040);
-        supervisor.Validate(raw.disabled && raw.profile == nullptr && raw.device == nullptr);
+        supervisor.Validate(raw.disabled && raw.profile == nullptr && raw.device == nullptr && raw.line == &state.devices[2]);
         table_choice paired = through(0x046d, 0x407f, true, 0x046d, 0xc539);
-        supervisor.Validate(!paired.disabled && paired.profile == &profiles[1] && paired.device &&
+        supervisor.Validate(!paired.disabled && paired.profile == &profiles[1] && paired.line == &state.devices[0] &&
                             paired.device->pre_scale == FP64_FromDouble(0.625));
         supervisor.Validate(through(0x1532, 0x0084, true, 0x046d, 0xc539).profile == &profiles[2]);
         supervisor.Validate(through(0x1234, 0x5678, true, 0x045e, 0x0040).disabled);
         table_choice stray = through(0x1234, 0x5678, true, 0x1050, 0x0407);
-        supervisor.Validate(!stray.disabled && stray.profile == nullptr && stray.device == nullptr);
+        supervisor.Validate(!stray.disabled && stray.profile == &fallback && stray.device == &state.default_device &&
+                            stray.line == nullptr);
         table_choice unpaired = through(0x046d, 0x407f, false, 0x046d, 0xc539);
-        supervisor.Validate(unpaired.profile == nullptr && unpaired.device == nullptr);
+        supervisor.Validate(unpaired.profile == &fallback && unpaired.device == &state.default_device && unpaired.line == nullptr);
 
         auto set_refused = [&](int error, const std::function<void(yeetmouse_devices_args &)> &spoil) {
             yeetmouse_devices_args spoiled = devices;
@@ -2436,10 +2490,11 @@ bool Tests::TestProfileTable() {
 
         supervisor.NextTest();
         supervisor.Validate(table_claim(&state, 1, "p5") == 0);
-        supervisor.Validate(resolve(0x046d, 0xc539).profile == &profiles[5] &&
+        supervisor.Validate(resolve(0x046d, 0xc539).profile == &profiles[5] && resolve(0x046d, 0xc539).claimed &&
+                            resolve(0x046d, 0xc539).slot == 5 &&
                             resolve(0x046d, 0xc539).device->pre_scale == FP64_FromDouble(0.625));
         supervisor.Validate(resolve(0x1234, 0x5678).profile == &profiles[5] &&
-                            resolve(0x1234, 0x5678).device == nullptr);
+                            resolve(0x1234, 0x5678).device == &state.default_device);
         supervisor.Validate(resolve(0x045e, 0x0040).disabled);
         supervisor.Validate(table_claim(&state, 2, "p6") == 0 && resolve(0x1532, 0x0084).profile == &profiles[6]);
         table_release(&state, 2);
