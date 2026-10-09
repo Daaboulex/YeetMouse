@@ -2,9 +2,9 @@ name: Proofs (CBMC)
 
 on:
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "daaboulex" ]
   push:
-    branches: [ "master" ]
+    branches: [ "master", "daaboulex" ]
   workflow_dispatch:
 
 jobs:

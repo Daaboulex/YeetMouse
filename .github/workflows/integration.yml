@@ -2,7 +2,7 @@ name: Integration (Install + Uninstall + Test)
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "daaboulex" ]
   workflow_dispatch:
 
 jobs:
@@ -61,7 +61,7 @@ jobs:
           fi
           sudo modprobe yeetmouse
           sudo udevadm settle
-          sudo systemctl start yeetmouse.service
+          timeout 10 sh -c 'until systemctl is-active --quiet yeetmouse.service; do sleep 0.2; done'
           sudo yeetmousectl status
 
       - name: Check profiles, devices and a killed game's claim on the live driver
