@@ -442,19 +442,34 @@ namespace ProfilesGui {
             if (!kwin) {
                 ImGui::TextDisabled("KWin cannot take touchpad curves yet");
                 ImGui::SetItemTooltip("Needs KWin 6.9, or merge request 6937");
-            } else if (!resolution) {
-                ImGui::TextDisabled("Resolution not recorded yet");
-                ImGui::SetItemTooltip("Recorded at boot");
             } else {
-                for (const auto &[name, params] : view.files) {
-                    if (ImGui::MenuItem((name + " curve").c_str())) {
+                if (!resolution) {
+                    ImGui::TextDisabled("Resolution not recorded yet");
+                    ImGui::SetItemTooltip("Recorded at boot");
+                } else {
+                    for (const auto &[name, params] : view.files) {
+                        if (ImGui::MenuItem((name + " curve").c_str())) {
+                            try {
+                                Profiles::SetTouchpadCurve(mouse.event,
+                                                           Profiles::SampleTouchpadCurve(params, *resolution));
+                            } catch (const Profiles::Refused &refused) {
+                                Message(refused.what());
+                            }
+                        }
+                        ImGui::SetItemTooltip("Give the touchpad this profile's curve through KWin");
+                    }
+                }
+                ImGui::Separator();
+                for (bool adaptive : {true, false}) {
+                    if (ImGui::MenuItem(adaptive ? "KWin adaptive" : "KWin flat")) {
                         try {
-                            Profiles::SetTouchpadCurve(mouse.event, Profiles::SampleTouchpadCurve(params, *resolution));
+                            Profiles::UseKWinTouchpadProfile(mouse.event, adaptive);
                         } catch (const Profiles::Refused &refused) {
                             Message(refused.what());
                         }
                     }
-                    ImGui::SetItemTooltip("Give the touchpad this profile's curve through KWin");
+                    ImGui::SetItemTooltip(adaptive ? "Back to KWin's own acceleration"
+                                                   : "Back to KWin with no acceleration");
                 }
             }
             ImGui::EndMenu();

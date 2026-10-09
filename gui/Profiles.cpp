@@ -1374,4 +1374,11 @@ namespace Profiles {
                                       KWinCustomProfile, "b", "true"}) != 0)
             throw Refused("KWin did not take the touchpad curve");
     }
+
+    void UseKWinTouchpadProfile(const std::string &event, bool adaptive) {
+        if (DriverHelper::RunProgram({"busctl", "--user", "set-property", "org.kde.KWin", "/org/kde/KWin/InputDevice/" + event,
+                                      "org.kde.KWin.InputDevice", adaptive ? KWinAdaptiveProfile : KWinFlatProfile,
+                                      "b", "true"}) != 0)
+            throw Refused("KWin did not take its own acceleration back");
+    }
 }

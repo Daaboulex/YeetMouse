@@ -201,6 +201,8 @@ namespace Profiles {
     inline const char *const TouchpadResolutionsPath = "/run/yeetmouse/touchpads";
     inline const char *const KWinCustomPoints = "pointerAccelerationCustomPointsMotion";
     inline const char *const KWinCustomProfile = "pointerAccelerationProfileCustom";
+    inline const char *const KWinAdaptiveProfile = "pointerAccelerationProfileAdaptive";
+    inline const char *const KWinFlatProfile = "pointerAccelerationProfileFlat";
     inline constexpr std::size_t TouchpadCurvePoints = 64;
     inline constexpr double TouchpadCurveTopSpeed = 100;
     inline constexpr double LibinputFlatTouchpadSlowdown = 0.2968;
@@ -224,6 +226,8 @@ namespace Profiles {
     bool KWinTakesTouchpadCurves(const std::string &event);
 
     void SetTouchpadCurve(const std::string &event, const TouchpadCurve &curve);
+
+    void UseKWinTouchpadProfile(const std::string &event, bool adaptive);
 
     class GameClaim {
     public:

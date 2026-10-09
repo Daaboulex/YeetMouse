@@ -506,6 +506,11 @@ static int TouchpadCurve(const std::string &id, const std::string &profile) {
         });
         if (touchpad == mice.end())
             throw Profiles::Refused(id + " is not a connected touchpad");
+        if (profile == "--kwin-adaptive" || profile == "--kwin-flat") {
+            Profiles::UseKWinTouchpadProfile(touchpad->event, profile == "--kwin-adaptive");
+            std::cout << id << " is back on KWin's own acceleration." << std::endl;
+            return 0;
+        }
         std::optional<double> resolution = Profiles::TouchpadResolution(vendor, product);
         if (!resolution)
             throw Profiles::Refused(id + "'s resolution is not recorded yet: run yeetmousectl touchpads --record as root");
@@ -556,7 +561,7 @@ int main(int argc, char **argv) {
                 "  yeetmousectl profile list | save <name> <config> | remove <name>\n"
                 "  yeetmousectl device list | set <vendor:product> <profile|disabled> [key=value...] | remove <vendor:product>\n"
                 "  yeetmousectl touchpads [--record]\n"
-                "  yeetmousectl touchpad <vendor:product> <profile>\n"
+                "  yeetmousectl touchpad <vendor:product> <profile|--kwin-adaptive|--kwin-flat>\n"
                 "  yeetmousectl run <profile> -- <command> [args...]\n";
 
         return 0;

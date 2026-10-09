@@ -293,7 +293,7 @@
 
 ** Touchpads
    Touchpads are listed with the mice, but the driver does not curve them, because libinput in the compositor turns finger positions into motion.
-   YeetMouse can hand a profile's curve to KWin as a libinput custom acceleration curve once KWin takes one (KWin merge request 6937). Until then the GUI's touchpad entry says KWin cannot take touchpad curves yet, and =yeetmousectl touchpad= is refused.
+   YeetMouse can hand a profile's curve to KWin as a libinput custom acceleration curve once KWin takes one (KWin merge request 6937). Until then the GUI's touchpad entry says KWin cannot take touchpad curves yet, and =yeetmousectl touchpad= is refused. Once it can, the GUI's touchpad entry lists a curve per profile, and =KWin adaptive= or =KWin flat= (=yeetmousectl touchpad <vendor:product> --kwin-adaptive= or =--kwin-flat=) hands the touchpad back to KWin's own acceleration.
    #+begin_src sh
    yeetmousectl touchpads
    yeetmousectl touchpads --record
