@@ -311,7 +311,7 @@ static int curve(const char *which, int exact) {
         printf("refused: %s\n", problem);
         return 0;
     }
-    for (long long speed = 1ll << 16; speed < 1ll << 46; speed += (speed >> 12) + 1)
+    for (long long speed = 1ll << 16; speed < 1ll << 48; speed += (speed >> 12) + 1)
         printf("%lld %lld\n", speed, bench_curve(speed));
     return 0;
 }
