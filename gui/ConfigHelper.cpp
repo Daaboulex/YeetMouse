@@ -228,34 +228,15 @@ namespace ConfigHelper {
         try {
             is_config_h = filepath->size() >= 2 && filepath->compare(filepath->size() - 2, 2, ".h") == 0;
 
-            std::fstream file(*filepath);
+            std::ifstream file(*filepath);
 
             if (!file.good())
                 return {};
 
-            bool is_old_config = false;
-            if (auto res = ImportAny(file, lut_data, is_config_h, &is_old_config))
+            if (auto res = ImportAny(file, lut_data, is_config_h))
                 params = res.value();
-            else {
-                file.close();
+            else
                 return false;
-            }
-
-            file.close();
-
-            // Automatically re-export in the correct format
-            if (is_old_config) {
-                std::ofstream out_file(*filepath);
-
-                if (out_file.is_open()) {
-                    if (is_config_h)
-                        out_file << ExportConfig(params, false);
-                    else
-                        out_file << ExportPlainText(params, false);
-
-                    out_file.close();
-                }
-            }
 
         } catch (std::exception &ex) {
             printf("Import error: %s\n", ex.what());
@@ -273,19 +254,10 @@ namespace ConfigHelper {
         try {
             std::stringstream sstream(clipboard);
 
-            bool is_old_config = false;
-            if (auto res = ImportAny(sstream, lut_data, is_config_h, &is_old_config))
+            if (auto res = ImportAny(sstream, lut_data, is_config_h))
                 params = res.value();
             else
                 return false;
-
-            // Automatically re-export in the correct format
-            if (is_old_config) {
-                if (is_config_h)
-                    ImGui::SetClipboardText(ExportConfig(params, false).c_str());
-                else
-                    ImGui::SetClipboardText(ExportPlainText(params, false).c_str());
-            }
         } catch (std::exception &ex) {
             printf("Import error: %s\n", ex.what());
             return false;
